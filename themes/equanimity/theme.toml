@@ -1,9 +1,0 @@
-name = "Equanimity"
-license = "MIT"
-description = "Minimalist theme for a blog"
-tags = ["blog"]
-
-[author]
-name = "Mitchell Kember"
-email = "mk@mitchellkember.com"
-url = "http://mitchellkember.com"

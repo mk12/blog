@@ -1,7 +1,6 @@
 baseurl = "//mitchellkember.com/blog/"
 languageCode = "en-us"
 title = "Mitchell Kember"
-theme = "equanimity"
 FootnoteReturnLinkContents = "↩"
 pygmentsstyle = "friendly"
 
