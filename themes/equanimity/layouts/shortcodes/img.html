@@ -1,0 +1,9 @@
+<figure>
+	{{ with .Get "tcap" }}
+		<figcaption class="above">{{ markdownify . }}</figcaption>
+	{{ end }}
+	<img src="{{ .Page.Site.BaseURL }}images/{{ .Get "src" }}">
+	{{ with .Get "cap" }}
+		<figcaption>{{ markdownify . }}</figcaption>
+	{{ end }}
+</figure>

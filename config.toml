@@ -1,0 +1,17 @@
+baseurl = "//mitchellkember.com/blog/"
+languageCode = "en-us"
+title = "Mitchell Kember"
+theme = "equanimity"
+FootnoteReturnLinkContents = "↩"
+pygmentsstyle = "friendly"
+
+[taxonomies]
+category = "categories"
+
+[params]
+author = "Mitchell Kember"
+homepage = "https://mitchellkember.com"
+homelink = "MK"
+
+[markup.goldmark.renderer]
+unsafe = true

@@ -1,0 +1,8 @@
+<nav class="page-nav">
+	<ul>
+		<li id="go-previous"><a href="{{ with .Prev }}{{ .Permalink }}{{ else }}{{ .Site.BaseURL }}{{ end }}">«&nbsp;New<span>er</span></a></li><!--
+		--><li id="go-home-d"><a href="{{ .Site.Params.homepage }}">Home</a></li><!--
+		--><li id="go-toc"><a href="{{ .Site.BaseURL }}">Blog</a></li><!--
+		--><li id="go-next"><a href="{{ with .Next }}{{ .Permalink }}{{ else }}{{ .Site.BaseURL }}post/{{ end }}">Old<span>er</span>&nbsp;»</a></li>
+	</ul>
+</nav>
