@@ -14,3 +14,9 @@ homelink = "MK"
 
 [markup.goldmark.renderer]
 unsafe = true
+
+[[module.mounts]]
+source = "static"
+target = "static"
+# These get embedded in the HTML.
+excludeFiles = "images/*.svg"

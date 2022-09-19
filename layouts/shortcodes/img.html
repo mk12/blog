@@ -2,7 +2,11 @@
 	{{ with .Get "tcap" }}
 		<figcaption class="above">{{ markdownify . }}</figcaption>
 	{{ end }}
+	{{ if .Get "src" | path.Ext | eq ".svg" }}
+	{{ .Get "src" | print "static/images/" | partial }}
+	{{ else }}
 	<img src="{{ .Page.Site.BaseURL }}images/{{ .Get "src" }}">
+	{{ end }}
 	{{ with .Get "cap" }}
 		<figcaption>{{ markdownify . }}</figcaption>
 	{{ end }}
