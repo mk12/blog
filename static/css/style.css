@@ -1,3 +1,5 @@
+/* Reset */
+
 html, body, div, span, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, code, em, 
 ol, ul, li, article, figure, figcaption, nav, section, summary {
 	border: 0;
@@ -8,50 +10,7 @@ ol, ul, li, article, figure, figcaption, nav, section, summary {
 	padding: 0
 }
 
-/* Fonts */
-
-/*
-@font-face {
-	font-family: 'Concourse T3';
-	src: url('../fonts/concourse_t3_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
-}
-
-@font-face {
-	font-family: 'Concourse T3';
-	src: url('../fonts/concourse_t3_bold.woff2') format('woff2');
-	font-weight: bold;
-	font-style: normal;
-}
-
-@font-face {
-	font-family: 'Equity B';
-	src: url('../fonts/equity_a_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
-}
-@font-face {
-	font-family: 'Equity B';
-	src: url('../fonts/equity_a_italic.woff2') format('woff2');
-	font-weight: normal;
-	font-style: italic;
-}
-
-@font-face {
-	font-family: 'Equity B';
-	src: url('../fonts/equity_a_bold.woff2') format('woff2');
-	font-weight: bold;
-	font-style: normal;
-}
-
-@font-face {
-	font-family: 'Equity Caps B';
-	src: url('../fonts/equity_caps_b_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
-}
-*/
+/* General (previously shared with rest of website) */
 
 body {
 	font: 24px/1.4 'Equity B', Georgia, serif;
@@ -226,3 +185,162 @@ footer > .page-nav {
 
 #go-home, #go-home-d { border-left: 1px solid #ccc; }
 #go-home, #go-home-d, #go-toc { border-right: 1px solid #ccc; }
+
+#copyright {
+	border-top: 1px solid #ccc;
+	text-align: center;
+	font-family: 'Equity Caps B', Georgia, serif;
+	text-transform: lowercase;
+	padding-top: 5px;
+	margin-bottom: 10px;
+}
+
+#copyright > p {
+	margin: 0;
+}
+
+/* Blog-specific (originally equanimity.css) */
+
+a.no-ul { border: none; }
+a.subtle { color: #888; }
+a.subtle:hover { color: #b00; }
+
+code {
+	font: 22px 'Source Code Pro', 'Courier New', monospace;
+	white-space: pre;
+	word-break: normal;
+	word-wrap: normal;
+}
+
+.verse {
+	font-style: italic;
+	width: auto;
+	margin: 0 auto;
+}
+
+#blog-title {
+	font: 72px 'Equity Caps B', Helvetica, Arial, sans-serif;
+	text-align: center;
+	margin: 40px 0 30px;
+}
+
+.post-title {
+	font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
+	margin: 2px 0 15px;
+}
+
+.category-title:first-letter {
+	text-transform: uppercase;
+}
+
+.post-description {
+	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif; 
+	color: #888;
+	margin: 0 0 30px;
+}
+
+h1 {
+	font: bold 28px 'Equity B', Helvetica, Arial, sans-serif;
+	margin: 20px 0 10px;
+}
+
+.post-meta {
+	font: 20px 'Equity B', Helvetica, Arial, sans-serif;
+	color: #888;
+}
+
+.read-more-link {
+	text-align: right;
+	font: 22px 'Concourse T3', Helvetica, Arial, sans-serif;
+}
+
+#list-links {
+	text-align: center;
+	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+	margin-bottom: 60px;
+}
+
+#list-links > a {
+	display: block;
+	margin-bottom: 15px;
+}
+
+.summary {
+	margin-bottom: 25px;
+}
+
+.summary > p {
+	margin-bottom: 15px;
+}
+
+.list-header {
+	margin: 40px 0 30px;
+}
+
+.list-header > a {
+	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+}
+
+.list-header > h1 {
+	margin-top: 10px;
+	font: 42px 'Equity B', Helvetica, Arial, sans-serif;
+	font-style: italic;
+	display: block;
+}
+
+.category > h2 {
+	font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
+	margin: 30px 0 10px;
+}
+
+li.post-li {
+	font: 26px 'Concourse T3', Helvetica, Arial, sans-serif;
+}
+
+#after-posts {
+	margin-bottom: 60px;
+}
+
+.footnotes {
+	font-size: 22px;
+}
+
+.footnotes code {
+	font-size: 20px;
+}
+
+.footnotes p {
+	margin: 0;
+}
+
+pre {
+	margin: 1.2em -70px;
+	background-color: #f6f6f6;
+	padding: 0.75em 1em;
+	line-height: 16px;
+	font: 17px 'Source Code Pro', 'Courier New', monospace;
+}
+
+pre > code {
+	font: 17px 'Source Code Pro', 'Courier New', monospace;
+}
+
+@media only screen and (max-width: 870px) {
+	pre {
+		margin-left: 0;
+		margin-right: 0;
+		background: #fff;
+	}
+}
+
+@media only screen and (max-width: 505px) {
+	#go-previous > a > span { display: none; }
+	#go-next > a > span { display: none; }
+}
+
+@media only screen and (max-width: 445px) {
+	#go-previous > a { padding-right: 0; }
+	#go-next > a { padding-left: 0; }
+	#go-home-d { display: none; }
+	#go-toc { border-left: 1px solid #ccc; }
+}
