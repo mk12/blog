@@ -1,20 +1,18 @@
-{{ partial "head.html" . }}
+{{ define "body" }}
+	{{ $.Scratch.Set "heading" "Post Archive" }}
+	{{ partial "list-header.html" . }}
 
-{{ $.Scratch.Set "heading" "Post Archive" }}
-{{ partial "list-header.html" . }}
-
-<section id="posts">
-{{ range .Data.Pages.GroupByDate "2006" }}
-	<section class="category">
-		<h2>{{ .Key }}</h2>
-		<ul>
-		{{ range .Pages }}
-			{{ .Render "li" }}
-		{{ end }}
-		</ul>
+	<section id="posts">
+	{{ range .Data.Pages.GroupByDate "2006" }}
+		<section class="category">
+			<h2>{{ .Key }}</h2>
+			<ul>
+			{{ range .Pages }}
+				{{ .Render "li" }}
+			{{ end }}
+			</ul>
+		</section>
+	{{ end }}
 	</section>
+	<div id="after-posts"></div>
 {{ end }}
-</section>
-<div id="after-posts"></div>
-
-{{ partial "footer.html" . }}

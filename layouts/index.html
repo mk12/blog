@@ -1,18 +1,16 @@
-{{ partial "head.html" . }}
+{{ define "body" }}
+	<h1 id="blog-title">
+		<a class="no-ul" href="{{ .Site.Params.homepage }}">{{ .Site.Params.homelink }}</a>
+	</h1>
 
-<h1 id="blog-title">
-	<a class="no-ul" href="{{ .Site.Params.homepage }}">{{ .Site.Params.homelink }}</a>
-</h1>
+	<section id="posts">
+	{{ range first 10 .Site.RegularPages }}
+		{{ .Render "summary" }}
+	{{ end }}
+	</section>
 
-<section id="posts">
-{{ range first 10 .Site.RegularPages }}
-	{{ .Render "summary" }}
+	<div id="list-links">
+		<a class="no-ul subtle" href="{{ .Site.BaseURL }}post/">Older posts&nbsp;»</a>
+		<a class="no-ul subtle" href="{{ .Site.BaseURL }}categories/">Categories&nbsp;»</a>
+	</div>
 {{ end }}
-</section>
-
-<div id="list-links">
-	<a class="no-ul subtle" href="{{ .Site.BaseURL }}post/">Older posts&nbsp;»</a>
-	<a class="no-ul subtle" href="{{ .Site.BaseURL }}categories/">Categories&nbsp;»</a>
-</div>
-
-{{ partial "footer.html" . }}

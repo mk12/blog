@@ -1,25 +1,20 @@
-{{ partial "head.html" . }}
+{{ define "body" }}
+	{{ $taxname := .Data.Plural }}
 
-{{ $taxname := .Data.Plural }}
+	{{ $.Scratch.Set "heading" (title $taxname) }}
+	{{ partial "list-header.html" . }}
 
-{{ $.Scratch.Set "heading" (title $taxname) }}
-{{ partial "list-header.html" . }}
-
-<section id="posts">
-{{ range $key, $term := .Data.Terms.Alphabetical }}
-	<section class="category">
-		<h2 class="category-title">{{ title $term.Name | markdownify }}</h2>
-		<ul>
-		{{ range $term.Pages }}
-			{{ .Render "li" }}
-		{{ end }}
-		</ul>
+	<section id="posts">
+	{{ range $key, $term := .Data.Terms.Alphabetical }}
+		<section class="category">
+			<h2 class="category-title">{{ title $term.Name | markdownify }}</h2>
+			<ul>
+			{{ range $term.Pages }}
+				{{ .Render "li" }}
+			{{ end }}
+			</ul>
+		</section>
+	{{ end }}
 	</section>
+	<div id="after-posts"></div>
 {{ end }}
-</section>
-<div id="after-posts"></div>
-
-{{ partial "footer.html" . }}
-
-
-

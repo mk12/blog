@@ -1,26 +1,25 @@
-{{ partial "head.html" . }}
+{{ define "body" }}
+	<header>
+		{{ .Render "page-nav" }}
+	</header>
 
-<header>
-	{{ .Render "page-nav" }}
-</header>
-
-<article>
-	<span class="post-meta">{{ .Date.Format "Monday, 2 January 2006" }}</span>
-	<h2 class="post-title">{{ markdownify .Title }}</h2>
-	{{ with .Description }}
-		<h3 class="post-description">{{ markdownify . }}</h3>
-	{{ end }}
-	{{ .Content }}
-</article>
-
-<footer>
-	{{ .Render "page-nav" }}
-</footer>
-
-{{ if .Params.math }}
-<script type="text/javascript"
-src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML.js"></script>
+	<article>
+		<span class="post-meta">{{ .Date.Format "Monday, 2 January 2006" }}</span>
+		<h2 class="post-title">{{ markdownify .Title }}</h2>
+		{{ with .Description }}
+			<h3 class="post-description">{{ markdownify . }}</h3>
+		{{ end }}
+		{{ .Content }}
+	</article>
 {{ end }}
 
-</body>
-</html>
+{{ define "footer" }}
+	<footer>
+		{{ .Render "page-nav" }}
+	</footer>
+
+	{{ if .Params.math }}
+	<script type="text/javascript"
+	src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML.js"></script>
+	{{ end }}
+{{end}}
