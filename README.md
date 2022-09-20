@@ -4,14 +4,10 @@ This is the source for my personal blog. It uses [Hugo].
 
 I host it at https://mitchellkember.com/blog.
 
-## Developing
+## Build
 
-```sh
-hugo server -w
-```
+Run `hugo` to build.
 
-## SVGs
-
-Note that SVGs will look incorrect locally. The post.sh deploy process embeds SVGs in their pages, allowing them to use webfonts.
+Run `hugo server -w` to run a server and rebuild on save.
 
 [Hugo]: https://gohugo.io
