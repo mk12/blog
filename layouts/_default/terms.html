@@ -1,8 +1,5 @@
 {{ define "body" }}
-	{{ $taxname := .Data.Plural }}
-
-	{{ $.Scratch.Set "heading" (title $taxname) }}
-	{{ partial "list-header.html" . }}
+	{{ .Render "list-header" }}
 
 	<section id="posts">
 	{{ range $key, $term := .Data.Terms.Alphabetical }}

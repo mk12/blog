@@ -1,6 +1,5 @@
 {{ define "body" }}
-	{{ $.Scratch.Set "heading" "Post Archive" }}
-	{{ partial "list-header.html" . }}
+	{{ .Render "list-header" }}
 
 	<section id="posts">
 	{{ range .Data.Pages.GroupByDate "2006" }}

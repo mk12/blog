@@ -1,8 +1,7 @@
-baseurl = "//mitchellkember.com/blog/"
+baseURL = "//mitchellkember.com/blog/"
 languageCode = "en-us"
 title = "Mitchell Kember"
-FootnoteReturnLinkContents = "↩"
-pygmentsstyle = "friendly"
+pygmentsStyle = "friendly"
 
 [taxonomies]
 category = "categories"
@@ -10,7 +9,7 @@ category = "categories"
 [params]
 author = "Mitchell Kember"
 homepage = "https://mitchellkember.com"
-homelink = "MK"
 
 [markup.goldmark.renderer]
+# Required for some HTML embedding, e.g. the verse.html shortcode.
 unsafe = true
