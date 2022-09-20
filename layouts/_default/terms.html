@@ -6,7 +6,7 @@
 		<section class="category">
 			<h2 class="category-title">{{ title $term.Name | markdownify }}</h2>
 			<ul>
-			{{ range $term.Pages }}
+			{{ range $term.Pages.ByDate.Reverse }}
 				{{ .Render "li" }}
 			{{ end }}
 			</ul>
