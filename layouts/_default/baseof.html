@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="utf-8">
-	<title>{{ markdownify .Title }}</title>
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<link rel="stylesheet" href="{{ .Site.BaseURL }}css/style.css">
-	<link rel='stylesheet' href='//fonts.googleapis.com/css?family=Source+Code+Pro'>
+    <meta charset="utf-8">
+    <title>{{ markdownify .Title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{ $style := resources.Get "style.css" | resources.ExecuteAsTemplate "style.css" . | toCSS }}
+    <link rel="stylesheet" href="{{ $style.Permalink }}">
+    <link rel='stylesheet' href='//fonts.googleapis.com/css?family=Source+Code+Pro'>
 </head>
 <body>
     {{ block "body" . }}

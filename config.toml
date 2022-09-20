@@ -9,6 +9,7 @@ category = "categories"
 [params]
 author = "Mitchell Kember"
 homepage = "https://mitchellkember.com"
+fontdir = "fonts"
 
 [markup.goldmark.renderer]
 # Required for some HTML embedding, e.g. the verse.html shortcode.

@@ -1,13 +1,58 @@
 /* Reset */
 
 html, body, div, span, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, code, em, 
-ol, ul, li, article, figure, figcaption, nav, section, summary {
+ol, ul, li, table, thead, tbody, tfoot, tr, th, td,
+article, figure, figcaption, nav, section, summary {
 	border: 0;
 	font-size: 100%;
 	font: inherit;
 	vertical-align: baseline;
 	margin: 0;
 	padding: 0
+}
+
+/* Fonts */
+
+@font-face {
+	font-family: 'Concourse T3';
+	src: url('{{ .Site.Params.fontdir }}/concourse_3_regular.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Concourse T3';
+	src: url('{{ .Site.Params.fontdir }}/concourse_3_bold.woff2') format('woff2');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Equity B';
+	src: url('{{ .Site.Params.fontdir }}/equity_a_regular.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Equity B';
+	src: url('{{ .Site.Params.fontdir }}/equity_a_italic.woff2') format('woff2');
+	font-weight: normal;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'Equity B';
+	src: url('{{ .Site.Params.fontdir }}/equity_a_bold.woff2') format('woff2');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Equity Caps B';
+	src: url('{{ .Site.Params.fontdir }}/equity_caps_b_regular.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
 }
 
 /* General (previously shared with rest of website) */
@@ -107,6 +152,8 @@ ol > li {
 
 table {
 	margin: 0 auto 1.8em;
+	border-collapse: collapse;
+	border-spacing: 0;
 }
 
 tr {
@@ -178,13 +225,13 @@ footer > .page-nav {
 	color: #000;
 }
 
-#go-previous { float: left; }
-#go-next { float: right; }
-#go-previous > a { padding-left: 10px; }
-#go-next > a { padding-right: 10px; }
+.nav-newer { float: left; }
+.nav-older { float: right; }
+.nav-newer > a { padding-left: 10px; }
+.nav-older > a { padding-right: 10px; }
 
-#go-home, #go-home-d { border-left: 1px solid #ccc; }
-#go-home, #go-home-d, #go-toc { border-right: 1px solid #ccc; }
+.nav-home { border-left: 1px solid #ccc; }
+.nav-home, .nav-toc { border-right: 1px solid #ccc; }
 
 #copyright {
 	border-top: 1px solid #ccc;
@@ -334,13 +381,14 @@ pre > code {
 }
 
 @media only screen and (max-width: 505px) {
-	#go-previous > a > span { display: none; }
-	#go-next > a > span { display: none; }
+	.nav-newer > a > span { display: none; }
+	.nav-older > a > span { display: none; }
 }
 
 @media only screen and (max-width: 445px) {
-	#go-previous > a { padding-right: 0; }
-	#go-next > a { padding-left: 0; }
-	#go-home-d { display: none; }
-	#go-toc { border-left: 1px solid #ccc; }
+	/* Hack: Increase specificity to override other rules. Should use BEM. */
+	.page-nav > ul > li.nav-newer > a { padding-right: 0; }
+	.page-nav > ul > li.nav-older > a { padding-left: 0; }
+	.page-nav > ul > li.nav-home { display: none; }
+	.page-nav > ul > li.nav-toc { border-left: 1px solid #ccc; }
 }
