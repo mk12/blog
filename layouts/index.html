@@ -3,7 +3,7 @@
 		<a class="no-ul" href="{{ .Site.Params.homepage }}">MK</a>
 	</h1>
 
-	<section id="posts">
+	<section>
 	{{ range first 10 .Site.RegularPages }}
 		{{ .Render "summary" }}
 	{{ end }}

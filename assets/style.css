@@ -184,28 +184,28 @@ header {
 	text-transform: lowercase;
 }
 
-header > .page-nav {
+header .page-nav {
 	border-bottom: 1px solid #ccc;
 	margin-bottom: 60px;
 	margin-top: 0px;
 }
 
-footer > .page-nav {
+footer .page-nav {
 	border-top: 1px solid #ccc;
 	margin-top: 50px;
 }
 
-.page-nav > ul {
+.page-nav ul {
 	margin: 0px;
 }
 
-.page-nav > ul > li {
+.page-nav li {
 	display: inline-block;
 	list-style-type: none;
 	clear: none;
 }
 
-.page-nav > ul > li > a {
+.page-nav a {
 	display: block;
 	padding: 10px 20px 0;
 	height: 50px;
@@ -213,14 +213,14 @@ footer > .page-nav {
 	border-bottom: none;
 }
 
-.page-nav > ul > li > a:hover {
+.page-nav a:hover {
 	color: #000;
 }
 
 .nav-newer { float: left; }
 .nav-older { float: right; }
-.nav-newer > a { padding-left: 10px; }
-.nav-older > a { padding-right: 10px; }
+.nav-newer a { padding-left: 10px; }
+.nav-older a { padding-right: 10px; }
 
 .nav-home { border-left: 1px solid #ccc; }
 .nav-home, .nav-toc { border-right: 1px solid #ccc; }
@@ -266,10 +266,6 @@ code {
 .post-title {
 	font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
 	margin: 2px 0 15px;
-}
-
-.category-title:first-letter {
-	text-transform: uppercase;
 }
 
 .post-description {
@@ -327,7 +323,7 @@ h1 {
 	display: block;
 }
 
-.category h2 {
+.post-group h2 {
 	font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
 	margin: 30px 0 10px;
 }
@@ -373,14 +369,15 @@ pre code {
 }
 
 @media only screen and (max-width: 505px) {
-	.nav-newer > a > span { display: none; }
-	.nav-older > a > span { display: none; }
+	.nav-newer span { display: none; }
+	.nav-older span { display: none; }
 }
 
 @media only screen and (max-width: 445px) {
-	/* Hack: Increase specificity to override other rules. Should use BEM. */
-	.page-nav > ul > li.nav-newer > a { padding-right: 0; }
-	.page-nav > ul > li.nav-older > a { padding-left: 0; }
-	.page-nav > ul > li.nav-home { display: none; }
-	.page-nav > ul > li.nav-toc { border-left: 1px solid #ccc; }
+	.nav-newer a { padding-right: 0; }
+	.nav-older a { padding-left: 0; }
+	/* Note: The ".page-nav" is necessary otherwise this has lower specificity
+	than the ".page-nav li" rule. */
+	.page-nav .nav-home { display: none; }
+	.page-nav .nav-toc { border-left: 1px solid #ccc; }
 }

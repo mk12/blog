@@ -1,9 +1,9 @@
 {{ define "body" }}
 	{{ .Render "list-header" }}
 
-	<section id="posts">
+	<section>
 	{{ range .Data.Pages.GroupByDate "2006" }}
-		<section class="category">
+		<section class="post-group">
 			<h2>{{ .Key }}</h2>
 			<ul>
 			{{ range .Pages }}

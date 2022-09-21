@@ -1,10 +1,10 @@
 {{ define "body" }}
 	{{ .Render "list-header" }}
 
-	<section id="posts">
+	<section>
 	{{ range $key, $term := .Data.Terms.Alphabetical }}
-		<section class="category">
-			<h2 class="category-title">{{ title $term.Name | markdownify }}</h2>
+		<section class="post-group">
+			<h2>{{ title $term.Name | markdownify }}</h2>
 			<ul>
 			{{ range $term.Pages.ByDate.Reverse }}
 				{{ .Render "li" }}
