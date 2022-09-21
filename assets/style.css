@@ -1,7 +1,7 @@
 /* Reset */
 
 html, body, div, span, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, code, em, 
-ol, ul, li, table, thead, tbody, tfoot, tr, th, td,
+ol, ul, li, table, thead, tbody, tfoot, tr, th, td, hr,
 article, figure, figcaption, nav, section, summary {
 	border: 0;
 	font-size: 100%;
@@ -74,10 +74,6 @@ a {
 a:hover, a:active {
 	color: #b00;
 	border-bottom: 1px solid #b00;
-}
-
-a.important {
-	color: #b00;
 }
 
 p { margin-bottom: 1.2em; }
@@ -166,6 +162,8 @@ td, th {
 
 th {
 	font-family: 'Equity Caps B';
+	/* The Markdown syntax for left-aligning also left aligns the <th> with an
+	inline style attribute, but we want these to always be centred. */
 	text-align: center !important;
 	text-transform: lowercase;
 }
@@ -178,12 +176,6 @@ hr {
 
 header {
 	margin-bottom: 50px;
-}
-
-#error-404 {
-	font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
-	text-align: center;
-	margin-top: 100px;
 }
 
 .page-nav {
