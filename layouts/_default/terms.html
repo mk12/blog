@@ -1,17 +1,17 @@
 {{ define "body" }}
-	{{ .Render "list-header" }}
+  {{ .Render "list-header" }}
 
-	<section>
-	{{ range $key, $term := .Data.Terms.Alphabetical }}
-		<section class="post-group">
-			<h2>{{ title $term.Name | markdownify }}</h2>
-			<ul>
-			{{ range $term.Pages.ByDate.Reverse }}
-				{{ .Render "li" }}
-			{{ end }}
-			</ul>
-		</section>
-	{{ end }}
-	</section>
-	<div class="after-posts"></div>
+  <section>
+    {{ range $key, $term := .Data.Terms.Alphabetical }}
+      <section class="post-group">
+        <h2>{{ title $term.Name | markdownify }}</h2>
+        <ul>
+          {{ range $term.Pages.ByDate.Reverse }}
+            {{ .Render "li" }}
+          {{ end }}
+        </ul>
+      </section>
+    {{ end }}
+  </section>
+  <div class="after-posts"></div>
 {{ end }}

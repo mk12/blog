@@ -1,10 +1,10 @@
 <section class="summary">
-	<span class="post-meta">{{ .Date.Format "Monday, 2 January 2006" }}</span>
-	<h2 class="post-title"><a class="no-ul" href="{{ .Permalink }}">{{ markdownify .Title }}</a></h2>
-	{{ .Summary }}
-	{{ if .Truncated }}
-	<div class="read-more-link">
-		<a class="no-ul subtle" href="{{ .Permalink }}">Read more&nbsp;»</a>
-	</div>
-	{{ end }}
+  <span class="post-meta">{{ .Date.Format "Monday, 2 January 2006" }}</span>
+  <h2 class="post-title"><a class="no-ul" href="{{ .Permalink }}">{{ markdownify .Title }}</a></h2>
+  {{ .Summary }}
+  {{ if .Truncated }}
+    <div class="read-more-link">
+      <a class="no-ul subtle" href="{{ .Permalink }}">Read more&nbsp;»</a>
+    </div>
+  {{ end }}
 </section>

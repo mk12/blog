@@ -1,13 +1,13 @@
 <figure>
-	{{ with .Get "tcap" }}
-		<figcaption class="above">{{ markdownify . }}</figcaption>
-	{{ end }}
-	{{ if .Get "src" | path.Ext | eq ".svg" }}
-	{{ (resources.Get (.Get "src")).Content | safeHTML }}
-	{{ else }}
-	<img src="{{ .Page.Site.BaseURL }}images/{{ .Get "src" }}">
-	{{ end }}
-	{{ with .Get "cap" }}
-		<figcaption>{{ markdownify . }}</figcaption>
-	{{ end }}
+  {{ with .Get "tcap" }}
+    <figcaption class="above">{{ markdownify . }}</figcaption>
+  {{ end }}
+  {{ if .Get "src" | path.Ext | eq ".svg" }}
+    {{ (resources.Get (.Get "src")).Content | safeHTML }}
+  {{ else }}
+    <img src="{{ .Page.Site.BaseURL }}images/{{ .Get "src" }}">
+  {{ end }}
+  {{ with .Get "cap" }}
+    <figcaption>{{ markdownify . }}</figcaption>
+  {{ end }}
 </figure>

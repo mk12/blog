@@ -3,77 +3,77 @@
 html, body, div, span, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, code, em, 
 ol, ul, li, table, thead, tbody, tfoot, tr, th, td, hr,
 article, figure, figcaption, nav, section, summary {
-	border: 0;
-	font-size: 100%;
-	font: inherit;
-	vertical-align: baseline;
-	margin: 0;
-	padding: 0
+  border: 0;
+  font-size: 100%;
+  font: inherit;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0
 }
 
 /* Fonts */
 
 @font-face {
-	font-family: 'Concourse T3';
-	src: url('{{ .Site.Params.fontdir }}/concourse_3_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
+  font-family: 'Concourse T3';
+  src: url('{{ .Site.Params.fontdir }}/concourse_3_regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
 }
 
 @font-face {
-	font-family: 'Concourse T3';
-	src: url('{{ .Site.Params.fontdir }}/concourse_3_bold.woff2') format('woff2');
-	font-weight: bold;
-	font-style: normal;
+  font-family: 'Concourse T3';
+  src: url('{{ .Site.Params.fontdir }}/concourse_3_bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
 }
 
 @font-face {
-	font-family: 'Equity B';
-	src: url('{{ .Site.Params.fontdir }}/equity_b_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
+  font-family: 'Equity B';
+  src: url('{{ .Site.Params.fontdir }}/equity_b_regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
 }
 
 @font-face {
-	font-family: 'Equity B';
-	src: url('{{ .Site.Params.fontdir }}/equity_b_italic.woff2') format('woff2');
-	font-weight: normal;
-	font-style: italic;
+  font-family: 'Equity B';
+  src: url('{{ .Site.Params.fontdir }}/equity_b_italic.woff2') format('woff2');
+  font-weight: normal;
+  font-style: italic;
 }
 
 @font-face {
-	font-family: 'Equity B';
-	src: url('{{ .Site.Params.fontdir }}/equity_b_bold.woff2') format('woff2');
-	font-weight: bold;
-	font-style: normal;
+  font-family: 'Equity B';
+  src: url('{{ .Site.Params.fontdir }}/equity_b_bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
 }
 
 @font-face {
-	font-family: 'Equity Caps B';
-	src: url('{{ .Site.Params.fontdir }}/equity_b_caps_regular.woff2') format('woff2');
-	font-weight: normal;
-	font-style: normal;
+  font-family: 'Equity Caps B';
+  src: url('{{ .Site.Params.fontdir }}/equity_b_caps_regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
 }
 
 /* General (previously shared with rest of website) */
 
 body {
-	font: 24px/1.4 'Equity B', Georgia, serif;
-	padding: 0 10px;
-	max-width: 720px;
-	margin: 0 auto;
-	text-rendering: optimizeLegibility;
+  font: 24px/1.4 'Equity B', Georgia, serif;
+  padding: 0 10px;
+  max-width: 720px;
+  margin: 0 auto;
+  text-rendering: optimizeLegibility;
 }
 
 a {
-	text-decoration: none;
-	color: #000;
-	border-bottom: 1px dotted #999;
+  text-decoration: none;
+  color: #000;
+  border-bottom: 1px dotted #999;
 }
 
 a:hover, a:active {
-	color: #b00;
-	border-bottom: 1px solid #b00;
+  color: #b00;
+  border-bottom: 1px solid #b00;
 }
 
 p { margin-bottom: 1.2em; }
@@ -81,140 +81,140 @@ strong { font-weight: bold }
 em { font-style: italic; }
 
 blockquote {
-	font-family: 'Concourse T3';
-	background-color: #f6f6f6;
-	margin-bottom: 1.2em;
-	padding: 0.75em 1em;
+  font-family: 'Concourse T3';
+  background-color: #f6f6f6;
+  margin-bottom: 1.2em;
+  padding: 0.75em 1em;
 }
 
 blockquote p:last-child {
-	margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 blockquote em {
-	font-style: normal;
-	font-weight: bold;
+  font-style: normal;
+  font-weight: bold;
 }
 
 figure {
-	margin: 2.0em 0;
+  margin: 2.0em 0;
 }
 
 figure img, figure svg {
-	width: 100%;
-	height: auto;
-	max-width: 100%;
-	max-height: 600px;
-	display: block;
-	margin: 0 auto;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  max-height: 600px;
+  display: block;
+  margin: 0 auto;
 }
 
 figcaption {
-	text-align: center;
-	font: 20px 'Concourse T3', Helvetica, Arial, sans-serif;
-	margin-top: 1em;
+  text-align: center;
+  font: 20px 'Concourse T3', Helvetica, Arial, sans-serif;
+  margin-top: 1em;
 }
 
 figcaption.above {
-	margin-top: 0px;
-	margin-bottom: 1em;
+  margin-top: 0px;
+  margin-bottom: 1em;
 }
 
 sup {
-	font-size: 75%;
-	position: relative;
-	bottom: 0.5em;
+  font-size: 75%;
+  position: relative;
+  bottom: 0.5em;
 }
 
 sub {
-	font-size: 75%;
-	position: relative;
-	top: 0.25em;
+  font-size: 75%;
+  position: relative;
+  top: 0.25em;
 }
 
 del {
-	text-decoration: line-through;
+  text-decoration: line-through;
 }
 
 ul, ol, dl { margin-bottom: 1.2em; }
 
 ul > li {
-	list-style-type: disc;
+  list-style-type: disc;
 }
 
 ol > li {
-	list-style-type: decimal;
+  list-style-type: decimal;
 }
 
 table {
-	margin: 0 auto 1.8em;
-	border-collapse: collapse;
-	border-spacing: 0;
+  margin: 0 auto 1.8em;
+  border-collapse: collapse;
+  border-spacing: 0;
 }
 
 tr {
-	border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
 }
 
 td, th {
-	padding: 5px 20px;
+  padding: 5px 20px;
 }
 
 th {
-	font-family: 'Equity Caps B';
-	/* The Markdown syntax for left-aligning also left aligns the <th> with an
-	inline style attribute, but we want these to always be centred. */
-	text-align: center !important;
-	text-transform: lowercase;
+  font-family: 'Equity Caps B';
+  /* The Markdown syntax for left-aligning also left aligns the <th> with an
+  inline style attribute, but we want these to always be centred. */
+  text-align: center !important;
+  text-transform: lowercase;
 }
 
 hr {
-	border: 0;
-	border-bottom: 3px double #ccc;
-	margin: 2em auto;
+  border: 0;
+  border-bottom: 3px double #ccc;
+  margin: 2em auto;
 }
 
 header {
-	margin-bottom: 50px;
+  margin-bottom: 50px;
 }
 
 .page-nav {
-	text-align: center;
-	font-family: 'Equity Caps B', Georgia, serif;
-	text-transform: lowercase;
+  text-align: center;
+  font-family: 'Equity Caps B', Georgia, serif;
+  text-transform: lowercase;
 }
 
 header .page-nav {
-	border-bottom: 1px solid #ccc;
-	margin-bottom: 60px;
-	margin-top: 0px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 60px;
+  margin-top: 0px;
 }
 
 footer .page-nav {
-	border-top: 1px solid #ccc;
-	margin-top: 50px;
+  border-top: 1px solid #ccc;
+  margin-top: 50px;
 }
 
 .page-nav ul {
-	margin: 0px;
+  margin: 0px;
 }
 
 .page-nav li {
-	display: inline-block;
-	list-style-type: none;
-	clear: none;
+  display: inline-block;
+  list-style-type: none;
+  clear: none;
 }
 
 .page-nav a {
-	display: block;
-	padding: 10px 20px 0;
-	height: 50px;
-	color: #999;
-	border-bottom: none;
+  display: block;
+  padding: 10px 20px 0;
+  height: 50px;
+  color: #999;
+  border-bottom: none;
 }
 
 .page-nav a:hover {
-	color: #000;
+  color: #000;
 }
 
 .nav-newer { float: left; }
@@ -226,16 +226,16 @@ footer .page-nav {
 .nav-home, .nav-toc { border-right: 1px solid #ccc; }
 
 .copyright {
-	border-top: 1px solid #ccc;
-	text-align: center;
-	font-family: 'Equity Caps B', Georgia, serif;
-	text-transform: lowercase;
-	padding-top: 5px;
-	margin-bottom: 10px;
+  border-top: 1px solid #ccc;
+  text-align: center;
+  font-family: 'Equity Caps B', Georgia, serif;
+  text-transform: lowercase;
+  padding-top: 5px;
+  margin-bottom: 10px;
 }
 
 .copyright p {
-	margin: 0;
+  margin: 0;
 }
 
 /* Blog-specific (originally equanimity.css) */
@@ -245,139 +245,139 @@ footer .page-nav {
 .subtle:hover { color: #b00; }
 
 code {
-	font: 22px 'Source Code Pro', 'Courier New', monospace;
-	white-space: pre;
-	word-break: normal;
-	word-wrap: normal;
+  font: 22px 'Source Code Pro', 'Courier New', monospace;
+  white-space: pre;
+  word-break: normal;
+  word-wrap: normal;
 }
 
 .verse {
-	font-style: italic;
-	width: auto;
-	margin: 0 auto;
+  font-style: italic;
+  width: auto;
+  margin: 0 auto;
 }
 
 .blog-title {
-	font: 72px 'Equity Caps B', Helvetica, Arial, sans-serif;
-	text-align: center;
-	margin: 40px 0 30px;
+  font: 72px 'Equity Caps B', Helvetica, Arial, sans-serif;
+  text-align: center;
+  margin: 40px 0 30px;
 }
 
 .post-title {
-	font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
-	margin: 2px 0 15px;
+  font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
+  margin: 2px 0 15px;
 }
 
 .post-description {
-	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif; 
-	color: #888;
-	margin: 0 0 30px;
+  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif; 
+  color: #888;
+  margin: 0 0 30px;
 }
 
 h1 {
-	font: bold 28px 'Equity B', Helvetica, Arial, sans-serif;
-	margin: 20px 0 10px;
+  font: bold 28px 'Equity B', Helvetica, Arial, sans-serif;
+  margin: 20px 0 10px;
 }
 
 .post-meta {
-	font: 20px 'Equity B', Helvetica, Arial, sans-serif;
-	color: #888;
+  font: 20px 'Equity B', Helvetica, Arial, sans-serif;
+  color: #888;
 }
 
 .read-more-link {
-	text-align: right;
-	font: 22px 'Concourse T3', Helvetica, Arial, sans-serif;
+  text-align: right;
+  font: 22px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
 .list-links {
-	text-align: center;
-	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
-	margin-bottom: 60px;
+  text-align: center;
+  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+  margin-bottom: 60px;
 }
 
 .list-links a {
-	display: block;
-	margin-bottom: 15px;
+  display: block;
+  margin-bottom: 15px;
 }
 
 .summary {
-	margin-bottom: 25px;
+  margin-bottom: 25px;
 }
 
 .summary p {
-	margin-bottom: 15px;
+  margin-bottom: 15px;
 }
 
 .list-header {
-	margin: 40px 0 30px;
+  margin: 40px 0 30px;
 }
 
 .list-header a {
-	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
 .list-header h1 {
-	margin-top: 10px;
-	font: 42px 'Equity B', Helvetica, Arial, sans-serif;
-	font-style: italic;
-	display: block;
+  margin-top: 10px;
+  font: 42px 'Equity B', Helvetica, Arial, sans-serif;
+  font-style: italic;
+  display: block;
 }
 
 .post-group h2 {
-	font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
-	margin: 30px 0 10px;
+  font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
+  margin: 30px 0 10px;
 }
 
 li.post-li {
-	font: 26px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 26px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
 .after-posts {
-	margin-bottom: 60px;
+  margin-bottom: 60px;
 }
 
 .footnotes {
-	font-size: 22px;
+  font-size: 22px;
 }
 
 .footnotes code {
-	font-size: 20px;
+  font-size: 20px;
 }
 
 .footnotes p {
-	margin: 0;
+  margin: 0;
 }
 
 pre {
-	margin: 1.2em -70px;
-	background-color: #f6f6f6;
-	padding: 0.75em 1em;
-	line-height: 16px;
-	font: 17px 'Source Code Pro', 'Courier New', monospace;
+  margin: 1.2em -70px;
+  background-color: #f6f6f6;
+  padding: 0.75em 1em;
+  line-height: 16px;
+  font: 17px 'Source Code Pro', 'Courier New', monospace;
 }
 
 pre code {
-	font: 17px 'Source Code Pro', 'Courier New', monospace;
+  font: 17px 'Source Code Pro', 'Courier New', monospace;
 }
 
 @media only screen and (max-width: 870px) {
-	pre {
-		margin-left: 0;
-		margin-right: 0;
-		background: #fff;
-	}
+  pre {
+    margin-left: 0;
+    margin-right: 0;
+    background: #fff;
+  }
 }
 
 @media only screen and (max-width: 505px) {
-	.nav-newer span { display: none; }
-	.nav-older span { display: none; }
+  .nav-newer span { display: none; }
+  .nav-older span { display: none; }
 }
 
 @media only screen and (max-width: 445px) {
-	.nav-newer a { padding-right: 0; }
-	.nav-older a { padding-left: 0; }
-	/* Note: The ".page-nav" is necessary otherwise this has lower specificity
-	than the ".page-nav li" rule. */
-	.page-nav .nav-home { display: none; }
-	.page-nav .nav-toc { border-left: 1px solid #ccc; }
+  .nav-newer a { padding-right: 0; }
+  .nav-older a { padding-left: 0; }
+  /* Note: The ".page-nav" is necessary otherwise this has lower specificity
+  than the ".page-nav li" rule. */
+  .page-nav .nav-home { display: none; }
+  .page-nav .nav-toc { border-left: 1px solid #ccc; }
 }
