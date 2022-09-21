@@ -87,11 +87,11 @@ blockquote {
 	padding: 0.75em 1em;
 }
 
-blockquote > p:last-child {
+blockquote p:last-child {
 	margin-bottom: 0;
 }
 
-blockquote > p > em {
+blockquote em {
 	font-style: normal;
 	font-weight: bold;
 }
@@ -100,7 +100,7 @@ figure {
 	margin: 2.0em 0;
 }
 
-figure > img, figure > svg {
+figure img, figure svg {
 	width: 100%;
 	height: auto;
 	max-width: 100%;
@@ -109,13 +109,13 @@ figure > img, figure > svg {
 	margin: 0 auto;
 }
 
-figure > figcaption {
+figcaption {
 	text-align: center;
 	font: 20px 'Concourse T3', Helvetica, Arial, sans-serif;
 	margin-top: 1em;
 }
 
-figure > figcaption.above {
+figcaption.above {
 	margin-top: 0px;
 	margin-bottom: 1em;
 }
@@ -234,15 +234,15 @@ footer > .page-nav {
 	margin-bottom: 10px;
 }
 
-#copyright > p {
+#copyright p {
 	margin: 0;
 }
 
 /* Blog-specific (originally equanimity.css) */
 
-a.no-ul { border: none; }
-a.subtle { color: #888; }
-a.subtle:hover { color: #b00; }
+.no-ul, .no-ul:hover { border: none; }
+.subtle { color: #888; }
+.subtle:hover { color: #b00; }
 
 code {
 	font: 22px 'Source Code Pro', 'Courier New', monospace;
@@ -299,7 +299,7 @@ h1 {
 	margin-bottom: 60px;
 }
 
-#list-links > a {
+#list-links a {
 	display: block;
 	margin-bottom: 15px;
 }
@@ -308,7 +308,7 @@ h1 {
 	margin-bottom: 25px;
 }
 
-.summary > p {
+.summary p {
 	margin-bottom: 15px;
 }
 
@@ -316,18 +316,18 @@ h1 {
 	margin: 40px 0 30px;
 }
 
-.list-header > a {
+.list-header a {
 	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
-.list-header > h1 {
+.list-header h1 {
 	margin-top: 10px;
 	font: 42px 'Equity B', Helvetica, Arial, sans-serif;
 	font-style: italic;
 	display: block;
 }
 
-.category > h2 {
+.category h2 {
 	font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
 	margin: 30px 0 10px;
 }
@@ -360,7 +360,7 @@ pre {
 	font: 17px 'Source Code Pro', 'Courier New', monospace;
 }
 
-pre > code {
+pre code {
 	font: 17px 'Source Code Pro', 'Courier New', monospace;
 }
 
