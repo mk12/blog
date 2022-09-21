@@ -225,7 +225,7 @@ footer > .page-nav {
 .nav-home { border-left: 1px solid #ccc; }
 .nav-home, .nav-toc { border-right: 1px solid #ccc; }
 
-#copyright {
+.copyright {
 	border-top: 1px solid #ccc;
 	text-align: center;
 	font-family: 'Equity Caps B', Georgia, serif;
@@ -234,7 +234,7 @@ footer > .page-nav {
 	margin-bottom: 10px;
 }
 
-#copyright p {
+.copyright p {
 	margin: 0;
 }
 
@@ -257,7 +257,7 @@ code {
 	margin: 0 auto;
 }
 
-#blog-title {
+.blog-title {
 	font: 72px 'Equity Caps B', Helvetica, Arial, sans-serif;
 	text-align: center;
 	margin: 40px 0 30px;
@@ -293,13 +293,13 @@ h1 {
 	font: 22px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
-#list-links {
+.list-links {
 	text-align: center;
 	font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
 	margin-bottom: 60px;
 }
 
-#list-links a {
+.list-links a {
 	display: block;
 	margin-bottom: 15px;
 }
@@ -336,7 +336,7 @@ li.post-li {
 	font: 26px 'Concourse T3', Helvetica, Arial, sans-serif;
 }
 
-#after-posts {
+.after-posts {
 	margin-bottom: 60px;
 }
 
