@@ -1,4 +1,4 @@
-# Hugo
 /public
 /resources
 .hugo_build.lock
+/config/development/config.toml
