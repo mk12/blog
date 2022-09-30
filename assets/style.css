@@ -49,7 +49,7 @@ article, figure, figcaption, nav, section, summary {
 }
 
 @font-face {
-  font-family: 'Equity Caps B';
+  font-family: 'Equity B Caps';
   src: url('{{ .Site.Params.fontdir }}/equity_b_caps_regular.woff2') format('woff2');
   font-weight: normal;
   font-style: normal;
@@ -161,7 +161,7 @@ td, th {
 }
 
 th {
-  font-family: 'Equity Caps B';
+  font-family: 'Equity B Caps';
   /* The Markdown syntax for left-aligning also left aligns the <th> with an
   inline style attribute, but we want these to always be centred. */
   text-align: center !important;
@@ -180,7 +180,7 @@ header {
 
 .page-nav {
   text-align: center;
-  font-family: 'Equity Caps B', Georgia, serif;
+  font-family: 'Equity B Caps', Georgia, serif;
   text-transform: lowercase;
 }
 
@@ -228,7 +228,7 @@ footer .page-nav {
 .copyright {
   border-top: 1px solid #ccc;
   text-align: center;
-  font-family: 'Equity Caps B', Georgia, serif;
+  font-family: 'Equity B Caps', Georgia, serif;
   text-transform: lowercase;
   padding-top: 5px;
   margin-bottom: 10px;
@@ -258,7 +258,7 @@ code {
 }
 
 .blog-title {
-  font: 72px 'Equity Caps B', Helvetica, Arial, sans-serif;
+  font: 72px 'Equity B Caps', Helvetica, Arial, sans-serif;
   text-align: center;
   margin: 40px 0 30px;
 }
