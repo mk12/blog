@@ -14,14 +14,14 @@ article, figure, figcaption, nav, section, summary {
 /* Fonts */
 
 @font-face {
-  font-family: 'Concourse T3';
+  font-family: 'Concourse 3';
   src: url('{{ .Site.Params.fontdir }}/concourse_3_regular.woff2') format('woff2');
   font-weight: normal;
   font-style: normal;
 }
 
 @font-face {
-  font-family: 'Concourse T3';
+  font-family: 'Concourse 3';
   src: url('{{ .Site.Params.fontdir }}/concourse_3_bold.woff2') format('woff2');
   font-weight: bold;
   font-style: normal;
@@ -81,7 +81,7 @@ strong { font-weight: bold }
 em { font-style: italic; }
 
 blockquote {
-  font-family: 'Concourse T3';
+  font-family: 'Concourse 3';
   background-color: #f6f6f6;
   margin-bottom: 1.2em;
   padding: 0.75em 1em;
@@ -111,7 +111,7 @@ figure img, figure svg {
 
 figcaption {
   text-align: center;
-  font: 20px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 20px 'Concourse 3', Helvetica, Arial, sans-serif;
   margin-top: 1em;
 }
 
@@ -264,12 +264,12 @@ code {
 }
 
 .post-title {
-  font: bold 36px 'Concourse T3', Helvetica, Arial, sans-serif; 
+  font: bold 36px 'Concourse 3', Helvetica, Arial, sans-serif; 
   margin: 2px 0 15px;
 }
 
 .post-description {
-  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif; 
+  font: 28px 'Concourse 3', Helvetica, Arial, sans-serif; 
   color: #888;
   margin: 0 0 30px;
 }
@@ -286,12 +286,12 @@ h1 {
 
 .read-more-link {
   text-align: right;
-  font: 22px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 22px 'Concourse 3', Helvetica, Arial, sans-serif;
 }
 
 .list-links {
   text-align: center;
-  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 28px 'Concourse 3', Helvetica, Arial, sans-serif;
   margin-bottom: 60px;
 }
 
@@ -313,7 +313,7 @@ h1 {
 }
 
 .list-header a {
-  font: 28px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 28px 'Concourse 3', Helvetica, Arial, sans-serif;
 }
 
 .list-header h1 {
@@ -324,12 +324,12 @@ h1 {
 }
 
 .post-group h2 {
-  font: bold 42px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: bold 42px 'Concourse 3', Helvetica, Arial, sans-serif;
   margin: 30px 0 10px;
 }
 
 li.post-li {
-  font: 26px 'Concourse T3', Helvetica, Arial, sans-serif;
+  font: 26px 'Concourse 3', Helvetica, Arial, sans-serif;
 }
 
 .after-posts {
