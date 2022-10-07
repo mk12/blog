@@ -1,4 +1,5 @@
+.hugo_build.lock
 /public
 /resources
-.hugo_build.lock
-/config/development/config.toml
+/config/development/module.toml
+/config/production/module.toml

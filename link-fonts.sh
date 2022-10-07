@@ -2,7 +2,7 @@
 
 set -eufo pipefail
 
-config=config/development/config.toml
+config=config/development/module.toml
 
 usage() {
     cat <<EOS
@@ -12,7 +12,7 @@ Write $config so that Hugo will look for .woff2 font files in PATH
 when running in the development environment.
 
 In production, the fonts are located elsewhere in the website and that relative
-path is provided via HUGO_PARAMS_FONTDIR.
+path is provided via HUGO_PARAMS_FONTPATH.
 EOS
 }
 
@@ -31,7 +31,7 @@ fi
 mkdir -p "$(dirname "$config")"
 
 cat <<EOS > "$config"
-[[module.mounts]]
+[[mounts]]
 source = "$path"
 target = "static/fonts"
 includeFiles = "/*.woff2"

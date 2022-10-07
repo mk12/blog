@@ -7,6 +7,7 @@
   {{ $style := resources.Get "style.css" | resources.ExecuteAsTemplate "style.css" . | toCSS }}
   <link rel="stylesheet" href="{{ $style.Permalink }}">
   <link rel='stylesheet' href='//fonts.googleapis.com/css?family=Source+Code+Pro'>
+  {{ .Render "analytics" }}
 </head>
 <body>
   {{ block "body" . }}
