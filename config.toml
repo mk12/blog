@@ -1,17 +1,10 @@
-# Override this with HUGO_BASE_URL.
-baseURL = "/"
-
-# I considered making this true to enable browsing without running a local
-# server, but there are several problems. First, Hugo's relative paths seem to
-# go all the way up to the root even when they don't need to. Second, I would
-# have to append /index.html to links or enable uglyURLs (breaking existing
-# URLs), otherwise it still requires a server. Third, I still can't get rid of
-# baseURL because it's needed for e.g. the "Blog" link on every post.
-relativeURLs = false
-
 title = "Mitchell Kember"
 languageCode = "en-us"
 pygmentsStyle = "friendly"
+
+# Make browsing HTML files locally work.
+relativeURLs = true
+uglyURLS = true
 
 [taxonomies]
 category = "categories"
@@ -19,10 +12,6 @@ category = "categories"
 [params]
 author = "Mitchell Kember"
 homepage = "https://mitchellkember.com"
-
-# Overide this with HUGO_PARAMS_FONTPATH.
-# See also link-fonts.sh.
-fontPath = "fonts"
 
 [markup.goldmark.renderer]
 # Required for some HTML embedding, e.g. the verse.html shortcode.

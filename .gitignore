@@ -1,5 +1,5 @@
 .hugo_build.lock
 /public
 /resources
-/config/development/module.toml
-/config/production/module.toml
+/fonts
+extra.toml

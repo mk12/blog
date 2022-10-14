@@ -4,10 +4,12 @@ This is the source for my personal blog. It uses [Hugo].
 
 I host it at https://mitchellkember.com/blog.
 
-## Build
+## Usage
 
-Run `hugo` to build.
+Make `./fonts` a symlink to the directory contains Equity, Concourse, and Triplicate `.woff2` fonts.
 
-Run `hugo server -w` to run a server and rebuild on save.
+Run `make` to build the website.
+
+Run `make serve` to serve and live reload the website.
 
 [Hugo]: https://gohugo.io
