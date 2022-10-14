@@ -10,7 +10,7 @@
   </section>
 
   <div class="list-links">
-    <a class="no-ul subtle" href="{{ .Site.BaseURL }}post/">Older posts&nbsp;»</a>
-    <a class="no-ul subtle" href="{{ .Site.BaseURL }}categories/">Categories&nbsp;»</a>
+    <a class="no-ul subtle" href="{{ relref . "/post" }}">Older posts&nbsp;»</a>
+    <a class="no-ul subtle" href="{{ relref . "/categories" }}">Categories&nbsp;»</a>
   </div>
 {{ end }}

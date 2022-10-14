@@ -4,7 +4,7 @@
   <section>
     {{ range $key, $term := .Data.Terms.Alphabetical }}
       <section class="post-group">
-        <h2>{{ title $term.Name | markdownify }}</h2>
+        <h2><a class="no-ul" href="{{ $term.Page.Permalink }}">{{ title $term.Name | markdownify }}</a></h2>
         <ul>
           {{ range $term.Pages.ByDate.Reverse }}
             {{ .Render "li" }}

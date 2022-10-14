@@ -3,9 +3,9 @@
     <figcaption class="above">{{ markdownify . }}</figcaption>
   {{ end }}
   {{ if .Get "src" | path.Ext | eq ".svg" }}
-    {{ (resources.Get (.Get "src")).Content | safeHTML }}
+    {{ (resources.Get (path.Join "svg" (.Get "src"))).Content | safeHTML }}
   {{ else }}
-    <img src="{{ .Page.Site.BaseURL }}images/{{ .Get "src" }}">
+    <img src="/images/{{ .Get "src" }}">
   {{ end }}
   {{ with .Get "cap" }}
     <figcaption>{{ markdownify . }}</figcaption>
