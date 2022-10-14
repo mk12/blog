@@ -6,6 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {{ $style := resources.Get "css/style.css" | resources.ExecuteAsTemplate "style.css" . | toCSS }}
   <link rel="stylesheet" href="{{ $style.Permalink }}">
+  {{ if .Params.math }}
+    <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML.js"></script>
+  {{ end }}
   {{ .Render "analytics" }}
 </head>
 <body>
