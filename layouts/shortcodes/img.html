@@ -5,7 +5,7 @@
   {{ if .Get "src" | path.Ext | eq ".svg" }}
     {{ (resources.Get (path.Join "svg" (.Get "src"))).Content | safeHTML }}
   {{ else }}
-    <img src="/images/{{ .Get "src" }}">
+    <img src="{{ (.Page.Resources.GetMatch (.Get "src")).Permalink }}">
   {{ end }}
   {{ with .Get "cap" }}
     <figcaption>{{ markdownify . }}</figcaption>
