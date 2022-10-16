@@ -1,7 +1,7 @@
 /* Reset */
 
 html, body, div, span, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, code, em, 
-ol, ul, li, table, thead, tbody, tfoot, tr, th, td, hr,
+sub, sup, ol, ul, li, table, thead, tbody, tfoot, tr, th, td, hr,
 article, figure, figcaption, nav, section, summary {
   border: 0;
   font-size: 100%;
