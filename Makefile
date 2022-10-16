@@ -10,12 +10,14 @@ Targets:
 
 Variables:
 	DESTDIR    Destination directory
+	BASE_URL   Base URL of blog in website
 	FONT_PATH  Path to WOFF2 fonts relative to DESTDIR
 	ANALYTICS  HTML file to include for analytics
 endef
 
 .PHONY: all help check serve clean hugo
 
+BASE_URL ?= /
 DESTDIR ?= public
 FONT_PATH ?= ../fonts
 
@@ -23,6 +25,7 @@ fonts_basename := $(shell rg '/([^/]+\.woff2)' -r '$$1' -o assets/css/style.css)
 fonts := $(abspath $(fonts_basename:%=$(DESTDIR)/$(FONT_PATH)/%))
 
 define config
+baseURL = "$(BASE_URL)"
 [params]
 fontPath = "$(FONT_PATH)"
 $(if $(ANALYTICS),$(analytics_config),)

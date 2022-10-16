@@ -2,10 +2,6 @@ title = "Mitchell Kember"
 languageCode = "en-us"
 pygmentsStyle = "friendly"
 
-# Make browsing HTML files locally work.
-relativeURLs = true
-uglyURLS = true
-
 [taxonomies]
 category = "categories"
 
