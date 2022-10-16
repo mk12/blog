@@ -87,6 +87,11 @@ p { margin-bottom: 1.2em; }
 strong { font-weight: bold }
 em { font-style: italic; }
 
+.katex {
+  /* KaTeX CSS uses 1.21em, which is too big beside 1em Equity Text. */
+  font-size: 1.08em;
+}
+
 blockquote {
   font-family: 'Concourse 3';
   background-color: #f6f6f6;

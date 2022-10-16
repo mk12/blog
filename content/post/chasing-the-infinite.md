@@ -60,8 +60,8 @@ The _continuum hypothesis_ states that \\(\lvert\mathbb{R}\rvert=\aleph\_1\\), w
 
 Yet another counterintuitive fact about cardinalities is that \\(\lvert\mathbb{R}\rvert=\lvert\mathbb{R}^2\rvert\\). In other words, there are just as many points on the real number line as there are on the Cartesian plane. This is true even even though we can divide the plane into infinitely many lines. Consider a point \\((x,y)\\) on the plane, where
 
-\\begin{align}x &= \dots a\_3a\_2a\_1.d\_1d\_2d\_3\dots\\\\
-&y &= \dots b\_3b\_2b\_1.e\_1e\_2e\_3\dots\\end{align}
+\\begin{alignat}{3}x &= \dots~& a\_3a\_2a\_1&.d\_1d\_2d\_3&~\dots\\\\
+y &= \dots~& b\_3b\_2b\_1&.e\_1e\_2e\_3&~\dots\\end{alignat}
 We can construct a bijection[^4] &thinsp;\\(f\colon\mathbb{R}^2\to\mathbb{R}\\) by interleaving the digits:
 
 \\[f(x,y)=\dots a\_3b\_3a\_2b\_2a\_1b\_1.d\_1e\_1d\_2e\_2d\_3e\_3\dots\\]
