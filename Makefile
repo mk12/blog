@@ -12,6 +12,7 @@ Variables:
 	DESTDIR    Destination directory (default: $(default_destdir))
 	BASE_URL   Base URL of blog in website (default: $(default_base_url))
 	FONT_PATH  Path to WOFF2 fonts (default: $(default_font_path))
+	SITE_HOME  Website homepage URL relative to DESTDIR
 	ANALYTICS  HTML file to include for analytics
 endef
 
@@ -35,6 +36,7 @@ fontPath = "$(shell python3 -c '$\
 	import os.path; $\
 	print(os.path.relpath("$(FONT_PATH)", "$(DESTDIR)")) $\
 ')"
+$(if $(SITE_HOME),homepage = "$(abspath $(BASE_URL)/$(SITE_HOME))",)
 $(if $(ANALYTICS),$(analytics_config),)
 endef
 
