@@ -9,25 +9,32 @@ Targets:
 	clean  Remove build output
 
 Variables:
-	DESTDIR    Destination directory
-	BASE_URL   Base URL of blog in website
-	FONT_PATH  Path to WOFF2 fonts relative to DESTDIR
+	DESTDIR    Destination directory (default: $(default_destdir))
+	BASE_URL   Base URL of blog in website (default: $(default_base_url))
+	FONT_PATH  Path to WOFF2 fonts (default: $(default_font_path))
 	ANALYTICS  HTML file to include for analytics
 endef
 
 .PHONY: all help check serve clean hugo
 
-BASE_URL ?= /
-DESTDIR ?= public
-FONT_PATH ?= ../fonts
+default_destdir := public
+default_base_url := /
+default_font_path := fonts
+
+DESTDIR ?= $(default_destdir)
+BASE_URL ?= $(default_base_url)
+FONT_PATH ?= $(default_font_path)
 
 fonts_basename := $(shell rg '/([^/]+\.woff2)' -r '$$1' -o assets/css/style.css)
-fonts := $(abspath $(fonts_basename:%=$(DESTDIR)/$(FONT_PATH)/%))
+fonts := $(fonts_basename:%=$(FONT_PATH)/%)
 
 define config
 baseURL = "$(BASE_URL)"
 [params]
-fontPath = "$(FONT_PATH)"
+fontPath = "$(shell python3 -c '$\
+	import os.path; $\
+	print(os.path.relpath("$(FONT_PATH)", "$(DESTDIR)")) $\
+')"
 $(if $(ANALYTICS),$(analytics_config),)
 endef
 
@@ -44,7 +51,8 @@ define serve_config
 [parmas]
 fontPath = "fonts"
 [[module.mounts]]
-source = "$(realpath $(DESTDIR)/$(FONT_PATH))"
+# Use realpath because Hugo does not allow mounting from symlinks.
+source = "$(realpath $(FONT_PATH))"
 target = "static/fonts"
 includeFiles = "/*.woff2"
 endef
@@ -65,7 +73,7 @@ serve: hugo_args := serve -w
 serve: hugo
 
 clean:
-	rm -rf public resources
+	rm -rf $(default_destdir) resources
 
 $(fonts):
 	$(if $(wildcard $@),,$(error Missing font file $@))
