@@ -51,7 +51,7 @@ endef
 
 .SUFFIXES:
 
-all: hugo_args := -d $(DESTDIR)
+all: hugo_args := --quiet -d $(DESTDIR)
 all: hugo
 
 help:
@@ -68,7 +68,7 @@ clean:
 	rm -rf public resources
 
 $(fonts):
-	$(error Missing font file $@)
+	$(if $(wildcard $@),,$(error Missing font file $@))
 
 hugo: extra.toml $(fonts)
 	hugo --config config.toml,$< $(hugo_args)
