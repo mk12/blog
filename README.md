@@ -6,10 +6,12 @@ I host it at https://mitchellkember.com/blog.
 
 ## Usage
 
-Make `./fonts` a symlink to the directory contains Equity, Concourse, and Triplicate `.woff2` fonts.
+Run `make serve` to serve and live reload the blog. This requires a creating a `fonts` directory or symlink in the repository root containing the WOFF2 fonts.
 
-Run `make` to build the website.
+Run `make DESTDIR=/path/to/website FONT_URL=/path/to/fonts` to build the blog. `DESTDIR` is a fileystem path with `FONT_URL` is a relative URL where WOFF2 fonts are found in the final website. This assumes the blog is embedded in a larger website.
 
-Run `make serve` to serve and live reload the website.
+## Fonts
+
+This blog uses the fonts Equity, Concourse, and Triplicate. You can buy them at https://mbtype.com.
 
 [Hugo]: https://gohugo.io
