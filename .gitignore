@@ -1,5 +1,2 @@
-.hugo_build.lock
 /public
-/resources
 /fonts
-extra.toml
