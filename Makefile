@@ -2,10 +2,11 @@
 
 define usage
 Targets:
-	all    Build the blog
-	help   Show this help message
-	check  Run before committing
-	clean  Remove build output
+	all       Build the blog
+	help      Show this help message
+	check     Run before committing
+	validate  Validate HTML files
+	clean     Remove build output
 
 Variables:
 	DESTDIR    Destination directory (default: $(default_destdir))
@@ -14,13 +15,24 @@ Variables:
 	ANALYTICS  HTML file to include for analytics
 endef
 
-.PHONY: all help check clean
+.PHONY: all help check validate clean
 
 default_destdir := public
 default_font_url := ../../fonts
 
 DESTDIR ?= $(default_destdir)
 FONT_URL ?= $(default_font_url)
+
+src_posts := $(wildcard content/post/*.md)
+src_assets := $(wildcard assets/img/*.jpg)
+src_css := assets/css/style.css
+
+posts := $(src_posts:content/%.md=$(DESTDIR)/%/index.html)
+assets := $(src_assets:assets/%=$(DESTDIR)/%)
+css := $(DESTDIR)/style.css
+
+directories := $(DESTDIR) $(sort $(dir $(assets)))
+directories := $(directories:%/=%)
 
 .SUFFIXES:
 
@@ -31,8 +43,23 @@ help:
 	$(info $(usage))
 	@:
 
-check: all
+check: all validate
+
+validate: all
+	fd -g '*.html' $(DESTDIR) | xargs vnu
 
 clean:
 	rm -rf $(default_destdir)
 
+$(assets): $(DESTDIR)/%: | assets/%
+	ln -sfn $(CURDIR)/$(firstword $|) $@
+
+$(css): $(src_css)
+	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
+
+$(directories):
+	mkdir -p $@
+
+.SECONDEXPANSION:
+
+$(assets) $(css) $(directories): | $$(@D)
