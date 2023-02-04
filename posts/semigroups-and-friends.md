@@ -1,10 +1,10 @@
-+++
-title = "Semigroups and friends"
-description = "A gentle introduction to abstract algebra"
-categories = ["math"]
-math = true
-date = "2016-03-10T13:00:00-08:00"
-+++
+---
+title: "Semigroups and friends"
+description: "A gentle introduction to abstract algebra"
+categories: ["math"]
+math: true
+date: "2016-03-10T13:00:00-08:00"
+---
 
 What does it take for a semigroup to become a monoid? Why are all groups isomorphic to a group of permutations, and what does that even mean? When do I need to use a field rather than a plain old ring? But more importantly---what do all these questions have in common?
 

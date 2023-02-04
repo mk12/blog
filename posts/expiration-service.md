@@ -1,9 +1,9 @@
-+++
-title = "Building a file expiration service"
-description = "Adventures in a distributed file system"
-categories = ["software"]
-date = "2017-09-12T12:31:00-05:00"
-+++
+---
+title: "Building a file expiration service"
+description: "Adventures in a distributed file system"
+categories: ["software"]
+date: "2017-09-12T12:31:00-05:00"
+---
 
 This summer, I interned on the Data Warehouse Storage team at Facebook's Seattle office. It was a great experience overall, and I'm thankful for it. In those sixteen weeks, I learned a lot about infrastructure engineering, distributed systems, and data storage technology. In this article, I'm going to focus on the main project I worked on: building a file expiration service for a distributed file system.
 

@@ -1,9 +1,9 @@
-+++
-title = "Assertions and beyond"
-description = "Modern methods of testing software"
-categories = ["software"]
-date = "2015-08-02T23:47:34-04:00"
-+++
+---
+title: "Assertions and beyond"
+description: "Modern methods of testing software"
+categories: ["software"]
+date: "2015-08-02T23:47:34-04:00"
+---
 
 Writing code that works is hard. It doesn't matter how many times you've gone over it, or how many coworkers have reviewed it. A developer with any experience never expects it to work the first time. If you've just written a thousand lines and they seem to work as expected, your initial reaction should be suspicion---it will lead to less embarrassment in the long run.
 

@@ -1,9 +1,9 @@
-+++
-title = "First year reflection"
-description = "Thoughts on Software Engineering at Waterloo"
-categories = ["life"]
-date = "2015-04-04T11:35:32-04:00"
-+++
+---
+title: "First year reflection"
+description: "Thoughts on Software Engineering at Waterloo"
+categories: ["life"]
+date: "2015-04-04T11:35:32-04:00"
+---
 
 It's hard to believe that my first year of university is almost over. I would say that I survived first-year engineering, except that it's never been about surviving---I loved every minute of it. It's been an incredible experience, and from what I can see it's only going to get better. In this article I'm going to compress the past decade of my life in a few paragraphs as well as talk about misconceptions, strategies, discoveries, and other experiences.
 

@@ -1,9 +1,9 @@
-+++
-title = "Introduction to the λ-calculus"
-description = "Meet your new favourite formal system"
-categories = ["math"]
-date = "2015-04-07T12:48:12-04:00"
-+++
+---
+title: "Introduction to the λ-calculus"
+description: "Meet your new favourite formal system"
+categories: ["math"]
+date: "2015-04-07T12:48:12-04:00"
+---
 
 Most people think of Newton and Leibniz's infinitesimal calculus when they hear the word _calculus_, but the term is actually more general than that. A calculus is a formal system of calculation or reasoning, usually involving the  symbolic manipulation of expressions. The λ-calculus (_lambda calculus_) is one such system, and it is very important in computer science.
 

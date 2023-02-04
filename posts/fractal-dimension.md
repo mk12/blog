@@ -1,10 +1,10 @@
-+++
-title = "Fractal dimensions"
-description = "Exploring the gap between topological dimensions"
-categories = ["math"]
-math = true
-date = "2016-02-07T21:25:00-08:00"
-+++
+---
+title: "Fractal dimensions"
+description: "Exploring the gap between topological dimensions"
+categories: ["math"]
+math: true
+date: "2016-02-07T21:25:00-08:00"
+---
 
 Most of us are comfortable with the usual notion of _dimension_. We live in three-dimensional space, and we can easily picture one-dimensional lines and two-dimensional planes. Higher-dimensional spaces are much harder to visualize, but the generalization at least makes sense. Now what could it possibly mean to say that a space has 1.26186 dimensions?
 

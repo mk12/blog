@@ -1,10 +1,10 @@
-+++
-title = "The prisoner's dilemma"
-description = "Why people settle for a lose-lose scenario"
-categories = ["math"]
-math = true
-date = "2015-04-17T16:00:00-04:00"
-+++
+---
+title: "The prisoner's dilemma"
+description: "Why people settle for a lose-lose scenario"
+categories: ["math"]
+math: true
+date: "2015-04-17T16:00:00-04:00"
+---
 
 You've just been thrown in prison. You and another gang member were arrested, and now you are in separate cells with no way of communicating. You both deserve a three-year sentence. However, the police don't have enough evidence to convict you on that charge, so you'll probably end up in jail for one year on a lesser charge instead. <!--more--> They can't prove it, but the police know what you really did, so they give you an option: testify against the other prisoner, and you'll be set free while he serves three years. But at the same time, they give the option to the other prisoner. What do you do?
 

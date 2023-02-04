@@ -1,10 +1,10 @@
-+++
-title = "Chasing the infinite"
-description = "Surprising mathematical results on infinity"
-categories = ["math"]
-math = true
-date = "2015-05-10T21:45:00-04:00"
-+++
+---
+title: "Chasing the infinite"
+description: "Surprising mathematical results on infinity"
+categories: ["math"]
+math: true
+date: "2015-05-10T21:45:00-04:00"
+---
 
 What is infinity? Perhaps, like me, you were told that it's just a _concept_ to remind us that there is no largest number. It's true that if you treat it like a regular number, subject to the usual rules of arithmetic, you run into all kinds of confusing nonsense. But this needn't prevent us from studying the properties of infinity---it just means we need to be careful. The infinite is far more interesting and surprising than I could have imagined.
 

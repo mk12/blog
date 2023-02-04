@@ -1,10 +1,10 @@
-+++
-title = "Shopify co-op reflection"
-description = "Belated thoughts on my first internship"
-categories = ["life"]
-date = "2018-03-04T14:40:00-05:00"
-draft = true
-+++
+---
+title: "Shopify co-op reflection"
+description: "Belated thoughts on my first internship"
+categories: ["life"]
+date: "2018-03-04T14:40:00-05:00"
+draft: true
+---
 
 Well, "at least one article a week" clearly didn't last for long. After publishing my [first year reflection](/blog/post/first-year/), I was really intending to write a reflection post after each term, or at least once a year---but it never happened. To fix that, I've decided to go back and write the articles I didn't have time or motivation for before, starting with my first co-op: Shopify.
 
