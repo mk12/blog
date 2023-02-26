@@ -35,7 +35,7 @@ Linked lists are the bread and butter of Lisp, so I'm going to implement the alg
 
 First, we'll define `detect-cycle`, which will put the tortoise and hare in their starting positions. Given the first node, this function will return \\((\mu,\lambda)\\) if there is a cycle and `#f` otherwise (the false value in Scheme). It will rely on three nested functions that we'll implement after. I'm putting them inside `detect-cycle` because they aren't useful on their own, and because one of them need to access the `x0` parameter.
 
-{{< highlight scheme >}}
+```scheme
 (define (detect-cycle x0)
   (define (race t h) ...)
   (define (find-mu t h) ...)
@@ -43,13 +43,13 @@ First, we'll define `detect-cycle`, which will put the tortoise and hare in thei
   (if (or (null? x0) (null? (cdr x0)) (null?  (cddr x0)))
     #f
     (race (cdr x0) (cddr x0))))
-{{< /highlight >}}
+```
 
 The beginning is a special case---the tortoise and hare are on the same node, but it doesn't count because we're looking for the _next_ time they meet. For that reason, we place them at \\(x\_1\\) and \\(x\_2\\) and pass them to the `race` function. Before doing that, though, we have to make sure we actually _have_ three nodes! It's illegal to call `car` or `cdr` on `'()`, so these checks are necessary. Note that `(cddr x)` is short for `(cdr (cdr x))`.
 
 Now, let's implement `race` recursively. It should advance the tortoise by one position and the hare by two until they meet:
 
-{{< highlight scheme >}}
+```scheme
 (define (detect-cycle x0)
   (define (race t h)
     (cond ((or (null? t) (null? h) (null? (cdr h))) #f)
@@ -58,13 +58,13 @@ Now, let's implement `race` recursively. It should advance the tortoise by one p
                  (find-lambda t (cdr h))))
           (else (race (cdr t) (cddr h)))))
   ...)
-{{< /highlight >}}
+```
 
 There are three possibilities. If the tortoise or hare is null, then there is obviously no cycle since we've reached the end. We also need to make sure that `(cdr h)` isn't null, since we might be calling `(cddr h)` after. Next, we check if the tortoise and hare are the same using `eq?`. If so, we've found the first meeting place, so we go on to find \\(\mu\\) and \\(\lambda\\), and we return a list containing both of them. For `find-mu`, we leave the tortoise as is, but we pass `x0` as second argument to move the hare back to the beginning. For `find-lambda`, we move the hare forward right away to avoid that same special case I mentioned before. Finally, if they haven't met yet and there is no null in sight, then we continue the race, advancing the tortoise by one jump and the hare by two.
 
 Once the race is over, `find-mu` gets to do its job. It returns how many jumps it takes for the tortoise and hare to be reunited:
 
-{{< highlight scheme >}}
+```scheme
 (define (detect-cycle x0)
   ...
   (define (find-mu t h)
@@ -72,13 +72,13 @@ Once the race is over, `find-mu` gets to do its job. It returns how many jumps i
       0
       (+ 1 (find-mu (cdr t) (cdr h)))))
   ...)
-{{< /highlight >}}
+```
 
 This function is easily expressed recursively.[^3] If the tortoise and hare are already at the same spot, then the cycle must start at the beginning of the list, so we return 0. Otherwise, it's one greater than the number of jumps it takes to bring them together _after_ advancing both by one position.
 
 Finally, `find-lambda` returns the number of jumps it takes for the hare to go around the loop and return to the tortoise:
 
-{{< highlight scheme >}}
+```scheme
 (define (detect-cycle x0)
   ...
   (define (find-lambda t h)
@@ -86,7 +86,7 @@ Finally, `find-lambda` returns the number of jumps it takes for the hare to go a
       1
       (+ 1 (find-lambda t (cdr h)))))
   ...)
-{{< /highlight >}}
+```
 
 Recall that in `race` we started off the hare one jump ahead of the tortoise. If they're the same right away, then the period must be 1 because it takes one jump to return to the same spot. Otherwise, it's one greater than the number of jumps it takes to return to the tortoise _after_ advancing the hare by one position.
 

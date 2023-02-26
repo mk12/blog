@@ -51,7 +51,7 @@ If \\(K(a,b)>K(b,a)\\), then we conclude that the strategy \\(a\\) generally win
 
 First, we'll define some constants from the payoff matrix:
 
-{{< highlight racket >}}
+```racket
 (define reward 2)
 (define temptation 3)
 (define suckers-payoff 0)
@@ -59,37 +59,37 @@ First, we'll define some constants from the payoff matrix:
 
 (define cooperate 1)
 (define defect 2)
-{{< /highlight >}}
+```
 
 Next, we'll implement the history object. A _history_ is a list of moves from newest to oldest. A _move_ is an object containing the choices made by both players on that turn, and we'll represent it by a list of two items:
 
-{{< highlight racket >}}
+```racket
 (define make-move list)
 (define me car)
 (define them cadr)
-{{< /highlight >}}
+```
 
 I'm also going to include a function to flip the perspective of a move object, so that "me" and "them" are swapped:
 
-{{< highlight racket >}}
+```racket
 (define (swap move)
   (make-move (them move) (me move)))
-{{< /highlight >}}
+```
 
 Now we can implement the payoff lookup function \\(A(x,y)\\):
 
-{{< highlight racket >}}
+```racket
 (define (payoff move)
   (case move
     [((1 1)) reward]
     [((2 1)) temptation]
     [((1 2)) suckers-payoff]
     [((2 2)) punishment]))
-{{< /highlight >}}
+```
 
 Next, we'll implement \\(K(s\_1,s\_2)\\). This function simulates \\(n\\) turns of the iterated game and returns the sum of all payoffs given to the player using the first strategy, divided by \\(n\\). It has a nice recursive structure:
 
-{{< highlight racket >}}
+```racket
 (define (calc-k s1 s2 n)
   (define (total turns hist1 hist2 score)
     (if (zero? turns)
@@ -100,40 +100,40 @@ Next, we'll implement \\(K(s\_1,s\_2)\\). This function simulates \\(n\\) turns 
                  (cons (swap move) hist2)
                  (+ score (payoff move))))))
   (/ (total n '() '() 0) n))
-{{< /highlight >}}
+```
 
 Notice that we maintain two history lists, since each strategy must see the history from its perspective. Finally, we'll include a function that creates a matrix of the values of \\(K\\) by simulating a round-robin strategy tournament. This will let us see the performance of different strategies at a glance.
 
-{{< highlight racket >}}
+```racket
 (define (tournament strategies n)
   (map (lambda (s1)
          (map (lambda (s2)
                 (calc-k s1 s2 n))
               strategies))
        strategies))
-{{< /highlight >}}
+```
 
 # A few strategies
 
 Let's start with some extremely simple strategies. Recall that a strategy takes a history object as input and returns its choice (cooperate or defect). The _nice_ and _mean_ strategies are so simple that they don't even look at the history; _alternate_ is very slightly more sophisticated:
 
-{{< highlight racket >}}
+```racket
 (define (nice hist) cooperate)
 (define (mean hist) defect)
 (define (alternate hist)
   (if (even? (length hist))
       cooperate
       defect))
-{{< /highlight >}}
+```
 
 Another strategy is _tit for tat_. It starts off by cooperating, but after that it simply copies the last move made by its opponent. It seems simple, but it is surprisingly good!
 
-{{< highlight racket >}}
+```racket
 (define (tit-for-tat hist)
   (if (null? hist)
       cooperate
       (them (car hist))))
-{{< /highlight >}}
+```
 
 Here's the matrix we get using the `tournament` function:
 

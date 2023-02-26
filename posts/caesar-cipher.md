@@ -3,7 +3,7 @@ title: "Cracking the Caesar cipher"
 description: "How to crack a Caesar cipher using frequency analysis"
 categories: ["algorithms"]
 math: true
-date: "2015-03-30T15:52:37-04:00"
+date: "2015-03-30"
 ---
 
 Whenever I play around with a new language, I always start by writing a program to crack a Caesar cipher. This problem is perfect for getting a sense of what it's like to work in a given language. It's significantly more interesting than "Hello, World!" but it only takes about a hundred lines to write---in fact, the line count by itself is a good indication of how expressive the language is.
@@ -18,7 +18,7 @@ You could try each key and do a dictionary check on the results. This would work
 
 We begin by computing the relative frequencies of the 26 letters. Each relative frequency is a fraction between zero and one, and when we add all 26 of them together we get 1.0. For example, the relative frequencies of the string "AB" in alphabetical order are 0.5, 0.5, and 24 zeros. Since the whole point of this exercise is to test drive awesome languages, I'm going to implement the algorithm in [Haskell][hs], a purely functional language.[^2] Check out my [Caesar project][go] written in Go to see an imperative approach.
 
-{{< highlight haskell >}}
+```haskell
 import Data.Char (toLower)
 import Data.List (genericLength)
 import qualified Data.Map as M
@@ -32,7 +32,7 @@ relativeFreqs s = freqs
     counts   = M.elems $ foldl inc zeros letters
     divide n = fromIntegral n / genericLength letters
     freqs    = map divide counts
-{{< /highlight >}}
+```
 
 First, the type signature: the function `relativeFreqs` takes a string (list of characters) and returns a list of `a`, where `a` is a fractional type. We could say it returns a `Float` list, but it's better to be as general as possible. Now, we convert the string to lower case and throw out letters that aren't in the alphabet. Next, we create a `Map`---maps in Haskell are like dictionaries or hash tables in other languages. This maps each letter of the alphabet to zero. Then we define `inc` which takes a map and a letter and increases the value associated with that letter by one. We [fold][] the list of letters with this function, producing a map that associates letters with the number of times they occur in the original string. Finally, we take those count values and divide them all by the total number of letters to get the relative frequencies.
 
@@ -47,17 +47,17 @@ Now we know what the correct frequencies should look like, but how do we measure
 \\[\chi^2 = \sum_{i=1}^n\frac{(O_i - E_i)^2}{E_i}\\]
 where \\(n=26\\) is the number of frequencies, \\(O_i\\) is an observed frequency, and \\(E_i\\) is the corresponding expected frequency. The lower the value of \\(\chi^2\\), the closer the match. In our case, the \\(O_i\\) values are the relative frequencies of the potential plaintext and the \\(E_i\\) values come from the Google Books data. Let's implement that:
 
-{{< highlight haskell >}}
+```haskell
 chiSqr :: (Fractional a) => [a] -> [a] -> a
 chiSqr es os = sum $ zipWith term es os
     where term e o = (o - e)^2 / e
-{{< /highlight >}}
+```
 
 This takes two lists of relative frequencies (expected and observed) and returns the test-statistic. The `zipWith` function is like `map` but it takes a binary operator and two lists instead of a unary operator and one list. The `sum` function does exactly what you would expect: it adds up all the elements of the list.
 
 Before we write a cracking function, we'll need to implement a decryption function. This will rely on `shift`, which rotates a character around the alphabet by the given number of positions. While we're at it, let's write an encryption function as well:
 
-{{< highlight haskell >}}
+```haskell
 import Data.Char (chr, ord)
 
 shift :: Int -> Char -> Char
@@ -71,13 +71,13 @@ encrypt = map . shift
 
 decrypt :: Int -> String -> String
 decrypt = map . shift . negate
-{{< /highlight >}}
+```
 
 The `ord` function returns a character's ASCII value, and `chr` does the opposite conversion. We subtract the value of _a_ to get a number between 0 and 25, then we do modular addition of the shift value, and finally we convert back to a character. The encryption function partially applies its input to `shift`, which then gets mapped over the string. Decryption is similar, but negates the number first (since decryption goes backwards). These two functions are written in the [point-free style][pf],[^3] much loved by Haskellers---it's easy to read once you're used to it.
 
 We're almost there. We just need two more functions. The `rotate` function will rotate a list around by a given number of positions. The `minIndex` function will return the index of the smallest element in the list:
 
-{{< highlight haskell >}}
+```haskell
 import Data.List (minimumBy)
 import Data.Ord (comparing)
 
@@ -86,19 +86,19 @@ rotate xs n = back ++ front where (front, back) = splitAt n xs
 
 minIndex :: (Ord a) => [a] -> Int
 minIndex = fst . minimumBy (comparing snd) . zip [0..]
-{{< /highlight >}}
+```
 
 We use `splitAt` to break the list and two, and then we reassemble them in the opposite order. We calculate the minimum index by zipping the list with the natural numbers (that's right, `[0..]` is an infinite list), finding the minimum element judging by the original items, and then extracting the zipped index. Now, take a deep breath....
 
 It's time to crack the Caesar cipher!
 
-{{< highlight haskell >}}
+```haskell
 crack :: String -> Int
 crack s = minIndex chis
   where
     freqs = relativeFreqs s
     chis  = map (chiSqr englishFreqs . rotate freqs) [0..25]
-{{< /highlight >}}
+```
 
 First we find the relative frequencies. Next, we try all possible rotations and calculate the test-statistic for each one, where `englishFreqs` is the frequency list we talked about earlier. Finally, we return the index of the best one. The secret message is just one call to `decrypt` away!
 

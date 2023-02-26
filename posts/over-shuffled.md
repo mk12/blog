@@ -82,7 +82,7 @@ It just so happened that I recently read about the [factorial number system][fac
 
 Here's how I would implement this in C:
 
-{{< highlight c >}}
+```c
 int permutation_number(int deck[], int n) {
     // Allocate the auxiliary array and initialize everything to 1.
     int *available = (int *)malloc(n * sizeof(int));
@@ -111,7 +111,7 @@ int permutation_number(int deck[], int n) {
     free(available);
     return pn;
 }
-{{< /highlight >}}
+```
 
 # Julia & Gadfly
 
