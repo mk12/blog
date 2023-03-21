@@ -2,7 +2,6 @@
 title: "How to write a ray tracer"
 description: "An outline of the components of a ray tracer"
 categories: ["algorithms"]
-math: true
 date: "2015-04-24T21:17:00-04:00"
 ---
 

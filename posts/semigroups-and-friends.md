@@ -2,7 +2,6 @@
 title: "Semigroups and friends"
 description: "A gentle introduction to abstract algebra"
 categories: ["math"]
-math: true
 date: "2016-03-10T13:00:00-08:00"
 ---
 

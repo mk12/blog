@@ -2,7 +2,6 @@
 title: "Chasing the infinite"
 description: "Surprising mathematical results on infinity"
 categories: ["math"]
-math: true
 date: "2015-05-10T21:45:00-04:00"
 ---
 
