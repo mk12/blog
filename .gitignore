@@ -1,2 +1,4 @@
 /public
 /fonts
+/build
+node_modules

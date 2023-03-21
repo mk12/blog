@@ -234,8 +234,8 @@ footer .page-nav {
 .nav-newer a { padding-left: 10px; }
 .nav-older a { padding-right: 10px; }
 
-.nav-home { border-left: 1px solid #ccc; }
-.nav-home, .nav-toc { border-right: 1px solid #ccc; }
+.nav-home, .nav-toc { border-left: 1px solid #ccc; }
+.nav-toc { border-right: 1px solid #ccc; }
 
 .copyright {
   border-top: 1px solid #ccc;

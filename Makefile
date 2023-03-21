@@ -23,29 +23,26 @@ default_font_url := ../fonts
 DESTDIR ?= $(default_destdir)
 FONT_URL ?= $(default_font_url)
 
-pandoc_flags := -M year=$$(date +%Y)
-ifdef HOME_URL
-pandoc_flags += -M site_home_url=$(HOME_URL)
-endif
-ifdef ANALYTICS
-pandoc_flags += -M analytics_file=$(ANALYTICS)
-endif
-
 src_posts := $(wildcard posts/*.md)
 src_assets := $(wildcard assets/img/*.jpg)
 src_css := assets/css/style.css
 
+pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
 
-directories := $(DESTDIR) $(DESTDIR)/post \
+html := $(pages) $(posts)
+
+depfiles := $(src_posts:posts/%.md=build/%.d)
+
+directories := build $(DESTDIR) $(DESTDIR)/post \
 	$(sort $(dir $(posts)) $(dir $(assets)))
 directories := $(directories:%/=%)
 
 .SUFFIXES:
 
-all: $(posts) $(assets) $(css)
+all: $(html) $(assets) $(css)
 	@echo TODO
 
 help:
@@ -54,15 +51,16 @@ help:
 
 check: all validate
 
-validate: all
-	fd -g '*.html' $(DESTDIR) | xargs vnu
+validate: $(html)
+	vnu $(html)
 
 clean:
-	rm -rf $(default_destdir)
+	rm -rf $(default_destdir) build
 
-# TODO: write depfile containing templates, SVGs, ...
-$(posts): $(DESTDIR)/post/%/index.html: posts/%.md writer.lua
-	pandoc -t $(word 2,$^) -M root=../../ $(pandoc_flags) -o $@ $<
+$(html): gen.tsx | build
+
+$(posts): $(DESTDIR)/post/%/index.html: posts/%.md
+	bun run gen.tsx -o $@ -d build/$*.d $<
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
@@ -73,6 +71,8 @@ $(css): $(src_css)
 $(directories):
 	mkdir -p $@
 
+-include $(depfiles)
+
 .SECONDEXPANSION:
 
-$(posts) $(assets) $(css) $(directories): | $$(@D)
+$(html) $(assets) $(css) $(directories): | $$(@D)
