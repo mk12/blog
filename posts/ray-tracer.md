@@ -7,7 +7,7 @@ date: "2015-04-24T21:17:00-04:00"
 
 In the summer of 2012, I wrote a ray tracer called [Luminosity](https://github.com/mk12/luminosity) as my first Haskell project. I've worked on other things since, but Luminosity remains my favourite project. If you're itching to write some code but, after googling "coding project ideas," digging up that Asteroids clone you never finished, combing through lists of open source projects---still find yourself in a painful discombobulation---then I suggest writing a ray tracer. <!--more--> The algorithm itself is surprisingly simple, but there are many other details to consider before you can start rendering images. Once those issues are tackled, though, the end results are very rewarding.
 
-![Three spheres and three planes rendered by Luminosity](../assets/svg/luminosity.jpg)
+![Three spheres and three planes rendered by Luminosity](../assets/img/luminosity.jpg)
 
 # Overview
 
@@ -45,7 +45,7 @@ If the answer is negative, then the ray is directed away from the plane, so the 
 
 The ray--sphere intersection is a bit harder. We begin by substituting the equation of the ray: $\lVert\vec{p}+t\hat{v}-\vec{c}\rVert=r$. Squaring both sides and using the dot product, we get $(\vec{p} + t\hat{v}-\vec{c})\cdot(\vec{p} + t\hat{v}-\vec{c})=r^2$, which reduces to the quadratic $t^2 + 2\hat{v}\cdot(\vec{p}-\vec{c})t + \lVert\vec{p}-\vec{c}\rVert^2=r^2$. The quadratic formula gives zero, one, or two solutions, since the ray either misses the sphere, touches a point tangentially, or enters by one point and exits by another. Again, we do not allow negative solutions.
 
-![Zero intersections (A), one intersection (B), and two intersections \(C)](../assets/svg/sphere-intersections.svg)
+![Zero intersections (A), one intersection (B), and two intersections (C)](../assets/svg/sphere-intersections.svg)
 
 # Light and shadow
 
@@ -71,7 +71,7 @@ Finally, before rounding and storing the bytes, we need to apply _gamma correcti
 
 With Luminosity, I used the ubiquitous sRGB color space. The transformation from linear to sRGB is almost a gamma function, but not quite because it includes a linear part at the beginning to avoid having infinite slope at the origin. We can define it as a piecewise function:
 
-$$f\(c)=\begin{cases}12.92c & \text{if}\;c \le 0.0031308;\\ 1.055c^{\frac1{2.4}}-0.055 & \text{otherwise.} \end{cases}$$
+$$f(c)=\begin{cases}12.92c & \text{if}\;c \le 0.0031308;\\ 1.055c^{\frac1{2.4}}-0.055 & \text{otherwise.} \end{cases}$$
 
 # Conclusion
 

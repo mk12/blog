@@ -29,13 +29,13 @@ async function main() {
     return;
   }
   let html;
+  const [content, highlightServer] = await Promise.all([
+    Bun.file(args.i).text(),
+    HighlightServer.connect(args.s),
+  ]);
+  const template = new TemplateRenderer();
+  const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
   if (args.i) {
-    const [content, highlightServer] = await Promise.all([
-      Bun.file(args.i).text(),
-      HighlightServer.connect(args.s),
-    ]);
-    const template = new TemplateRenderer();
-    const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
     html = await genPost(content, template, markdown);
     highlightServer.close();
   } else {
@@ -43,6 +43,13 @@ async function main() {
     return;
   }
   Bun.write(args.o, postprocess(html));
+  if (args.d) {
+    const deps = [
+      ...Array.from(markdown.embeddedFiles),
+      ...template.templatesUsed(),
+    ];
+    Bun.write(args.d, `${args.o}: ${deps.join(" ")}`);
+  }
 }
 
 // Generates a blog post from its Markdown content.
@@ -55,19 +62,19 @@ async function genPost(
   const bodyHtml = markdown.render(bodyMd);
   const analytics = process.env["ANALYTICS"];
   const root = "../../";
-  return template.render("base", {
+  return template.render("templates/base.html", {
     root,
     title: meta.title,
-    math: bodyHtml.then(() => encounteredMath),
+    math: bodyHtml.then(() => markdown.encounteredMath),
     analytics: analytics && Bun.file(analytics).text(),
-    body: template.render("post", {
+    body: template.render("templates/post.html", {
       title: markdown.renderInline(meta.title),
       date: dateFormat(meta.date, "dddd, d mmmm yyyy"),
       description: markdown.renderInline(meta.description),
       body: bodyHtml,
-      pagenav: template.render("pagenav", {
+      pagenav: template.render("templates/pagenav.html", {
         home: process.env["HOME_URL"],
-        blog: root + "index.html",
+        root,
       }),
     }),
   });
@@ -96,6 +103,9 @@ function extractMetadata(content: string): [Metadata, string] {
 
 // Renders Markdown to HTML using the marked library with extensions.
 class MarkdownRenderer {
+  encounteredMath = false;
+  embeddedFiles = new Set<string>();
+
   constructor(workingDir: string, server: HighlightServer) {
     marked.use({
       smartypants: true,
@@ -104,12 +114,13 @@ class MarkdownRenderer {
         imageExt,
         mathExt,
         displayMathExt,
+        divExt,
         footnoteExt,
         footnoteDefBlockExt,
         footnoteDefItemExt,
       ],
-      async walkTokens(token) {
-        switch (token.type) {
+      walkTokens: async (token) => {
+        switch (token.type as string) {
           case "code":
             const code = token as Code;
             code.highlighted = code.lang
@@ -119,8 +130,17 @@ class MarkdownRenderer {
           case "image":
             const image = token as unknown as Image;
             if (image.href.endsWith(".svg")) {
-              image.svg = await Bun.file(join(workingDir, image.href)).text();
+              const path = join(workingDir, image.href);
+              this.embeddedFiles.add(path);
+              image.svg = await Bun.file(path).text();
+            } else {
+              const match = image.href.match(/^\.\.\/assets\/(.*)$/);
+              image.href = "../../" + must(match)[1];
             }
+            break;
+          case "math":
+          case "display_math":
+            this.encounteredMath = true;
             break;
         }
       },
@@ -191,8 +211,6 @@ const katexOptions: KatexOptions = {
   strict: true,
 };
 
-let encounteredMath = false;
-
 interface Math {
   type: "math";
   raw: string;
@@ -206,7 +224,6 @@ const mathExt: marked.TokenizerAndRendererExtension = {
   tokenizer(src): Math | undefined {
     const match = src.match(/^\B\$([^$]|[^$ ][^$]*[^$ ])\$\B/);
     if (match) {
-      encounteredMath = true;
       return { type: "math", raw: match[0], tex: match[1] };
     }
   },
@@ -229,13 +246,40 @@ const displayMathExt: marked.TokenizerAndRendererExtension = {
   tokenizer(src): DisplayMath | undefined {
     const match = src.match(/^\n\n\$\$([^$]+)\$\$/);
     if (match) {
-      encounteredMath = true;
       return { type: "display_math", raw: match[0], tex: match[1] };
     }
   },
   renderer(token) {
     const { tex } = token as DisplayMath;
     return katex.renderToString(tex, { ...katexOptions, displayMode: true });
+  },
+};
+
+interface Div {
+  type: "div";
+  raw: string;
+  cssClass: string,
+  tokens: marked.Token[];
+}
+
+const divExt: marked.TokenizerAndRendererExtension = {
+  name: "div",
+  level: "block",
+  start: (src) => src.indexOf("\n\n:::"),
+  tokenizer(src): Div | undefined {
+    const match = src.match(/^\n\n:::\s*(\w+)(\n[\s\S]+?\n):::\n/);
+    if (match) {
+      return {
+        type: "div",
+        raw: match[0],
+        cssClass: match[1],
+        tokens: this.lexer.blockTokens(match[2], []),
+      };
+    }
+  },
+  renderer(token) {
+    const { cssClass, tokens } = token as Div;
+    return `<div class="${cssClass}">${this.parser.parse(tokens)}</div>`;
   },
 };
 
@@ -337,14 +381,14 @@ type ContextValue = string | boolean;
 
 // Renders HTML templates using syntax similar to Go templates.
 class TemplateRenderer {
-  cache: Map<string, string> = new Map();
+  private cache: Map<string, string> = new Map();
 
-  // Renders an HTML template from the "templates/" folder.
-  async render(name: string, context: Context): Promise<string> {
-    let template = this.cache.get(name);
+  // Renders an HTML template.
+  async render(path: string, context: Context): Promise<string> {
+    let template = this.cache.get(path);
     if (template === undefined) {
-      template = await Bun.file(`templates/${name}.html`).text();
-      this.cache.set(name, template);
+      template = await Bun.file(path).text();
+      this.cache.set(path, template);
     }
     const values = await Promise.all(Object.values(context));
     const newContext = Object.fromEntries(
@@ -365,6 +409,10 @@ class TemplateRenderer {
           return val ? space + val : "";
         }
       );
+  }
+
+  templatesUsed(): string[] {
+    return Array.from(this.cache.keys());
   }
 }
 
@@ -457,8 +505,8 @@ export function assert(condition: boolean, msg?: string): asserts condition {
 }
 
 // Asserts that a value is not undefined.
-export function must<T>(value: T | undefined): T {
-  assert(value !== undefined);
+export function must<T>(value: T | undefined | null): T {
+  assert(value != undefined);
   return value;
 }
 
