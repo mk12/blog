@@ -265,8 +265,7 @@ code {
 
 .verse {
   font-style: italic;
-  width: auto;
-  margin: 0 auto;
+  margin-left: 2em;
 }
 
 .blog-title {
