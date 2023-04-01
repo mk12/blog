@@ -2,3 +2,5 @@
 /fonts
 /build
 node_modules
+*.sock
+*.fifo

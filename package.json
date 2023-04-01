@@ -6,14 +6,12 @@
     "dateformat": "^5.0.3",
     "getopts": "^2.3.0",
     "katex": "^0.16.4",
-    "marked": "^4.2.12",
-    "react-dom": "^18.2.0"
+    "marked": "^4.2.12"
   },
   "devDependencies": {
     "@types/dateformat": "^5.0.0",
     "@types/katex": "^0.16.0",
     "@types/marked": "^4.0.8",
-    "@types/react-dom": "^18.0.11",
     "bun-types": "^0.5.0"
   }
 }

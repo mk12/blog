@@ -57,16 +57,29 @@ validate: $(html)
 clean:
 	rm -rf $(default_destdir) build
 
-$(html): gen.tsx | build
+# $(html): gen.ts | build highlight.sock
 
-$(posts): $(DESTDIR)/post/%/index.html: posts/%.md
-	bun run gen.tsx -o $@ -d build/$*.d $<
+$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/highlight \
+		| highlight.sock build
+	bun run $< -i $(word 2,$^) -o $@ -d build/$*.d -s $(word 1,$|)
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
 
 $(css): $(src_css)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
+
+.INTERMEDIATE: highlight.sock highlight.fifo
+
+build/highlight: highlight/main.go
+	cd $(dir $<) && go build -o ../$@
+
+highlight.sock: build/highlight highlight.fifo
+	$< $@ $(word 2,$^) &
+	< $(word 2,$^)
+
+highlight.fifo:
+	mkfifo $@
 
 $(directories):
 	mkdir -p $@

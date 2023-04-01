@@ -393,3 +393,27 @@ pre code {
   .page-nav .nav-home { display: none; }
   .page-nav .nav-toc { border-left: 1px solid #ccc; }
 }
+
+/* Code highlighting */
+
+.op, .er { font-weight: bold; } /* operators (assertion arrows), errors */
+.cs { font-style: italic; } /* console output */
+
+.kw { color: #a626a4; } /* keywords (special forms) */
+.fu { color: #0060d5; } /* functions */
+.cn { color: #307a06; } /* constants */
+.at, .er { color: #c0392b; } /* attention (comments, escapes), errors */
+.qu { color: #986801; } /* quoted */
+.cs { color: #6d6d6d; } /* console output */
+.op { color: #888; } /* operators (assertion arrows) */
+/* 
+@media (prefers-color-scheme: dark) {
+    .kw { color: #c678dd; }
+    .fu { color: #61afef; }
+    .cn { color: #98c379; }
+    .at, .er { color: #e7727b; }
+    .qu { color: #e5c07b; }
+    .cs { color: #959595; }
+    .op { color: #888; }
+} */
+
