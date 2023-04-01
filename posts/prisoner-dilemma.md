@@ -40,9 +40,9 @@ Before it was just a blind choice, but now there are infinitely many _strategies
 
 $$M = \begin{bmatrix}R \& S \\ T \& P \end{bmatrix}$$
 
-is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s\_x$ and $s\_y$ that generate the sequences  $x\_i$ and $y\_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
+is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s_x$ and $s_y$ that generate the sequences  $x_i$ and $y_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
 
-$$K(s\_x,s\_y) = \lim\_{N\to\infty}\frac1N\sum\_{i=0}^N A(x\_i,y\_i).$$
+$$K(s_x,s_y) = \lim_{N\to\infty}\frac1N\sum_{i=0}^N A(x_i,y_i).$$
 
 If $K(a,b)>K(b,a)$, then we conclude that the strategy $a$ generally wins against the strategy $b$. Note that this does not imply that one is "better" than the other. It's entirely possible that $a$ is a terrible strategy that happens to beat $b$ but loses against everyone else, whereas $b$ is vulnerable to $a$ but otherwise very good. Now, what is the meaning of $K(a,a)$? It tells us how well $a$ plays against itself, but swapping the arguments makes no difference, so we cannot say $a$ wins or loses against itself. In this case, we can interpret $K$ as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur---the only payoffs are the reward and the punishment.[^2]
 
@@ -86,7 +86,7 @@ Now we can implement the payoff lookup function $A(x,y)$:
     [((2 2)) punishment]))
 ```
 
-Next, we'll implement $K(s\_1,s\_2)$. This function simulates $n$ turns of the iterated game and returns the sum of all payoffs given to the player using the first strategy, divided by $n$. It has a nice recursive structure:
+Next, we'll implement $K(s_1,s_2)$. This function simulates $n$ turns of the iterated game and returns the sum of all payoffs given to the player using the first strategy, divided by $n$. It has a nice recursive structure:
 
 ```racket
 (define (calc-k s1 s2 n)
