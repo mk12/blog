@@ -17,7 +17,7 @@ Also known as Floyd's cycle-finding algorithm, its purpose is to detect cycles i
 
 In addition to detecting the cycle, the algorithm determines the beginning of the cycle and its period. In the diagram above, the cycle begins at "L" and has a period of 3, because three jumps takes you back to the same spot. The tortoise and hare algorithm is not the only way of doing this, but it's unique in that it uses just two pointers and no additional memory. We could go through the list and build up a set data structure (implemented as a tree or hash table), stopping when the next item is already in the set, but that requires lot of memory if the list is large.
 
-Let's assume the hare runs twice as fast as the tortoise. Clearly the hare will reach the finish line before the tortoise. But what if it was a never-ending circular race track? The hare would always be ahead, but eventually he would be so far ahead that he laps the tortoise! The key difference when the track has a cycle, then, is that at some point other than the beginning, _the hare will be at the same spot as the tortoise_. Once the cycle has been detected, we send the hare back to the beginning and advance both of them at the same speed until they meet again---and we can prove that this second meeting place will be the start of the cycle. Finally, the tortoise rests while the hare does a victory lap to find the period of the cycle.
+Let's assume the hare runs twice as fast as the tortoise. Clearly the hare will reach the finish line before the tortoise. But what if it was a never-ending circular race track? The hare would always be ahead, but eventually he would be so far ahead that he laps the tortoise! The key difference when the track has a cycle, then, is that at some point other than the beginning, _the hare will be at the same spot as the tortoise_. Once the cycle has been detected, we send the hare back to the beginning and advance both of them at the same speed until they meet again -- and we can prove that this second meeting place will be the start of the cycle. Finally, the tortoise rests while the hare does a victory lap to find the period of the cycle.
 
 # Proof of correctness
 
@@ -27,7 +27,7 @@ Now, if we return the the hare to the beginning and advance both one node at a t
 
 # Scheme implementation
 
-Linked lists are the bread and butter of Lisp, so I'm going to implement the algorithm in Scheme, a simple dialect of Lisp. To construct a node in Scheme, we use `(cons a b)`, where `a` and `b` go in the left and right parts of the box, respectively. For example, to make a list with only one node, containing "A" and pointing to null, we would write `(cons "A" '())`, since null is pronounced `'()` in Scheme. To extract the parts, we use the functions `car` and `cdr`.[^2] We don't care how these three functions work---all we care about is that they satisfy the following two properties:
+Linked lists are the bread and butter of Lisp, so I'm going to implement the algorithm in Scheme, a simple dialect of Lisp. To construct a node in Scheme, we use `(cons a b)`, where `a` and `b` go in the left and right parts of the box, respectively. For example, to make a list with only one node, containing "A" and pointing to null, we would write `(cons "A" '())`, since null is pronounced `'()` in Scheme. To extract the parts, we use the functions `car` and `cdr`.[^2] We don't care how these three functions work -- all we care about is that they satisfy the following two properties:
 
 - `(car (cons a b))` evaluates to `a`;
 - `(cdr (cons a b))` evaluates to `b`.
@@ -44,7 +44,7 @@ First, we'll define `detect-cycle`, which will put the tortoise and hare in thei
     (race (cdr x0) (cddr x0))))
 ```
 
-The beginning is a special case---the tortoise and hare are on the same node, but it doesn't count because we're looking for the _next_ time they meet. For that reason, we place them at $x_1$ and $x_2$ and pass them to the `race` function. Before doing that, though, we have to make sure we actually _have_ three nodes! It's illegal to call `car` or `cdr` on `'()`, so these checks are necessary. Note that `(cddr x)` is short for `(cdr (cdr x))`.
+The beginning is a special case -- the tortoise and hare are on the same node, but it doesn't count because we're looking for the _next_ time they meet. For that reason, we place them at $x_1$ and $x_2$ and pass them to the `race` function. Before doing that, though, we have to make sure we actually _have_ three nodes! It's illegal to call `car` or `cdr` on `'()`, so these checks are necessary. Note that `(cddr x)` is short for `(cdr (cdr x))`.
 
 Now, let's implement `race` recursively. It should advance the tortoise by one position and the hare by two until they meet:
 
@@ -91,7 +91,7 @@ Recall that in `race` we started off the hare one jump ahead of the tortoise. If
 
 # Conclusion
 
-If you want to try out the Scheme implementation, I recommend [Racket][rkt] or [Gambit Scheme][gs]. Or, if you don't feel like leaving your browser, check out the great web app [repl.it][repl]. If you're interested in learning more about programming with Lisp, I highly recommend the computer science classic [_Structure and Interpretation of Computer Programs_][sicp]. You will easily pick up Scheme by reading it, but that's not its purpose at all---Scheme's syntax is so simple that it needs little explanation, and this allows the book to focus on important concepts instead of the minutiae of a particular language. The full text is available on the MIT website, but if you're serious about reading it, do your eyes a favour and download the [pretty PDF version][spdf].
+If you want to try out the Scheme implementation, I recommend [Racket][rkt] or [Gambit Scheme][gs]. Or, if you don't feel like leaving your browser, check out the great web app [repl.it][repl]. If you're interested in learning more about programming with Lisp, I highly recommend the computer science classic [_Structure and Interpretation of Computer Programs_][sicp]. You will easily pick up Scheme by reading it, but that's not its purpose at all -- Scheme's syntax is so simple that it needs little explanation, and this allows the book to focus on important concepts instead of the minutiae of a particular language. The full text is available on the MIT website, but if you're serious about reading it, do your eyes a favour and download the [pretty PDF version][spdf].
 
 [^1]: To be clear, the nodes of the list are the boxes themselves. Each box will have some data associated with it, like the letters I put in the diagram, but we don't care about that for this algorithm.
 

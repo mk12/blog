@@ -5,7 +5,7 @@ categories: ["algorithms"]
 date: "2015-04-10T16:42:00-04:00"
 ---
 
-How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle---the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?
+How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle -- the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?
 
 <!--more-->
 
@@ -21,11 +21,11 @@ Suppose we want to shuffle a deck of _n_ distinct cards. There are many shufflin
 
 Why _n_ times? Well, larger decks should require more shuffling, so it makes sense to depend on _n_. Here's the bad news: this is an awful shuffling algorithm. To appreciate its abysmal qualities, we need to decide what defines a good shuffling algorithm.
 
-A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of _n_ cards, there are _n_! possible permutations. A good shuffling algorithm has no bias---each permutation is equally likely to occur. Another way of saying this is that it produces a _uniform distribution_ of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
+A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of _n_ cards, there are _n_! possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a _uniform distribution_ of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
 
 ![@above Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
-There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples---that's the number you get if you add up  the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
+There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples -- that's the number you get if you add up  the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
 
 Now, that's pretty bad! There's a huge bias at the beginning. And what's up with those periodic spikes? The simple shuffling algorithm might seem to work, but in fact some permutations are far more likely than others. You could actually take advantage of this to get an unfair advantage in a game! The first permutation in the histogram is in ascending order, and the last is in descending order. Given that lower permutations are significantly more likely, meaning the cards are in roughly ascending order, you could give yourself a better hand by always dealing for yourself last. Of course, I am assuming the deck is sorted before the game begins.
 
@@ -78,7 +78,7 @@ I arbitrarily decided that ascending order would correspond to zero and descendi
 | 2, 0, 1 | 4 | 200 |
 | 2, 1, 0 | 5 | 210 |
 
-It just so happened that I recently read about the [factorial number system][fac]. This is essentially what we have here, but with a twist: the digits don't count for their literal value---you have to subtract the number of integers below that have already been used. This corresponds to the striking-out step in the Fisher--Yates algorithm. If you make that change, you get the numbers I placed in the "FNS" column. That's how you count in the factorial number system. One peculiarity of this system is that the rightmost digit is always zero. This makes perfect sense in our case, because a permutation is completely determined once you get to the second-to-last item---there is only one choice for the last one!
+It just so happened that I recently read about the [factorial number system][fac]. This is essentially what we have here, but with a twist: the digits don't count for their literal value -- you have to subtract the number of integers below that have already been used. This corresponds to the striking-out step in the Fisher--Yates algorithm. If you make that change, you get the numbers I placed in the "FNS" column. That's how you count in the factorial number system. One peculiarity of this system is that the rightmost digit is always zero. This makes perfect sense in our case, because a permutation is completely determined once you get to the second-to-last item -- there is only one choice for the last one!
 
 Here's how I would implement this in C:
 
@@ -119,7 +119,7 @@ I performed the shuffling simulations and did the permutation analysis for this 
 
 This is my time writing an article on a particular algorithm. I've decided to host the code I write for them [on GitHub][al]. To get a sense of what Julia code is like, take a look at the file [shuffle.jl][sh]. I recommend using [Juno][juno], an IDE for Julia based on Chris Granger's [LightTable][lt]. It will show you the Gadfly graphs inline, and you can even drag on the numbers (for example, the size of the deck or the number of samples) to see the graph change in real time!
 
-The reason I included the permutation algorithm above in C rather than using my Julia implementation is that Julia uses one-based indexing, which makes that function harder to understand if you aren't used to it. Apparently one-based indexing (using 1 as the first index) is more common in mathematical software---Mathematica uses it, for example---but it still feels a bit strange to me. That being said, this is only a minor annoyance, and it certainly shouldn't stop you from trying out Julia.
+The reason I included the permutation algorithm above in C rather than using my Julia implementation is that Julia uses one-based indexing, which makes that function harder to understand if you aren't used to it. Apparently one-based indexing (using 1 as the first index) is more common in mathematical software -- Mathematica uses it, for example -- but it still feels a bit strange to me. That being said, this is only a minor annoyance, and it certainly shouldn't stop you from trying out Julia.
 
 # Conclusion
 

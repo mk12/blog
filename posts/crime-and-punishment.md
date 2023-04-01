@@ -17,7 +17,7 @@ As with any engaging novel, it's difficult to read _Crime and Punishment_ as tho
 
 > He was out of breath. For one instant the thought floated through his mind "Shall I go back?" But he made no answer and began listening at the old woman's door, a dead silence.
 
-Here we find the first significant mention of silence. The phrase _dead silence_ is not so much an instance of foreshadowing as a fanfare announcing Raskolnikov's next move. Even at this point, minutes away from achieving his goal, there is a fierce battle in his mind. Only by silencing his conscience at the crucial moment---if only temporarily---is he able to follow through with his plan. The dead silence gives way to violent murder, and then silence, truly dead, returns.
+Here we find the first significant mention of silence. The phrase _dead silence_ is not so much an instance of foreshadowing as a fanfare announcing Raskolnikov's next move. Even at this point, minutes away from achieving his goal, there is a fierce battle in his mind. Only by silencing his conscience at the crucial moment -- if only temporarily -- is he able to follow through with his plan. The dead silence gives way to violent murder, and then silence, truly dead, returns.
 
 > Nikodim Fomitch would have made some further protest, but glancing at the head clerk who was looking very hard at him, he did not speak. There was a sudden silence. It was strange.
 
@@ -29,7 +29,7 @@ We've all experienced awkward eye contact, but the confrontation described here 
 
 > For ten seconds there was silence as though all had been struck dumb; even the warder stepped back, mechanically retreated to the door, and stood immovable.
 
-This silence occurs immediately after Nikolay makes his false confession, an unexpected event that throws everyone off balance and into silence. Surely this is an exciting prospect for the true criminal, providing a new hope to escape unpunished. But at the same time, it compounds his unbearable guilt and intensifies his suffering. Raskolnikov's principal enemy is not the police or the judges---it is his conscience.
+This silence occurs immediately after Nikolay makes his false confession, an unexpected event that throws everyone off balance and into silence. Surely this is an exciting prospect for the true criminal, providing a new hope to escape unpunished. But at the same time, it compounds his unbearable guilt and intensifies his suffering. Raskolnikov's principal enemy is not the police or the judges -- it is his conscience.
 
 > "It was not I murdered her," Raskolnikov whispered like a frightened child caught in the act.
 >
@@ -43,6 +43,6 @@ One of the longest silences in the novel occurs here, where Porfiry directly acc
 
 More and more, Raskolnikov's response to everything is silence. Silent anger, silent mourning, and in the last few pages, silent love. Disabused of his theory of his own superiority and crushed under the weight of his guilt, his dejected silence is understandable. However, that silence makes it difficult to parse his emotions, as evidenced by the confusion of his interlocutors. It's easy to dismiss Raskolnikov as a psychopath, but this is not an insight: it is an admission of failure to understand his psychology. Beneath the silence, the battle within Raskolnikov's mind rages on, though his dejection and his nearness to confession mark its final stages.
 
-Strange, silent encounters occur again and again in _Crime and Punishment_. I've highlighted a few of them here, but there are many more. While silence is perhaps not a central motif of the novel, it's worthwhile to examine because it sheds light on the dynamics of Raskolnikov's mind and conscience. Given the near impossibility of viewing this work as a whole from all angles and on all layers at once---that is, as with anything, given the need for focus---I find the lens I have presented here, of focusing on silent moments interspersed in the novel, to be one of the more interesting ones. If you've read the novel, I hope you got something out of this too. And if you haven't, I hope you're now more inclined to read it. If the silence is this interesting, imagine what the chaos and noise must be like!
+Strange, silent encounters occur again and again in _Crime and Punishment_. I've highlighted a few of them here, but there are many more. While silence is perhaps not a central motif of the novel, it's worthwhile to examine because it sheds light on the dynamics of Raskolnikov's mind and conscience. Given the near impossibility of viewing this work as a whole from all angles and on all layers at once -- that is, as with anything, given the need for focus -- I find the lens I have presented here, of focusing on silent moments interspersed in the novel, to be one of the more interesting ones. If you've read the novel, I hope you got something out of this too. And if you haven't, I hope you're now more inclined to read it. If the silence is this interesting, imagine what the chaos and noise must be like!
 
 [gut]: http://www.gutenberg.org/ebooks/2554

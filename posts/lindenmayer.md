@@ -49,7 +49,7 @@ Of course, for this to work, we'd have to create an L-system that includes these
 
 # Fractal curves
 
-L-systems are perfect for drawing fractal curves---shapes that have repeating patterns at every scale. One well-known fractal curve is the Koch snowflake, invented by Helge von Koch in 1904. It begins as an equilateral triangle, and it grows another equilateral triangle on each edge to advance to the next generation. Here are the first few stages:
+L-systems are perfect for drawing fractal curves -- shapes that have repeating patterns at every scale. One well-known fractal curve is the Koch snowflake, invented by Helge von Koch in 1904. It begins as an equilateral triangle, and it grows another equilateral triangle on each edge to advance to the next generation. Here are the first few stages:
 
 ![First three generations of the Koch snowflake](../assets/svg/koch.svg)
 
@@ -82,7 +82,7 @@ These new symbols allow us to create branches by returning the pen to a previous
 
 # Conclusion
 
-The L-system is a wonderful tool for building complexity and infinite detail from a small---and more importantly, finite!---amount of data. I learned about this method while writing a recursive program to draw Hilbert curves. When I rewrote it to use an L-system, the code became much simpler, and I soon realized that it was easily generalizable to dozens of other curves. The final product of this project is a web app called [Lindenmayer][lin]. It currently renders 11 different fractal curves, and you can easily change the number of iterations, stroke thickness, and stroke colour. Please try it out, and give me feedback! The source is available on [GitHub][gh].
+The L-system is a wonderful tool for building complexity and infinite detail from a small -- and more importantly, finite! -- amount of data. I learned about this method while writing a recursive program to draw Hilbert curves. When I rewrote it to use an L-system, the code became much simpler, and I soon realized that it was easily generalizable to dozens of other curves. The final product of this project is a web app called [Lindenmayer][lin]. It currently renders 11 different fractal curves, and you can easily change the number of iterations, stroke thickness, and stroke colour. Please try it out, and give me feedback! The source is available on [GitHub][gh].
 
 [aristid]: https://en.wikipedia.org/wiki/Aristid_Lindenmayer
 [cs]: https://en.wikipedia.org/wiki/Cantor_set

@@ -5,17 +5,17 @@ categories: ["software"]
 date: "2015-08-02T23:47:34-04:00"
 ---
 
-Writing code that works is hard. It doesn't matter how many times you've gone over it, or how many coworkers have reviewed it. A developer with any experience never expects it to work the first time. If you've just written a thousand lines and they seem to work as expected, your initial reaction should be suspicion---it will lead to less embarrassment in the long run.
+Writing code that works is hard. It doesn't matter how many times you've gone over it, or how many coworkers have reviewed it. A developer with any experience never expects it to work the first time. If you've just written a thousand lines and they seem to work as expected, your initial reaction should be suspicion -- it will lead to less embarrassment in the long run.
 
 <!--more-->
 
 # Testing 1-2-3
 
-Test suites are meant to fix this problem, or at least improve the situation. The idea is this: write code that does what you want, then write more code to make sure it works. The second step produces a collection of tests. The better your tests, the more confident you can be in your code. Advocates of test-driven development (TDD) would tell you to write the tests _first_, and the implementation second. I think TDD is great, but I don't use it for everything---I sometimes prefer an exploratory style of programming, and writing extensive tests before my ideas are solidified seems like a waste of time more often than not.[^1]
+Test suites are meant to fix this problem, or at least improve the situation. The idea is this: write code that does what you want, then write more code to make sure it works. The second step produces a collection of tests. The better your tests, the more confident you can be in your code. Advocates of test-driven development (TDD) would tell you to write the tests _first_, and the implementation second. I think TDD is great, but I don't use it for everything -- I sometimes prefer an exploratory style of programming, and writing extensive tests before my ideas are solidified seems like a waste of time more often than not.[^1]
 
 Tests are especially useful when it's time to _refactor_ code. Refactoring code just means changing it without changing what it does. This is usually done to improve the code by making it more readable, maintainable, modular, or otherwise better. Without tests, large refactorings can be very dangerous. With tests, you can be fairly confident that you haven't broken everything.
 
-Tests come in many flavours. Some carry out basic sanity checks; others perform complicated setup routines and probe every detail of the result. Most tests fall under one of two broad categories: unit and integration. Unit tests consider individual units of code in isolation, while integration tests bring the parts together and test them as systems. Tests are said to _exercise paths_ in the implementation code---the more paths exercised, the better. Developers sometimes measure the fraction of code covered by tests as a percentage and call it _code coverage_. High code coverage is especially important for software written in dynamically typed languages, as none of the work can be offloaded onto the type system. Static type systems don't eliminate the need for tests, but they give you many correctness guarantees for free.
+Tests come in many flavours. Some carry out basic sanity checks; others perform complicated setup routines and probe every detail of the result. Most tests fall under one of two broad categories: unit and integration. Unit tests consider individual units of code in isolation, while integration tests bring the parts together and test them as systems. Tests are said to _exercise paths_ in the implementation code -- the more paths exercised, the better. Developers sometimes measure the fraction of code covered by tests as a percentage and call it _code coverage_. High code coverage is especially important for software written in dynamically typed languages, as none of the work can be offloaded onto the type system. Static type systems don't eliminate the need for tests, but they give you many correctness guarantees for free.
 
 One interesting way of testing your tests (yes, that's a thing) is a technique called _fault injection_. You inject faults by changing the implementation to make it incorrect, and then you run your test suite, expecting failures. If all tests pass, then something is wrong and you need to write more tests. If it fails, then you can pat yourself on the back for having decent coverage.
 
@@ -64,7 +64,7 @@ Factories are an alternative method of generating test data. [FactoryGirl][fg] i
 
 # Mocks, stubs, and expectations
 
-Sometimes faking data isn't enough---tests need to fake behaviour as well. This is where the fancy stuff provided by test frameworks comes in. The terminology is sometimes a source of confusion, but most people will know what you're talking about if you mention _mocks_ or _stubs_. Suppose you have a class that sends emails. You don't want to actually send emails while running tests, so you swap it out for a fake:
+Sometimes faking data isn't enough -- tests need to fake behaviour as well. This is where the fancy stuff provided by test frameworks comes in. The terminology is sometimes a source of confusion, but most people will know what you're talking about if you mention _mocks_ or _stubs_. Suppose you have a class that sends emails. You don't want to actually send emails while running tests, so you swap it out for a fake:
 
 ```ruby
 class FakeMailer
@@ -127,11 +127,11 @@ test "#contact delivers an email to test@example.com" do
 end
 ```
 
-If the `send` method doesn't get called at some point before the end of the test case, the test will fail. If it does get called, and the correct argument is provided, it will return true. It's also possible to "expect" a method to be called twice, or some specific number of times. I almost always use `once` (or you can leave it out---it's the default), but I also find `never` useful: it verifies that the method never gets called.
+If the `send` method doesn't get called at some point before the end of the test case, the test will fail. If it does get called, and the correct argument is provided, it will return true. It's also possible to "expect" a method to be called twice, or some specific number of times. I almost always use `once` (or you can leave it out -- it's the default), but I also find `never` useful: it verifies that the method never gets called.
 
 # Conclusion
 
-Software testing is an active area of research and exploration. Nowadays it's unheard of to develop large systems without tests, but not all tests are created equal. It takes time and effort to produce high-quality tests, so it's worthwhile to take advantage of techniques like stubs and expectations. There are plenty of flashy new frameworks to try out, but beyond that, writing good tests is something of an art---one that I'm working on improving, both at work and in my personal projects.
+Software testing is an active area of research and exploration. Nowadays it's unheard of to develop large systems without tests, but not all tests are created equal. It takes time and effort to produce high-quality tests, so it's worthwhile to take advantage of techniques like stubs and expectations. There are plenty of flashy new frameworks to try out, but beyond that, writing good tests is something of an art -- one that I'm working on improving, both at work and in my personal projects.
 
 [^1]: David Heinemeier Hansson has [some interesting thoughts][tdd] on this subject.
 

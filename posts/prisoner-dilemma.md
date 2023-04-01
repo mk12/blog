@@ -22,7 +22,7 @@ The outcomes look the same to the other prisoner, except the temptation and suck
 
 ![Payoff matrix of the prisoner's dilemma (your choice on the left)](../assets/svg/prisoner.svg)
 
-What's the best decision to make? Well, the other prisoner will either cooperate or defect. If he cooperates, then you should defect and get off free. If he defects, then you absolutely must defect---two years is bad, but three is worse! So no matter what the other prisoner does, it's always better for you to defect. The other prisoner independently comes to the same conclusion, so you are both doomed to a two-year sentence.
+What's the best decision to make? Well, the other prisoner will either cooperate or defect. If he cooperates, then you should defect and get off free. If he defects, then you absolutely must defect -- two years is bad, but three is worse! So no matter what the other prisoner does, it's always better for you to defect. The other prisoner independently comes to the same conclusion, so you are both doomed to a two-year sentence.
 
 What went wrong? You both acted rationally, choosing the best option, yet no one wins. _If only_ you could have agreed to cooperate! That way, you would both get one year instead of two. But the temptation to break the trust is too great, so it will never work.[^1]
 
@@ -44,7 +44,7 @@ is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to b
 
 $$K(s_x,s_y) = \lim_{N\to\infty}\frac1N\sum_{i=0}^N A(x_i,y_i).$$
 
-If $K(a,b)>K(b,a)$, then we conclude that the strategy $a$ generally wins against the strategy $b$. Note that this does not imply that one is "better" than the other. It's entirely possible that $a$ is a terrible strategy that happens to beat $b$ but loses against everyone else, whereas $b$ is vulnerable to $a$ but otherwise very good. Now, what is the meaning of $K(a,a)$? It tells us how well $a$ plays against itself, but swapping the arguments makes no difference, so we cannot say $a$ wins or loses against itself. In this case, we can interpret $K$ as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur---the only payoffs are the reward and the punishment.[^2]
+If $K(a,b)>K(b,a)$, then we conclude that the strategy $a$ generally wins against the strategy $b$. Note that this does not imply that one is "better" than the other. It's entirely possible that $a$ is a terrible strategy that happens to beat $b$ but loses against everyone else, whereas $b$ is vulnerable to $a$ but otherwise very good. Now, what is the meaning of $K(a,a)$? It tells us how well $a$ plays against itself, but swapping the arguments makes no difference, so we cannot say $a$ wins or loses against itself. In this case, we can interpret $K$ as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur -- the only payoffs are the reward and the punishment.[^2]
 
 # Scheme implementation
 

@@ -258,7 +258,7 @@ const displayMathExt: marked.TokenizerAndRendererExtension = {
 interface Div {
   type: "div";
   raw: string;
-  cssClass: string,
+  cssClass: string;
   tokens: marked.Token[];
 }
 
@@ -482,8 +482,7 @@ class HighlightServer {
 
 // Postprocesses HTML output.
 function postprocess(html: string): string {
-  // Avoid unnecessary entities.
-  const map: Record<string, string> = {
+  const entityMap: Record<string, string> = {
     quot: '"',
     "#34": '"',
     apos: "'",
@@ -491,9 +490,15 @@ function postprocess(html: string): string {
     gt: ">",
     "#62": ">",
   };
-  return html.replace(
-    /&(#\d+|[a-z]+);/g,
-    (entity: string, code: string) => map[code] ?? entity
+  return (
+    html
+      // Avoid unnecessary entities.
+      .replace(
+        /&(#\d+|[a-z]+);/g,
+        (entity: string, code: string) => entityMap[code] ?? entity
+      )
+      // I prefer typing " -- ", but I want to render as close-set em dash.
+      .replace(/ – /g, "—")
   );
 }
 
