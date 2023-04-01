@@ -11,7 +11,7 @@ What is infinity? Perhaps, like me, you were told that it's just a _concept_ to 
 
 # Cardinality and bijections
 
-In order to understand infinity, we need to make a detour to set theory. A _set_ is a collection of objects, and the _cardinality_ of a set is the number of unique objects it contains. For example, the set $S=\{\bigcirc,\square,\bigtriangleup\}$ has cardinality $\lvert S \rvert = 3$. Two sets have the same cardinality if and only if their objects can be paired off without leaving any out. This pairing-off is a called a _bijection_ or a _one-to-one correspondence_, technically defined as a function that is both injective and surjective.[^1] For example, given the set $B=\{2,3,5\}$, we can prove that $\lvert S \rvert = \lvert B \rvert$ by constructing a bijection &thinsp;$f\colon S\to B$ that maps $\bigcirc$ to 2, $\square$ to 3, and $\bigtriangleup$ to 5.
+In order to understand infinity, we need to make a detour to set theory. A _set_ is a collection of objects, and the _cardinality_ of a set is the number of unique objects it contains. For example, the set $S=\{\bigcirc,\square,\bigtriangleup\}$ has cardinality $\lvert S \rvert = 3$. Two sets have the same cardinality if and only if their objects can be paired off without leaving any out. This pairing-off is a called a _bijection_ or a _one-to-one correspondence_, technically defined as a function that is both injective and surjective.[^1] For example, given the set $B=\{2,3,5\}$, we can prove that $\lvert S \rvert = \lvert B \rvert$ by constructing a bijection $f\colon S\to B$ that maps $\bigcirc$ to 2, $\square$ to 3, and $\bigtriangleup$ to 5.
 
 Of course it's obvious that both sets contain three objects, but the power of this method is that it allows us to compare infinite sets. Given that infinity plus one is still infinity, can we conclude that all infinities are the same? Common sense says yes: how can anything possibly be _bigger_ than infinity? However, as is often the case in mathematics, we really need to throw common sense out the window if we want to discover the truth.
 
@@ -29,9 +29,9 @@ Soon afterwards, an infinite number of people arrive and cram in the hotel recep
 
 Hilbert's hotel illustrates that adding one to a regular infinity, or even multiplying it by two, leaves you with the same infinity. This value is the cardinality of the natural numbers $\mathbb{N}=\{0,1,2,\dots\}$, and we denote it by $\lvert\mathbb{N}\rvert=\aleph\_0$ (pronounced _aleph nought_). If a set's cardinality is equal to $\aleph\_0$, then we call it a _countable infinity_, because it's possible to count off all its objects by association with natural numbers. Roughly speaking, if you can generate a list of all objects in a set by following some pattern, then the set is countably infinite. All other infinities are larger, and called _uncountable_.
 
-Another way of interpreting the hotel example is this: _there are just as many even numbers as natural numbers_. In a way this seems wrong---surely there are _twice_ as many natural numbers? But both sets are countably infinite, so their cardinalities must be the same: we prove this by constructing the bijection &thinsp;$f(n)=2n$. You might argue that this is just a matter of definition, and that it is meaningless to say that two infinities are equal. Perhaps, but that is a philosophical question, not a mathematical one. Whether you subscribe to the formalist "useful but meaningless marks on paper" or the Platonist "objective, timeless truths about abstract entities" is completely up to you. Rest assured: there are good reasons for using the bijection-based definition, and there is still more we can learn from it.
+Another way of interpreting the hotel example is this: _there are just as many even numbers as natural numbers_. In a way this seems wrong---surely there are _twice_ as many natural numbers? But both sets are countably infinite, so their cardinalities must be the same: we prove this by constructing the bijection $f(n)=2n$. You might argue that this is just a matter of definition, and that it is meaningless to say that two infinities are equal. Perhaps, but that is a philosophical question, not a mathematical one. Whether you subscribe to the formalist "useful but meaningless marks on paper" or the Platonist "objective, timeless truths about abstract entities" is completely up to you. Rest assured: there are good reasons for using the bijection-based definition, and there is still more we can learn from it.
 
-For example, the integers are countably infinite as well: we can construct the bijection &thinsp;$f\colon\mathbb{N}\to\mathbb{Z}$ that lists the integers by alternating signs:
+For example, the integers are countably infinite as well: we can construct the bijection $f\colon\mathbb{N}\to\mathbb{Z}$ that lists the integers by alternating signs:
 
 $$0,+1,-1,+2,-2,+3,-3,\dots$$
 
@@ -61,7 +61,7 @@ Yet another counterintuitive fact about cardinalities is that $\lvert\mathbb{R}\
 
 \begin{alignat}{3}x &= \dots~& a\_3a\_2a\_1&.d\_1d\_2d\_3&~\dots\\
 y &= \dots~& b\_3b\_2b\_1&.e\_1e\_2e\_3&~\dots\end{alignat}
-We can construct a bijection[^4] &thinsp;$f\colon\mathbb{R}^2\to\mathbb{R}$ by interleaving the digits:
+We can construct a bijection[^4] $f\colon\mathbb{R}^2\to\mathbb{R}$ by interleaving the digits:
 
 $$f(x,y)=\dots a\_3b\_3a\_2b\_2a\_1b\_1.d\_1e\_1d\_2e\_2d\_3e\_3\dots$$
 

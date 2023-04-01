@@ -40,7 +40,7 @@ Before it was just a blind choice, but now there are infinitely many _strategies
 
 $$M = \begin{bmatrix}R \& S \\ T \& P \end{bmatrix}$$
 
-is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories.&thinsp; By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s\_x$ and $s\_y$ that generate the sequences  $x\_i$ and $y\_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
+is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s\_x$ and $s\_y$ that generate the sequences  $x\_i$ and $y\_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
 
 $$K(s\_x,s\_y) = \lim\_{N\to\infty}\frac1N\sum\_{i=0}^N A(x\_i,y\_i).$$
 
