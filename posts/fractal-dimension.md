@@ -25,9 +25,9 @@ At first, the answer seems to be obvious: "One." It's a strange curve, but it's 
 
 Here's an idea: we know circles and polygons are one-dimensional because if we _zoom in_ far enough on any part, we see a straight line. Similarly, if you get close enough to a sphere, the surface becomes nearly flat. This technique lets us distinguish one-dimensional scribbles from authentic two-dimensional filled quadrilaterals. But we immediately run into trouble when we try to apply it to fractals like the Koch snowflake: we can never finish zooming in! How can we really be sure that every part is a straight line segment when it's impossible to look close enough to verify?
 
-We know for sure the dimension can't be more than 2, because we can clearly embed the snowflake in \\(\mathbb{R}^2\\). Hopefully you'll agree that it also can't be less than 1. Now where does that leave us? I'll jump straight to the answer: the fractal dimension of the Koch snowflake is between 1 and 2:
+We know for sure the dimension can't be more than 2, because we can clearly embed the snowflake in $\mathbb{R}^2$. Hopefully you'll agree that it also can't be less than 1. Now where does that leave us? I'll jump straight to the answer: the fractal dimension of the Koch snowflake is between 1 and 2:
 
-\\[\frac{\log 4}{\log 3}\approx 1.26186.\\]
+$$\frac{\log 4}{\log 3}\approx 1.26186.$$
 
 It twists and turns a bit too much to be one-dimensional, but not enough to be two-dimensional. It's not always possible to calculate fractal dimension values exactly, but in the case of the Koch snowflake we can. In other cases, the best we have are empirically determined values. The calculation of 1.26186 involves counting self-replicated parts and their scale factors.
 

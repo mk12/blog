@@ -36,15 +36,15 @@ The practice of doping in professional sports can also be modelled as a prisoner
 
 We have seen that the dominant strategy in the prisoner's dilemma is to always defect. It's too risky to cooperate, because we have no clue about the intentions of the other player. This all changes in the _iterated_ prisoner's dilemma. In this version, the same two players repeatedly play the game, choosing to cooperate or to defect on each turn.
 
-Before it was just a blind choice, but now there are infinitely many _strategies_ that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers \\(R\\), \\(T\\), \\(S\\), and \\(P\\) represent the reward, temptation, sucker's payoff, and punishment, respectively, where \\(S < P < R < T\\). Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players \\(x,y\in\\{1,2\\}\\), the payoff for \\(x\\) is defined by \\(A(x,y) = M_{x,y}\\), where
+Before it was just a blind choice, but now there are infinitely many _strategies_ that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y\in\{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
 
-\\[M = \begin{bmatrix}R \& S \\\\ T \& P \end{bmatrix}\\]
+$$M = \begin{bmatrix}R \& S \\ T \& P \end{bmatrix}$$
 
-is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function \\(s\colon H\to\\{1,2\\}\\), where \\(H\\) is the set of all possible histories.&thinsp; By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies \\(s\_x\\) and \\(s\_y\\) that generate the sequences  \\(x\_i\\) and \\(y\_i\\), where \\(i=0\\) represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
+is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories.&thinsp; By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s\_x$ and $s\_y$ that generate the sequences  $x\_i$ and $y\_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
 
-\\[K(s\_x,s\_y) = \lim\_{N\to\infty}\frac1N\sum\_{i=0}^N A(x\_i,y\_i).\\]
+$$K(s\_x,s\_y) = \lim\_{N\to\infty}\frac1N\sum\_{i=0}^N A(x\_i,y\_i).$$
 
-If \\(K(a,b)>K(b,a)\\), then we conclude that the strategy \\(a\\) generally wins against the strategy \\(b\\). Note that this does not imply that one is "better" than the other. It's entirely possible that \\(a\\) is a terrible strategy that happens to beat \\(b\\) but loses against everyone else, whereas \\(b\\) is vulnerable to \\(a\\) but otherwise very good. Now, what is the meaning of \\(K(a,a)\\)? It tells us how well \\(a\\) plays against itself, but swapping the arguments makes no difference, so we cannot say \\(a\\) wins or loses against itself. In this case, we can interpret \\(K\\) as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur---the only payoffs are the reward and the punishment.[^2]
+If $K(a,b)>K(b,a)$, then we conclude that the strategy $a$ generally wins against the strategy $b$. Note that this does not imply that one is "better" than the other. It's entirely possible that $a$ is a terrible strategy that happens to beat $b$ but loses against everyone else, whereas $b$ is vulnerable to $a$ but otherwise very good. Now, what is the meaning of $K(a,a)$? It tells us how well $a$ plays against itself, but swapping the arguments makes no difference, so we cannot say $a$ wins or loses against itself. In this case, we can interpret $K$ as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur---the only payoffs are the reward and the punishment.[^2]
 
 # Scheme implementation
 
@@ -75,7 +75,7 @@ I'm also going to include a function to flip the perspective of a move object, s
   (make-move (them move) (me move)))
 ```
 
-Now we can implement the payoff lookup function \\(A(x,y)\\):
+Now we can implement the payoff lookup function $A(x,y)$:
 
 ```racket
 (define (payoff move)
@@ -86,7 +86,7 @@ Now we can implement the payoff lookup function \\(A(x,y)\\):
     [((2 2)) punishment]))
 ```
 
-Next, we'll implement \\(K(s\_1,s\_2)\\). This function simulates \\(n\\) turns of the iterated game and returns the sum of all payoffs given to the player using the first strategy, divided by \\(n\\). It has a nice recursive structure:
+Next, we'll implement $K(s\_1,s\_2)$. This function simulates $n$ turns of the iterated game and returns the sum of all payoffs given to the player using the first strategy, divided by $n$. It has a nice recursive structure:
 
 ```racket
 (define (calc-k s1 s2 n)
@@ -101,7 +101,7 @@ Next, we'll implement \\(K(s\_1,s\_2)\\). This function simulates \\(n\\) turns 
   (/ (total n '() '() 0) n))
 ```
 
-Notice that we maintain two history lists, since each strategy must see the history from its perspective. Finally, we'll include a function that creates a matrix of the values of \\(K\\) by simulating a round-robin strategy tournament. This will let us see the performance of different strategies at a glance.
+Notice that we maintain two history lists, since each strategy must see the history from its perspective. Finally, we'll include a function that creates a matrix of the values of $K$ by simulating a round-robin strategy tournament. This will let us see the performance of different strategies at a glance.
 
 ```racket
 (define (tournament strategies n)
