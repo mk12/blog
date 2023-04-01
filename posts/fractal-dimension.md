@@ -17,7 +17,7 @@ First, I should clarify what I mean by _topological_ dimension. We commonly cons
 
 Now we come to the fractal part. Consider the Koch snowflake, a fractal curve that I wrote about in my article on [Lindenmayer systems][linden]:
 
-{{<img src="koch.svg" cap="First three generations of the Koch snowflake" >}}
+![First three generations of the Koch snowflake](../assets/svg/koch.svg)
 
 Of course, none of those three figures is a Koch snowflake. The real snowflake is obtained by taking the process to infinity, adding more and more spikes, and in so doing, enclosing a finite area with an infinite perimeter. You can use the [Lindenmayer web app][koch4] to get a better idea of this---after a while, the changes between generations become too small to notice. Now we ask the question: what is the topological dimension of the Koch snowflake?
 
@@ -33,7 +33,7 @@ It twists and turns a bit too much to be one-dimensional, but not enough to be t
 
 You might not be entirely convinced. Why should an excessively jagged snowflake be any different from other polygons? Let's consider another fractal curve, the Hilbert curve:
 
-{{<img src="hilbert.svg" cap="First three generations of the Hilbert curve" >}}
+![First three generations of the Hilbert curve](../assets/svg/hilbert.svg)
 
 This is a space-filling curve: when we take the process to infinity, it becomes equivalent to the unit square. It should come as no surprise, then, that its fractal dimension is 2. It twists around in such a convoluted way that it covers every single point in the unit square. This is one of the things that make fractal dimensions interesting: at a basic level, they allow us to quantify how convoluted a fractal curve is.
 

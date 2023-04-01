@@ -37,7 +37,7 @@ $$0,+1,-1,+2,-2,+3,-3,\dots$$
 
 More surprising is the fact that the rationals are countable: $\lvert\mathbb{Q}\rvert=\aleph_0$. How can this be, when there are infinitely many rationals between 0 and 1? There are many ways of proving this, but I'm more interested in giving you an intuitive understanding of countability. We can take care of signs using the alternating trick, but what then? We can't go in increasing order, since the rationals get arbitrarily close to zero. And $\frac11,\frac12,\frac13,\dots$ is a dead end, because we'll never get past one! But look at this:
 
-{{< img src="fraction-table.svg" cap="Counting the rationals by zigzagging through a matrix" >}}
+![Counting the rationals by zigzagging through a matrix](../assets/svg/fraction-table.svg)
 
 We can generate a list of all rationals just by following the red arrows, as long as we include zero somewhere and put $\pm$ in each cell. We have to skip some cells to make it a bijection, but that's not a problem. In fact, if we don't skip any cells, the function is surjective and not injective, which tells us that $\mathbb{Q}$ is either countably infinite or finite---and it clearly isn't finite.
 
@@ -81,7 +81,7 @@ $$0,1,\dots,n,\dots,\omega,\omega+1,\dots,\omega\!\cdot\!2,\omega\!\cdot\!3,\dot
 
 As with cardinals, the finite ordinals are simply natural numbers. The least infinite ordinal is $\omega$, and it is equivalent to $\aleph_0$. Unlike the cardinals, $\omega+1$ is distinct from $\omega$, though both are countable. Strange as it may seem, there are uncountably many countably infinite ordinal numbers. We can add to $\omega$, multiply it, square it, raise it to the power $\omega$, ... each of these is a countable infinity greater than the last. The next step is to repeat the exponentiation using the recursive definition $\epsilon_0=\omega^{\epsilon_0}$.
 
-{{< img src="ordinal-spiral.svg" cap="Spiral visualization of some countable ordinal numbers (Wikimedia Commons)" >}}
+![Spiral visualization of some countable ordinal numbers (Wikimedia Commons)](../assets/svg/ordinal-spiral.svg)
 
 We can play this game as long as we want, but no matter what system we come up with, it will never capture all the infinities---there will always be a larger ordinal that lies outside the system. We can keep finding these larger ordinals, but they become more and more difficult to describe. And we're still only talking about countable ordinals! The first _uncountable_ ordinal is $\omega_1$, and it is represented by the set of all countable ordinals.
 

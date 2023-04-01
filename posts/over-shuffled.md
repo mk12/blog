@@ -23,7 +23,7 @@ Why _n_ times? Well, larger decks should require more shuffling, so it makes sen
 
 A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of _n_ cards, there are _n_! possible permutations. A good shuffling algorithm has no bias---each permutation is equally likely to occur. Another way of saying this is that it produces a _uniform distribution_ of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
 
-{{< img src="simple-shuffle.svg" tcap="Distribution of permutations obtained by the simple shuffle" >}}
+![@above Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
 There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples---that's the number you get if you add up  the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
 
@@ -59,7 +59,7 @@ The Fischer--Yates shuffle is also referred to as the Knuth shuffle because Dona
 
 Try to convince yourself that this is equivalent to the Fisher--Yates algorithm (it is). We could have instead implemented it by literally building up a new deck in memory, but Knuth's method is more efficient than that because it shuffle in-place. Here's the distribution we get, once again using 20 cards, 200 permutation bins, and a million samples:
 
-{{< img src="knuth-shuffle.svg" tcap="Distribution of permutations obtained by the Knuth shuffle" >}}
+![@above Distribution of permutations obtained by the Knuth shuffle](../assets/svg/knuth-shuffle.svg)
 
 Much better! The distribution is not perfectly uniform, but it is very close. If we used a trillion samples instead of a million, the histogram would probably look like a solid rectangle. Also, keep in mind that this graph is zoomed in on the _y_-axis quite a bit more than the other one, since it doesn't have to show that huge spike at the beginning. In any case, there is no sign of bias in the variation here, and that's the important thing.
 

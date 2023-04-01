@@ -37,7 +37,7 @@ In addition to those criteria, there are some constraints on the design. First, 
 
 The first step is to split the Evaluator into two parts: a producer, which decides what ideas needs to be evaluated, and a consumer, which takes the ideas and evaluates them. The fundamental assumption of this design is that only the consumer needs to scale---only the CPU and I/O resources involved in evaluating ideas, not the process of iterating through all the ideas and handling the arrival of new ones. Therefore, to scale out to support more ideas, we simply add more consumers. The producer, like the original design of the Evaluator, uses a primary-backup setup to ensure reliability.
 
-{{< img src="rabbitmq-design.svg" cap="Producer-consumer design using RabbitMQ" >}}
+![Producer-consumer design using RabbitMQ](../assets/svg/rabbitmq-design.svg)
 
 In this scheme, the producer goes through all ideas every few seconds and pushes them onto the queue if they need evaluation. (We don't evaluate ideas if the underlying prices haven't changed significantly enough.) RabbitMQ will then dispatch the items to the consumers in round-robin fashion, the way you would deal cards in a card game. Each idea will probably get evaluated by a different consumer each time, so all the consumers must be prepared to handle any idea. Since we only evaluate every few seconds, the latency of going from producer to queue to consumer is acceptable. There's nothing to worry about if a consumer machine goes down---the remaining consumers will just have a higher load.
 
@@ -49,7 +49,7 @@ This solution meets all the design constraints. RabbitMQ has clients for many pr
 
 Every ZooKeeper service is replicated across a set of machines called an _ensemble_. For our purposes, though, we can ignore this and treat it as a  black box. On one side, we have the set of Evaluator instances that register themselves in ZooKeeper and then read the list of ideas assigned to them. On the other side, we have a new piece: the Balancer. The Balancer is responsible for recognizing the instances registered in ZooKeeper and partitioning the set of ideas among them. This "registering" and "assigning" is done by manipulating ZooKeeper _znodes_, which are pieces of data arranged in a hierarchy similar to a filesystem. For example, there could be a znode for each Evaluator instance, and underneath them a znode for each idea they own. Like the producer in the RabbitMQ solution, the Balancer has to run in primary-backup mode in case of failures.
 
-{{< img src="zookeeper-design.svg" cap="Idea balancing design using ZooKeeper" >}}
+![Idea balancing design using ZooKeeper](../assets/svg/zookeeper-design.svg)
 
 When the primary Balancer starts up, it loads all the ideas and checks to see if any Evaluator instances have registered themselves. If so, it divides up the ideas evenly among them and writes znodes to indicate the assignment. The Evaluator instances, which were waiting for this to happen using ZooKeeper's _watch_ feature, can then start evaluating those ideas. Whenever a new idea is created, the Balancer assigns it to a random instance. At the same time, it continues to watch the znodes for each instance; these are _ephemeral_ znodes, meaning they disappear if the machine that created them loses connection to the ZooKeeper ensemble. So, if an Evaluator instance goes down, the Balancer will recognizes this and redistribute the ideas among the remaining instances.
 

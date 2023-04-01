@@ -51,7 +51,7 @@ Of course, for this to work, we'd have to create an L-system that includes these
 
 L-systems are perfect for drawing fractal curves---shapes that have repeating patterns at every scale. One well-known fractal curve is the Koch snowflake, invented by Helge von Koch in 1904. It begins as an equilateral triangle, and it grows another equilateral triangle on each edge to advance to the next generation. Here are the first few stages:
 
-{{< img src="koch.svg" cap="First three generations of the Koch snowflake" >}}
+![First three generations of the Koch snowflake](../assets/svg/koch.svg)
 
 Technically, the real curve is the result of taking this process to infinity. Once we arrive there, it has an amazing property: its perimeter is infinite, despite enclosing a finite area.
 
@@ -63,7 +63,7 @@ A space-filling curve is a special kind of fractal curve that occupies the entir
 
 The Hilbert curve, invented by David Hilbert in 1981, is one of the simplest space-filling curves. It looks like strange, complicated maze, but it can be defined by a relatively simple L-system. Its axiom is A, and its rules are A&nbsp;$\to$&nbsp;+BF--AFA--FB+ and B&nbsp;$\to$&nbsp;--AF+BFB+FA--. We ignore the symbols A and B while drawing, and we make 90º rotations.
 
-{{< img src="hilbert.svg" cap="First three generations of the Hilbert curve" >}}
+![First three generations of the Hilbert curve](../assets/svg/hilbert.svg)
 
 This curve reveals a remarkable fact: we can specify any point on the unit square with a single real number. Let's define a function $H\colon\mathbb{R}\to\mathbb{R}^2$ where $H(0)$ and $H(1)$ are the coordinates of the start and the end of the curve, respectively. Since it fills the entire square, $H$ will reach each and every point, therefore $\{H(t):t\in[0,1]\}=[0,1]\times [0,1]$. This is an alternative method of proving $\lvert\mathbb{R}\rvert=\lvert\mathbb{R}^2\rvert\$, which I demonstrated by a different method in "[Chasing the Infinite][cti]."
 
@@ -78,7 +78,7 @@ Many objects found in nature, including plants, have intricate fractal patterns.
 
 These new symbols allow us to create branches by returning the pen to a previous location and going in a different direction. The result is no longer a curve in the technical sense, but it's still a fractal. Now, let's construct a fractal plant. The axiom is A, and the rules are A&nbsp;$\to$&nbsp;F+[[A]--A]--F[--FA]+A and F&nbsp;$\to$&nbsp;FF. Can you see the self-similarity in the branches?
 
-{{< img src="plant.svg" cap="Fourth generation of the fractal plant" >}}
+![Fourth generation of the fractal plant](../assets/svg/plant.svg)
 
 # Conclusion
 

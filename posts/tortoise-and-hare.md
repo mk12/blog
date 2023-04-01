@@ -13,7 +13,7 @@ The tortoise and the hare is my favourite algorithm. It's such a neat solution, 
 
 Also known as Floyd's cycle-finding algorithm, its purpose is to detect cycles in linked structures. If you don't know what a linked list is, you may want to look that up first. Picture a set of boxes (nodes), each having an arrow (pointer) to another box. The last box in the list points to nothing, which we refer to as _null_. To traverse the list, we simply follow the arrows. There's nothing to prevent arrows from pointing back to previous boxes, which is a problem because this makes the list infinite. If we follow a million arrows and the list keeps going, there's no way of knowing if it's infinite or if it just happens to be a million and one items long.
 
-{{< img src="linked-lists.svg" cap="Box-and-arrow diagrams of a regular linked list (top) and one with a cycle (bottom)" >}}
+![Box-and-arrow diagrams of a regular linked list (top) and one with a cycle (bottom)](../assets/svg/linked-lists.svg)
 
 In addition to detecting the cycle, the algorithm determines the beginning of the cycle and its period. In the diagram above, the cycle begins at "L" and has a period of 3, because three jumps takes you back to the same spot. The tortoise and hare algorithm is not the only way of doing this, but it's unique in that it uses just two pointers and no additional memory. We could go through the list and build up a set data structure (implemented as a tree or hash table), stopping when the next item is already in the set, but that requires lot of memory if the list is large.
 

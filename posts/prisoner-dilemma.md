@@ -20,7 +20,7 @@ Returning to the dilemma: what would you do? You can either _cooperate_ by remai
 
 The outcomes look the same to the other prisoner, except the temptation and sucker's payoff are swapped. It's more clear in a matrix format:
 
-{{< img src="prisoner.svg" cap="Payoff matrix of the prisoner's dilemma (your choice on the left)" >}}
+![Payoff matrix of the prisoner's dilemma (your choice on the left)](../assets/svg/prisoner.svg)
 
 What's the best decision to make? Well, the other prisoner will either cooperate or defect. If he cooperates, then you should defect and get off free. If he defects, then you absolutely must defect---two years is bad, but three is worse! So no matter what the other prisoner does, it's always better for you to defect. The other prisoner independently comes to the same conclusion, so you are both doomed to a two-year sentence.
 
@@ -136,7 +136,7 @@ Another strategy is _tit for tat_. It starts off by cooperating, but after that 
 
 Here's the matrix we get using the `tournament` function:
 
-{{< img src="tournament.svg" cap="Tournament matrix with four strategies and 1000 iterations (first player on the left)" >}}
+![Tournament matrix with four strategies and 1000 iterations (first player on the left)](../assets/svg/tournament.svg)
 
 # Conclusion
 

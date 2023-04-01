@@ -15,7 +15,7 @@ Facebook is well known as the world's largest social networking platform. In add
 
 The more active users a service has, the more data will need to be stored. All your status updates, messages, and photos have to go somewhere. However, this type of data is only part of the story; another important part is the _data warehouse_. A data warehouse is "a large store of data accumulated from a wide range of sources within a company and used to guide management decisions."[^1] When someone wants to answer a specific question about a product, they consult the data warehouse. At Facebook, the data warehouse is essential for data scientists and data engineers. For infrastructure engineers, the question is, how do we store all that data?
 
-{{< img src="data-warehouse.svg" cap="Generic data warehouse architecture (not specific to Facebook)" >}}
+![Generic data warehouse architecture (not specific to Facebook)](../assets/svg/data-warehouse.svg)
 
 Data storage is an old problem. For decades, businesses have relied on computers and hard disk drives to store and process data. Even though hard disk capacity has increased exponentially over the years,[^2] it hasn't been enough to satisfy the world's growing appetite for data. Instead of dealing with individual hard disks, companies like Facebook store data in [clusters][] of many thousands of servers and hard drives working together. This allows for greater capacity, but results in a much more complex system. To manage it all, a _distributed_ file system is needed: one that presents a single coherent file system, but internally distributes the data across the cluster.
 
@@ -61,7 +61,7 @@ Lastly, I had to think about efficiency and scalability. In order for the expira
 
 These are the essential parts of the design I chose. The expiration service works only on files, accepts relative expiration times from users, delays expiration when files are modified, allows expiration times to be changed, supports a grace period, and uses a key-value store. Here is an example of the operations a user might perform on a file over time, illustrating how the expiration time changes and when the grace period is active:
 
-{{< img src="expiration-service.svg" cap="Timeline of operations on a file with an expiration time" >}}
+![Timeline of operations on a file with an expiration time](../assets/svg/expiration-service.svg)
 
 # Conclusion
 
