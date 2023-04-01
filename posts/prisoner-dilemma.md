@@ -38,7 +38,7 @@ We have seen that the dominant strategy in the prisoner's dilemma is to always d
 
 Before it was just a blind choice, but now there are infinitely many _strategies_ that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y\in\{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
 
-$$M = \begin{bmatrix}R \& S \\ T \& P \end{bmatrix}$$
+$$M = \begin{bmatrix}R & S \\ T & P \end{bmatrix}$$
 
 is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s_x$ and $s_y$ that generate the sequences  $x_i$ and $y_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
 
