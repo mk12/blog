@@ -1,0 +1,20 @@
+<header class="list-header">
+  <a class="no-ul subtle" href="{{ root }}index.html">«&nbsp;Back to blog</a>
+  <h1>Post Archive</h1>
+</header>
+<section>
+  {{ range groups }}
+  <section class="post-group">
+    <h2>{{ year }}</h2>
+    <ul>
+      {{ range pages }}
+      <li class="post-li">
+        <a class="no-ul" href="{{ href }}">{{ title }}</a>
+        <span class="post-meta">({{ date }})</span>
+      </li>
+      {{ end }}
+    </ul>
+  </section>
+  {{ end }}
+</section>
+<div class="after-posts"></div>

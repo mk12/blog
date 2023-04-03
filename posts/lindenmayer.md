@@ -65,7 +65,7 @@ The Hilbert curve, invented by David Hilbert in 1981, is one of the simplest spa
 
 ![First three generations of the Hilbert curve](../assets/svg/hilbert.svg)
 
-This curve reveals a remarkable fact: we can specify any point on the unit square with a single real number. Let's define a function $H\colon\mathbb{R}\to\mathbb{R}^2$ where $H(0)$ and $H(1)$ are the coordinates of the start and the end of the curve, respectively. Since it fills the entire square, $H$ will reach each and every point, therefore $\{H(t):t\in[0,1]\}=[0,1]\times [0,1]$. This is an alternative method of proving $\lvert\mathbb{R}\rvert=\lvert\mathbb{R}^2\rvert\$, which I demonstrated by a different method in "[Chasing the Infinite][cti]."
+This curve reveals a remarkable fact: we can specify any point on the unit square with a single real number. Let's define a function $H\colon\mathbb{R}\to\mathbb{R}^2$ where $H(0)$ and $H(1)$ are the coordinates of the start and the end of the curve, respectively. Since it fills the entire square, $H$ will reach each and every point, therefore $\{H(t):t\in[0,1]\}=[0,1]\times [0,1]$. This is an alternative method of proving $\lvert\mathbb{R}\rvert=\lvert\mathbb{R}^2\rvert$, which I demonstrated by a different method in "[Chasing the Infinite][cti]."
 
 # Fractal plants
 

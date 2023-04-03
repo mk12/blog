@@ -5,56 +5,107 @@ import { marked } from "marked";
 import dateFormat from "dateformat";
 import { Socket } from "bun";
 import katex, { KatexOptions } from "katex";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
+import { readFile } from "fs/promises";
 
 function usage() {
   console.log(
-    `Usage: bun run ${process.argv[1]} [-h] [-o OUTFILE] [-i INFILE] [-d DEPFILE] [-s SOCKET]
+    `Usage: bun run ${process.argv[1]} [options]
 
-Generates an HTML page for the blog
+Generates a file for the blog
 
 Options:
     -h, --help  Show this help message
-    -o OUTFILE  Output HTML file
+    -k KIND     Kind of file to generate
+    -o OUTFILE  Output file
     -i INFILE   Input Markdown file
     -d DEPFILE  Output depfile for Make
     -s SOCKET   Highlight server socket`
   );
 }
 
-async function main() {
+async function main(writer: Writer) {
   const args = getopts(process.argv.slice(2));
   if (args.h || args.help) {
     usage();
     return;
   }
-  let html;
-  const [content, highlightServer] = await Promise.all([
-    Bun.file(args.i).text(),
-    HighlightServer.connect(args.s),
-  ]);
-  const template = new TemplateRenderer();
-  const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
-  if (args.i) {
-    html = await genPost(content, template, markdown);
-    highlightServer.close();
-  } else {
-    console.error("TODO");
-    return;
+  switch (args.k) {
+    case "order": {
+      const getDate = async (path: string) =>
+        extractMetadata(await Bun.file(path).text())[0].date;
+      const posts = await Promise.all(
+        args._.map(async (path) => ({ path, date: await getDate(path) }))
+      );
+      const order = posts.sort((a, b) => a.date - b.date).map((p) => p.path);
+      writer.write(args.o, order.join("\n"));
+      order.forEach((path, i) => {
+        const out = join(
+          dirname(args.o),
+          "post",
+          basename(path, ".md") + ".json"
+        );
+        const nav = { older: order[i - 1], newer: order[i + 1] };
+        writer.writeIfChanged(out, JSON.stringify(nav));
+      });
+      break;
+    }
+    case "archive": {
+      const template = new TemplateRenderer();
+      const html = await genArchive(template);
+      writer.write(args.o, postprocess(html));
+      break;
+    }
+    case "post": {
+      const [content, jsonText, highlightServer] = await Promise.all([
+        Bun.file(args.i).text(),
+        Bun.file(args.j).text(),
+        HighlightServer.connect(args.s),
+      ]);
+      const navigation = JSON.parse(jsonText) as Navigation;
+      const template = new TemplateRenderer();
+      const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
+      const html = await genPost(content, navigation, template, markdown);
+      highlightServer.close();
+      writer.write(args.o, postprocess(html));
+      const deps = [
+        ...Array.from(markdown.embeddedFiles),
+        ...template.templatesUsed(),
+      ].join(" ");
+      writer.write(args.d, `${args.o}: ${deps}`);
+      break;
+    }
   }
-  Bun.write(args.o, postprocess(html));
-  if (args.d) {
-    const deps = [
-      ...Array.from(markdown.embeddedFiles),
-      ...template.templatesUsed(),
-    ];
-    Bun.write(args.d, `${args.o}: ${deps.join(" ")}`);
-  }
+}
+
+interface Navigation {
+  older: string;
+  newer: string;
+}
+
+// Generates the blog post archive.
+async function genArchive(template: TemplateRenderer): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
+  const root = "../";
+  return template.render("templates/base.html", {
+    root,
+    title: "Post Archive",
+    analytics: analytics && Bun.file(analytics).text(),
+    body: template.render("templates/archive.html", {
+      groups: [
+        {
+          year: "2006",
+          pages: [{ href: "", title: "Foo", date: "2023 April 2" }],
+        },
+      ],
+    }),
+  });
 }
 
 // Generates a blog post from its Markdown content.
 async function genPost(
   fileContent: string,
+  navigation: Navigation,
   template: TemplateRenderer,
   markdown: MarkdownRenderer
 ): Promise<string> {
@@ -75,6 +126,12 @@ async function genPost(
       pagenav: template.render("templates/pagenav.html", {
         home: process.env["HOME_URL"],
         root,
+        older:
+          navigation.older?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
+          "../index.html",
+        newer:
+          navigation.newer?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
+          "../../index.html",
       }),
     }),
   });
@@ -85,7 +142,8 @@ interface Metadata {
   title: string;
   description: string;
   categories: string[];
-  date: Date;
+  // Timestamp in Unix milliseconds.
+  date: number;
 }
 
 // Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
@@ -326,8 +384,8 @@ const footnoteDefBlockExt: marked.TokenizerAndRendererExtension = {
   level: "block",
   start: (src) => src.indexOf("\n\n[^"),
   tokenizer(src): FootnoteDefBlock | undefined {
-    let raw = "",
-      match;
+    let raw = "";
+    let match;
     const items: FootnoteDefItem[] = [];
     while ((match = /^\n+\[\^(\w+)\]: (.+)/.exec(src.slice(raw.length)))) {
       raw += match[0];
@@ -372,47 +430,115 @@ const footnoteDefItemExt: marked.RendererExtension = {
 
 // A context provides values for variables in a template. The values can be
 // promises, e.g. the result of rendering another template.
-type Context = {
-  [variable: string]: ContextValue | Promise<ContextValue> | undefined;
-};
+type Context = Record<string, ContextValue | Promise<ContextValue>>;
+
+// Like `Context` but all promises have been resolved.
+type ConcreteContext = Record<string, ContextValue>;
 
 // Types allowed for variable values in templates.
-type ContextValue = string | boolean;
+type ContextValue =
+  | string
+  | boolean
+  | ContextValue[]
+  | NestedContext
+  | undefined;
+
+interface NestedContext extends Record<string, ContextValue> {}
+
+// Commands used in a parsed template.
+type TemplateCommand =
+  | { kind: "text"; text: string }
+  | { kind: "var"; variable: string }
+  | { kind: "begin"; variable: string }
+  | { kind: "end" };
 
 // Renders HTML templates using syntax similar to Go templates.
 class TemplateRenderer {
-  private cache: Map<string, string> = new Map();
+  private cache: Map<string, TemplateCommand[]> = new Map();
 
   // Renders an HTML template.
   async render(path: string, context: Context): Promise<string> {
     let template = this.cache.get(path);
     if (template === undefined) {
-      template = await Bun.file(path).text();
+      template = TemplateRenderer.parse(await Bun.file(path).text());
       this.cache.set(path, template);
     }
     const values = await Promise.all(Object.values(context));
-    const newContext = Object.fromEntries(
-      Object.keys(context).map((key, i) => [key, values[i]])
+    return TemplateRenderer.apply(
+      template,
+      Object.fromEntries(Object.keys(context).map((key, i) => [key, values[i]]))
     );
-    return template
-      .replace(
-        /(\s*)\{\{\s*if\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*end\s*\}\}/g,
-        (str: string, space: string, name: string, inner: string) => {
-          const val = newContext[name];
-          return val ? space + inner : "";
-        }
-      )
-      .replace(
-        /(\s*)\{\{\s*(\w+)\s*\}\}/g,
-        (str: string, space: string, name: string) => {
-          const val = newContext[name];
-          return val ? space + val : "";
-        }
-      );
   }
 
   templatesUsed(): string[] {
     return Array.from(this.cache.keys());
+  }
+
+  private static parse(source: string): TemplateCommand[] {
+    const commands: TemplateCommand[] = [];
+    let offset = 0;
+    for (const match of source.matchAll(
+      /(\s*)\{\{\s*(?:end|(?:(if|range)\s*)?(\S+))\s*\}\}/g
+    )) {
+      const idx = must(match.index);
+      let text = source.slice(offset, idx);
+      const [wholeMatch, whitespace, begin, variable] = match;
+      if (!begin && variable) text += whitespace;
+      commands.push({ kind: "text", text });
+      offset = idx + wholeMatch.length;
+      if (!variable) commands.push({ kind: "end" });
+      else if (!begin) commands.push({ kind: "var", variable });
+      else commands.push({ kind: "begin", variable });
+    }
+    commands.push({ kind: "text", text: source.slice(offset).trimEnd() });
+    return commands;
+  }
+
+  private static apply(
+    commands: TemplateCommand[],
+    context: ConcreteContext
+  ): string {
+    let result = "";
+    const go = (i: number, context: ConcreteContext) => {
+      while (i < commands.length) {
+        const cmd = commands[i++];
+        switch (cmd.kind) {
+          case "text": {
+            result += cmd.text;
+            break;
+          }
+          case "var": {
+            let value = context[cmd.variable];
+            if (value) result += value;
+            break;
+          }
+          case "begin": {
+            const value = context[cmd.variable];
+            if (value) {
+              let values: ContextValue[] = Array.isArray(value)
+                ? value
+                : [value];
+              for (const v of values) {
+                let ctx = { ...context, ".": v };
+                if (typeof v === "object" && !Array.isArray(v)) {
+                  ctx = { ...ctx, ...(v as object) };
+                }
+                go(i, ctx);
+              }
+            }
+            for (let depth = 1; depth > 0; i++) {
+              if (commands[i].kind === "begin") depth++;
+              else if (commands[i].kind === "end") depth--;
+            }
+            break;
+          }
+          case "end":
+            return;
+        }
+      }
+    };
+    go(0, context);
+    return result;
   }
 }
 
@@ -482,6 +608,7 @@ class HighlightServer {
 
 // Postprocesses HTML output.
 function postprocess(html: string): string {
+  // Avoid unnecessary entities.
   const entityMap: Record<string, string> = {
     quot: '"',
     "#34": '"',
@@ -490,27 +617,54 @@ function postprocess(html: string): string {
     gt: ">",
     "#62": ">",
   };
-  return (
-    html
-      // Avoid unnecessary entities.
-      .replace(
-        /&(#\d+|[a-z]+);/g,
-        (entity: string, code: string) => entityMap[code] ?? entity
-      )
-      // I prefer typing " -- ", but I want to render as close-set em dash.
-      .replace(/ – /g, "—")
+  html = html.replace(
+    /&(#\d+|[a-z]+);/g,
+    (entity: string, code: string) => entityMap[code] ?? entity
   );
+  // I prefer typing " -- ", but I want to render as close-set em dash.
+  html = html.replace(/ – /g, "—");
+  // Ensure it ends with a newline. We strip trailing newlines in templates to
+  // avoid having blank lines within the file.
+  html = html.trimEnd() + "\n";
+  return html;
+}
+
+// Helper class for collecting writes that only need to be awaited on exit.
+class Writer {
+  promises: Promise<number>[] = [];
+
+  // Writes `content` to `path`.
+  write(path: string, content: string): void {
+    this.promises.push(Bun.write(path, content));
+  }
+
+  // Writes `content` to `path` only if different from its current content.
+  writeIfChanged(path: string, content: string): void {
+    this.promises.push(
+      (async () => {
+        let old;
+        try {
+          old = await Bun.file(path).text();
+        } catch (ev) {}
+        return content === old ? 0 : Bun.write(path, content);
+      })()
+    );
+  }
+
+  async wait(): Promise<void> {
+    await Promise.all(this.promises);
+  }
 }
 
 // Asserts that `condition` is true.
-export function assert(condition: boolean, msg?: string): asserts condition {
+function assert(condition: boolean, msg?: string): asserts condition {
   if (!condition) {
     throw new Error(msg);
   }
 }
 
 // Asserts that a value is not undefined.
-export function must<T>(value: T | undefined | null): T {
+function must<T>(value: T | undefined | null): T {
   assert(value != undefined);
   return value;
 }
@@ -535,4 +689,6 @@ function deferred<T>(): Deferred<T> {
   return obj;
 }
 
-await main();
+const writer = new Writer();
+await main(writer);
+await writer.wait();

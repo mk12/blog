@@ -27,16 +27,22 @@ src_posts := $(wildcard posts/*.md)
 src_assets := $(wildcard assets/img/*.jpg)
 src_css := assets/css/style.css
 
+index := $(DESTDIR)/index.html
+archive := $(DESTDIR)/post/index.html
+categories := $(DESTDIR)/categories/index.html
 pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
+depfiles := $(src_posts:posts/%.md=build/post/%.d)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
-
 html := $(pages) $(posts)
 
-depfiles := $(src_posts:posts/%.md=build/%.d)
+reload := build/reload.mk
+order := build/order.json
+neighbours := $(src_posts:posts/%.md=build/post/%.json)
+auxiliary := $(reload) $(order) $(neighbours)
 
-directories := build $(DESTDIR) $(DESTDIR)/post \
+directories := build build/post $(DESTDIR) $(DESTDIR)/post \
 	$(sort $(dir $(posts)) $(dir $(assets)))
 directories := $(directories:%/=%)
 
@@ -59,9 +65,19 @@ clean:
 
 # $(html): gen.ts | build highlight.sock
 
-$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/highlight \
-		| highlight.sock build
-	bun run $< -i $(word 2,$^) -o $@ -d build/$*.d -s $(word 1,$|)
+# $(index): gen.ts $(src_posts) | build
+# 	bun run $< -o $@
+
+$(reload): gen.ts posts $(src_posts) | build/post
+	bun run $< -k order -o $(order) $(src_posts)
+	touch $@
+
+$(archive): gen.ts $(order)
+	bun run $< -k archive -r $(order) -o $@
+
+$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/post/%.json \
+		| highlight.sock
+	bun run $< -k post -i $(word 2,$^) -j $(word 3,$^) -o $@ -d build/post/$*.d -s highlight.sock
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
@@ -84,8 +100,11 @@ highlight.fifo:
 $(directories):
 	mkdir -p $@
 
+ifeq (,$(filter help clean,$(MAKECMDGOALS)))
+include $(reload)
 -include $(depfiles)
+endif
 
 .SECONDEXPANSION:
 
-$(html) $(assets) $(css) $(directories): | $$(@D)
+$(html) $(assets) $(css) $(auxiliary) $(directories): | $$(@D)
