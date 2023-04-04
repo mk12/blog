@@ -32,27 +32,31 @@ async function main(writer: Writer) {
   }
   switch (args.k) {
     case "order": {
-      const getDate = async (path: string) =>
-        extractMetadata(await Bun.file(path).text())[0].date;
+      const getMeta = async (path: string) =>
+        extractMetadata(await Bun.file(path).text())[0];
       const posts = await Promise.all(
-        args._.map(async (path) => ({ path, date: await getDate(path) }))
+        args._.map(async (path) => ({ path, ...(await getMeta(path)) }))
       );
-      const order = posts.sort((a, b) => a.date - b.date).map((p) => p.path);
-      writer.write(args.o, order.join("\n"));
-      order.forEach((path, i) => {
+      const sorted = posts.sort((a, b) => b.date.getTime() - a.date.getTime());
+      writer.write(args.o, JSON.stringify(sorted));
+      sorted.forEach(({ path }, i) => {
         const out = join(
           dirname(args.o),
           "post",
           basename(path, ".md") + ".json"
         );
-        const nav = { older: order[i - 1], newer: order[i + 1] };
+        const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
         writer.writeIfChanged(out, JSON.stringify(nav));
       });
       break;
     }
     case "archive": {
       const template = new TemplateRenderer();
-      const html = await genArchive(template);
+      const posts = JSON.parse(await Bun.file(args.r).text());
+      for (const post of posts) {
+        post.date = new Date(Date.parse(post.date));
+      }
+      const html = await genArchive(posts, template);
       writer.write(args.o, postprocess(html));
       break;
     }
@@ -78,13 +82,27 @@ async function main(writer: Writer) {
   }
 }
 
-interface Navigation {
-  older: string;
-  newer: string;
+type Posts = (Metadata & { path: string })[];
+
+function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
+  const result: [U, T[]][] = [];
+  let i = -1;
+  for (const item of array) {
+    const k = key(item);
+    if (i === -1 || result[i][0] !== k) {
+      result[++i] = [k, [item]];
+    } else {
+      result[i][1].push(item);
+    }
+  }
+  return result;
 }
 
 // Generates the blog post archive.
-async function genArchive(template: TemplateRenderer): Promise<string> {
+async function genArchive(
+  posts: Posts,
+  template: TemplateRenderer
+): Promise<string> {
   const analytics = process.env["ANALYTICS"];
   const root = "../";
   return template.render("templates/base.html", {
@@ -92,14 +110,23 @@ async function genArchive(template: TemplateRenderer): Promise<string> {
     title: "Post Archive",
     analytics: analytics && Bun.file(analytics).text(),
     body: template.render("templates/archive.html", {
-      groups: [
-        {
-          year: "2006",
-          pages: [{ href: "", title: "Foo", date: "2023 April 2" }],
-        },
-      ],
+      groups: groupBy(posts, (post) =>
+        post.date.getUTCFullYear().toString()
+      ).map(([year, posts]) => ({
+        year,
+        pages: posts.map(({ path, title, date }) => ({
+          date: dateFormat(date, "d mmm yyyy"),
+          href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+          title,
+        })),
+      })),
     }),
   });
+}
+
+interface Navigation {
+  older: string;
+  newer: string;
 }
 
 // Generates a blog post from its Markdown content.
@@ -142,8 +169,7 @@ interface Metadata {
   title: string;
   description: string;
   categories: string[];
-  // Timestamp in Unix milliseconds.
-  date: number;
+  date: Date;
 }
 
 // Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
@@ -155,7 +181,7 @@ function extractMetadata(content: string): [Metadata, string] {
     .replace(/^(\w+):/gm, '"$1":')
     .replace(/\n/g, ",");
   const obj = JSON.parse("{" + fields + "}");
-  const meta = { ...obj, date: Date.parse(obj.date) };
+  const meta = { ...obj, date: new Date(Date.parse(obj.date)) };
   return [meta, body];
 }
 
