@@ -216,7 +216,7 @@ function extractMetadata(content: string): [Metadata, string] {
   const [before, body] = content.split("\n---\n", 2);
   const fields = before
     .replace(/^---\n/, "")
-    .replace(/^(\w+):/gm, '"$1":')
+    .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
     .replace(/\n/g, ",");
   const meta = JSON.parse("{" + fields + "}");
   return [meta, body];

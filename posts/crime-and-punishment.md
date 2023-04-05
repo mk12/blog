@@ -1,8 +1,8 @@
 ---
-title: "Raskolnikov's silence"
-description: "Reflections of a silenced conscience"
-category: "literature"
-date: "2015-11-25"
+title: Raskolnikov's silence
+description: Reflections of a silenced conscience
+category: Literature
+date: 2015-11-25
 ---
 
 This past summer, I read _Crime and Punishment_ by Fyodor Dostoyevsky (specifically, the translation by Jessie Couson). My recommendation is hardly necessary for a classic, but I give it anyway. This "psychological account of a crime," as Dostoyevsky once described it, is one of the most thought-provoking novels I've ever read. In this article, I'm going to focus on one recurring device that stood out to me: awkward silence.

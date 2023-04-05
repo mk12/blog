@@ -1,8 +1,8 @@
 ---
-title: "What is this?"
-description: "This is my first blog post"
-category: "life"
-date: "2015-03-28"
+title: What is this?
+description: This is my first blog post
+category: Life
+date: 2015-03-28
 ---
 
 I'm Mitchell Kember, a first-year Software Engineering student at Waterloo. I enjoy writing code, reading, running, playing the piano, obsessing over typography, listening to classical music, perfecting my Vim setup, contemplating the timeless elegance of Lisp (or Haskell, depending on the mood I'm in), waking up before the sun rises, making checklists, and drinking coffee.

@@ -1,8 +1,8 @@
 ---
-title: "Lindenmayer systems"
-description: "Using L-systems to draw fractal curves"
-category: "math"
-date: "2015-09-18"
+title: Lindenmayer systems
+description: Using L-systems to draw fractal curves
+category: Math
+date: 2015-09-18
 ---
 
 I've recently become interested in a type of mathematical structure called an L-system. Invented by Aristid Lindenmayer in 1968, an L-system is a grammar that applies recursive rules to produce strings. Lindenmayer originally used them to model biological processes, such as the behaviour of plant cells. They can also be used to draw beautiful fractal curves.

@@ -1,8 +1,8 @@
 ---
-title: "How to write a ray tracer"
-description: "An outline of the components of a ray tracer"
-category: "algorithms"
-date: "2015-04-24"
+title: How to write a ray tracer
+description: An outline of the components of a ray tracer
+category: Algorithms
+date: 2015-04-24
 ---
 
 In the summer of 2012, I wrote a ray tracer called [Luminosity](https://github.com/mk12/luminosity) as my first Haskell project. I've worked on other things since, but Luminosity remains my favourite project. If you're itching to write some code but, after googling "coding project ideas," digging up that Asteroids clone you never finished, combing through lists of open source projects -- still find yourself in a painful discombobulation -- then I suggest writing a ray tracer. <!--more--> The algorithm itself is surprisingly simple, but there are many other details to consider before you can start rendering images. Once those issues are tackled, though, the end results are very rewarding.

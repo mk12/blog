@@ -1,8 +1,8 @@
 ---
-title: "Shopify co-op reflection"
-description: "Belated thoughts on my first internship"
-category: "life"
-date: "2018-03-04"
+title: Shopify co-op reflection
+description: Belated thoughts on my first internship
+category: Life
+date: 2018-03-04
 draft: true
 ---
 

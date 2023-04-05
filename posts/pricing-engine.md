@@ -1,8 +1,8 @@
 ---
-title: "Scaling a real-time pricing engine"
-description: "Rabbits versus zookeepers"
-category: "software"
-date: "2018-05-03"
+title: Scaling a real-time pricing engine
+description: Rabbits versus zookeepers
+category: Software
+date: 2018-05-03
 ---
 
 This winter, I interned at Bloomberg in New York City. During my time there, I was on an engineering team called Foreign Exchange Idea Generation. I had the chance to work on several interesting projects, and I also learned a bit about the foreign exchange market. In this post, I'm going to discuss one particular problem I worked on: horizontally scaling a real-time pricing engine.
