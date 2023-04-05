@@ -2,7 +2,7 @@
 title: "The tortoise and the hare"
 description: "Cycle detection with the help of Aesop's fables"
 categories: ["algorithms"]
-date: "2015-04-02T15:43:46-04:00"
+date: "2015-04-02"
 ---
 
 The tortoise and the hare is my favourite algorithm. It's such a neat solution, based on a principle that, while simple, would require a profound insight to discover on your own. You could just memorize the steps in case it comes up in an interview, but I'd like to focus on proving its correctness, which requires a deeper understanding.

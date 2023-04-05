@@ -37,7 +37,7 @@ async function main(writer: Writer) {
       const posts = await Promise.all(
         args._.map(async (path) => ({ path, ...(await getMeta(path)) }))
       );
-      const sorted = posts.sort((a, b) => b.date.getTime() - a.date.getTime());
+      const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
       writer.write(args.o, JSON.stringify(sorted));
       sorted.forEach(({ path }, i) => {
         const out = join(
@@ -110,16 +110,16 @@ async function genArchive(
     title: "Post Archive",
     analytics: analytics && Bun.file(analytics).text(),
     body: template.render("templates/archive.html", {
-      groups: groupBy(posts, (post) =>
-        post.date.getUTCFullYear().toString()
-      ).map(([year, posts]) => ({
-        year,
-        pages: posts.map(({ path, title, date }) => ({
-          date: dateFormat(date, "d mmm yyyy"),
-          href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
-          title,
-        })),
-      })),
+      groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
+        ([year, posts]) => ({
+          year,
+          pages: posts.map(({ path, title, date }) => ({
+            date: dateFormat(date, "d mmm yyyy"),
+            href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+            title,
+          })),
+        })
+      ),
     }),
   });
 }
@@ -169,7 +169,8 @@ interface Metadata {
   title: string;
   description: string;
   categories: string[];
-  date: Date;
+  // Format: YYYY-MM-DD.
+  date: string;
 }
 
 // Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
@@ -180,8 +181,7 @@ function extractMetadata(content: string): [Metadata, string] {
     .replace(/^---\n/, "")
     .replace(/^(\w+):/gm, '"$1":')
     .replace(/\n/g, ",");
-  const obj = JSON.parse("{" + fields + "}");
-  const meta = { ...obj, date: new Date(Date.parse(obj.date)) };
+  const meta = JSON.parse("{" + fields + "}");
   return [meta, body];
 }
 

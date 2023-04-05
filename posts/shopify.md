@@ -2,7 +2,7 @@
 title: "Shopify co-op reflection"
 description: "Belated thoughts on my first internship"
 categories: ["life"]
-date: "2018-03-04T14:40:00-05:00"
+date: "2018-03-04"
 draft: true
 ---
 
