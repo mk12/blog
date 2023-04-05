@@ -196,7 +196,7 @@ function genCategories(
           name: category,
           pages: posts.map(({ path, title, date }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+            href: "../post/" + must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
             title,
           })),
         })
