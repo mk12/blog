@@ -1,7 +1,7 @@
 ---
 title: "Cracking the Caesar cipher"
 description: "How to crack a Caesar cipher using frequency analysis"
-categories: ["algorithms"]
+category: "algorithms"
 date: "2015-03-30"
 ---
 

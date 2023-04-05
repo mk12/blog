@@ -1,7 +1,7 @@
 ---
 title: "How to write a ray tracer"
 description: "An outline of the components of a ray tracer"
-categories: ["algorithms"]
+category: "algorithms"
 date: "2015-04-24"
 ---
 

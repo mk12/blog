@@ -1,7 +1,7 @@
 ---
 title: "The tortoise and the hare"
 description: "Cycle detection with the help of Aesop's fables"
-categories: ["algorithms"]
+category: "algorithms"
 date: "2015-04-02"
 ---
 

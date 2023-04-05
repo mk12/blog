@@ -1,7 +1,7 @@
 ---
 title: "Fractal dimensions"
 description: "Exploring the gap between topological dimensions"
-categories: ["math"]
+category: "math"
 date: "2016-02-07"
 ---
 

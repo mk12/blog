@@ -1,7 +1,7 @@
 ---
 title: "First year reflection"
 description: "Thoughts on Software Engineering at Waterloo"
-categories: ["life"]
+category: "life"
 date: "2015-04-04"
 ---
 

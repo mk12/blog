@@ -1,7 +1,7 @@
 ---
 title: "What is this?"
 description: "This is my first blog post"
-categories: ["life"]
+category: "life"
 date: "2015-03-28"
 ---
 

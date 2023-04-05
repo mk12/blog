@@ -53,11 +53,19 @@ async function main(writer: Writer) {
     case "archive": {
       const template = new TemplateRenderer();
       const posts = JSON.parse(await Bun.file(args.r).text());
-      for (const post of posts) {
-        post.date = new Date(Date.parse(post.date));
-      }
       const html = await genArchive(posts, template);
       writer.write(args.o, postprocess(html));
+      const deps = template.templatesUsed().join(" ");
+      writer.write(args.d, `${args.o}: ${deps}`);
+      break;
+    }
+    case "categories": {
+      const template = new TemplateRenderer();
+      const posts = JSON.parse(await Bun.file(args.r).text());
+      const html = await genCategories(posts, template);
+      writer.write(args.o, postprocess(html));
+      const deps = template.templatesUsed().join(" ");
+      writer.write(args.d, `${args.o}: ${deps}`);
       break;
     }
     case "post": {
@@ -85,17 +93,16 @@ async function main(writer: Writer) {
 type Posts = (Metadata & { path: string })[];
 
 function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
-  const result: [U, T[]][] = [];
-  let i = -1;
+  const map = new Map<U, T[]>();
   for (const item of array) {
     const k = key(item);
-    if (i === -1 || result[i][0] !== k) {
-      result[++i] = [k, [item]];
+    if (map.has(k)) {
+      map.get(k)?.push(item);
     } else {
-      result[i][1].push(item);
+      map.set(k, [item]);
     }
   }
-  return result;
+  return Array.from(map.entries());
 }
 
 // Generates the blog post archive.
@@ -105,14 +112,44 @@ async function genArchive(
 ): Promise<string> {
   const analytics = process.env["ANALYTICS"];
   const root = "../";
+  const title = "Post Archive";
   return template.render("templates/base.html", {
     root,
-    title: "Post Archive",
+    title,
     analytics: analytics && Bun.file(analytics).text(),
-    body: template.render("templates/archive.html", {
+    body: template.render("templates/listing.html", {
+      title,
       groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
         ([year, posts]) => ({
-          year,
+          name: year,
+          pages: posts.map(({ path, title, date }) => ({
+            date: dateFormat(date, "d mmm yyyy"),
+            href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+            title,
+          })),
+        })
+      ),
+    }),
+  });
+}
+
+// Generates the blog post categories page.
+async function genCategories(
+  posts: Posts,
+  template: TemplateRenderer
+): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
+  const root = "../";
+  const title = "Categories";
+  return template.render("templates/base.html", {
+    root,
+    title,
+    analytics: analytics && Bun.file(analytics).text(),
+    body: template.render("templates/listing.html", {
+      title,
+      groups: groupBy(posts, (post) => post.category).map(
+        ([category, posts]) => ({
+          name: category,
           pages: posts.map(({ path, title, date }) => ({
             date: dateFormat(date, "d mmm yyyy"),
             href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
@@ -168,7 +205,7 @@ async function genPost(
 interface Metadata {
   title: string;
   description: string;
-  categories: string[];
+  category: string;
   // Format: YYYY-MM-DD.
   date: string;
 }

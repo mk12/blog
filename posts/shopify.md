@@ -1,7 +1,7 @@
 ---
 title: "Shopify co-op reflection"
 description: "Belated thoughts on my first internship"
-categories: ["life"]
+category: "life"
 date: "2018-03-04"
 draft: true
 ---

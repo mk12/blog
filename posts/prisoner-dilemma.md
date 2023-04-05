@@ -1,7 +1,7 @@
 ---
 title: "The prisoner's dilemma"
 description: "Why people settle for a lose-lose scenario"
-categories: ["math"]
+category: "math"
 date: "2015-04-17"
 ---
 

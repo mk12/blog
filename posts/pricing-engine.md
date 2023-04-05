@@ -1,7 +1,7 @@
 ---
 title: "Scaling a real-time pricing engine"
 description: "Rabbits versus zookeepers"
-categories: ["software"]
+category: "software"
 date: "2018-05-03"
 ---
 

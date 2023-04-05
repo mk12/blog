@@ -1,7 +1,7 @@
 ---
 title: "Assertions and beyond"
 description: "Modern methods of testing software"
-categories: ["software"]
+category: "software"
 date: "2015-08-02"
 ---
 

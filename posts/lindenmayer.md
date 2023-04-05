@@ -1,7 +1,7 @@
 ---
 title: "Lindenmayer systems"
 description: "Using L-systems to draw fractal curves"
-categories: ["math"]
+category: "math"
 date: "2015-09-18"
 ---
 

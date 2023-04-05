@@ -1,11 +1,11 @@
 <header class="list-header">
   <a class="no-ul subtle" href="{{ root }}index.html">«&nbsp;Back to blog</a>
-  <h1>Post Archive</h1>
+  <h1>{{ title }}</h1>
 </header>
 <section>
   {{ range groups }}
   <section class="post-group">
-    <h2>{{ year }}</h2>
+    <h2>{{ name }}</h2>
     <ul>
       {{ range pages }}
       <li class="post-li">

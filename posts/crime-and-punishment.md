@@ -1,7 +1,7 @@
 ---
 title: "Raskolnikov's silence"
 description: "Reflections of a silenced conscience"
-categories: ["literature"]
+category: "literature"
 date: "2015-11-25"
 ---
 

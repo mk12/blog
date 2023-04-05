@@ -1,7 +1,7 @@
 ---
 title: "Introduction to the λ-calculus"
 description: "Meet your new favourite formal system"
-categories: ["math"]
+category: "math"
 date: "2015-04-07"
 ---
 

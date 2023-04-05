@@ -1,7 +1,7 @@
 ---
 title: "An over-shuffled deck"
 description: "Beware the nonuniform distribution!"
-categories: ["algorithms"]
+category: "algorithms"
 date: "2015-04-10"
 ---
 

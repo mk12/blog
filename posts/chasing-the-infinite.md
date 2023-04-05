@@ -1,7 +1,7 @@
 ---
 title: "Chasing the infinite"
 description: "Surprising mathematical results on infinity"
-categories: ["math"]
+category: "math"
 date: "2015-05-10"
 ---
 
