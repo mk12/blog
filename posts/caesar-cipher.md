@@ -7,8 +7,6 @@ date: 2015-03-30
 
 Whenever I play around with a new language, I always start by writing a program to crack a Caesar cipher. This problem is perfect for getting a sense of what it's like to work in a given language. It's significantly more interesting than "Hello, World!" but it only takes about a hundred lines to write -- in fact, the line count by itself is a good indication of how expressive the language is.
 
-<!--more-->
-
 You've probably heard of the ROT-13 cipher, where you rotate each letter around the alphabet by 13 positions. The result of doing this to the plaintext (message) is called the ciphertext (coded message). The Caesar cipher generalizes this to numbers other than 13. We only need to consider numbers between 0 and 25, since adding multiples of 26 makes no difference. Notice that with the Caesar cipher, we have to distinguish between encryption and decryption -- one goes forwards and the other goes backwards. The exceptions are 0, which is pretty useless, and 13, which is ROT-13.
 
 The Caesar cipher is a special case of the substitution cipher, which maps all possible pieces of plaintext (usually single letters, but not always) to corresponding pieces of ciphertext. There are only 26 Caesar ciphers; on the other hand, there 26! possible letter substitution ciphers.[^1] Our goal is to crack a Caesar-encrypted message, which means to find its _key_, the rotation number used to encrypt it. We can easily do this by brute force, by trying all 26 possible keys. The result of decrypting the message will almost certainly be gibberish for all but one key, but how can a computer recognize plausible English?

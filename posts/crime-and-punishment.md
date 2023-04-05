@@ -7,8 +7,6 @@ date: 2015-11-25
 
 This past summer, I read _Crime and Punishment_ by Fyodor Dostoyevsky (specifically, the translation by Jessie Couson). My recommendation is hardly necessary for a classic, but I give it anyway. This "psychological account of a crime," as Dostoyevsky once described it, is one of the most thought-provoking novels I've ever read. In this article, I'm going to focus on one recurring device that stood out to me: awkward silence.
 
-<!--more-->
-
 Before I continue, I should mention that I no longer have access to the copy of the novel I read, so the quotations that follow are from the Constance Garnett translation. Her translation is in the public domain, so it's freely available on [Project Gutenberg][gut], among other places.
 
 * * *

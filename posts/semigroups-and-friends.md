@@ -7,8 +7,6 @@ date: 2016-03-10
 
 What does it take for a semigroup to become a monoid? Why are all groups isomorphic to a group of permutations, and what does that even mean? When do I need to use a field rather than a plain old ring? But more importantly -- what do all these questions have in common?
 
-<!--more-->
-
 You'll be forgiven if you didn't guess _abstract algebra_, because another thing they share is cryptic terminology. Magmas, semigroups, monoids, groups, Abelian groups, rings, and fields -- or as I like to summarize them, semigroups and friends -- are the names mathematicians have given to the things we're about to discuss. Maybe they used up all the good names centuries ago; maybe they want to appear smarter than everyone else; maybe naming things is really hard[^1]. However, the problem with abstract algebra is that it's, well, abstract. These things have no obvious connection to familiar concepts. They are unique entities in eternal Platonic realm.
 
 When I say "things," I mean _algebraic structures_. There are infinitely many algebraic structures, but I'm only going to focus on seven common types. Let me repeat my list: magma, semigroup, monoid, group, Abelian group, ring, and field. Although these intimidating names would have you believe otherwise, the concepts underlying them are quite simple. Understanding them requires no mathematical background other than basic set theory. With that in mind, let's start with some definitions!

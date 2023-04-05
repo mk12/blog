@@ -7,8 +7,6 @@ date: 2015-09-18
 
 I've recently become interested in a type of mathematical structure called an L-system. Invented by Aristid Lindenmayer in 1968, an L-system is a grammar that applies recursive rules to produce strings. Lindenmayer originally used them to model biological processes, such as the behaviour of plant cells. They can also be used to draw beautiful fractal curves.
 
-<!--more-->
-
 # What is an L-system?
 
 An L-system has two parts: an _axiom_, and a list of _rules_. The axiom can be any sequence of symbols, like X or 123. Each rule is an instruction to replace a symbol with something else, like "replace X with ABC," or more concisely, X&nbsp;$\to$&nbsp;ABC. There can only be one of these rules for each symbol.

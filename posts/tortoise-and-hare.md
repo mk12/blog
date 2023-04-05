@@ -7,8 +7,6 @@ date: 2015-04-02
 
 The tortoise and the hare is my favourite algorithm. It's such a neat solution, based on a principle that, while simple, would require a profound insight to discover on your own. You could just memorize the steps in case it comes up in an interview, but I'd like to focus on proving its correctness, which requires a deeper understanding.
 
-<!--more-->
-
 # Introduction
 
 Also known as Floyd's cycle-finding algorithm, its purpose is to detect cycles in linked structures. If you don't know what a linked list is, you may want to look that up first. Picture a set of boxes (nodes), each having an arrow (pointer) to another box. The last box in the list points to nothing, which we refer to as _null_. To traverse the list, we simply follow the arrows. There's nothing to prevent arrows from pointing back to previous boxes, which is a problem because this makes the list infinite. If we follow a million arrows and the list keeps going, there's no way of knowing if it's infinite or if it just happens to be a million and one items long.

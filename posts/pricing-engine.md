@@ -7,8 +7,6 @@ date: 2018-05-03
 
 This winter, I interned at Bloomberg in New York City. During my time there, I was on an engineering team called Foreign Exchange Idea Generation. I had the chance to work on several interesting projects, and I also learned a bit about the foreign exchange market. In this post, I'm going to discuss one particular problem I worked on: horizontally scaling a real-time pricing engine.
 
-<!--more-->
-
 # Background
 
 Bloomberg is a financial software and media company. Its main product, the [Bloomberg Terminal][], provides access to news, data, and trading tools for hundreds of thousands of customers around the world.[^1] Many features of the Terminal are organized around different markets, such as stocks, bonds, and currencies. My team is concerned with that last category -- the foreign exchange market, or FX for short.

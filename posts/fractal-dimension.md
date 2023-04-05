@@ -7,8 +7,6 @@ date: 2016-02-07
 
 Most of us are comfortable with the usual notion of _dimension_. We live in three-dimensional space, and we can easily picture one-dimensional lines and two-dimensional planes. Higher-dimensional spaces are much harder to visualize, but the generalization at least makes sense. Now what could it possibly mean to say that a space has 1.26186 dimensions?
 
-<!--more-->
-
 One valid answer would be, "Nothing." Just because you can write it down doesn't mean it is meaningful. It would make just as much sense to talk about _green_ dimensions, as far as the mathematical definitions are concerned. It may be exciting to imagine a mysterious world between the familiar dimensions, but you could argue that whatever 1.26186 belongs to is a separate definition, even if we want to use the word _dimension_.
 
 To this imaginary, skeptical, pedantic reader, I grant all this. I am being a bit disingenuous when I talk about fractional dimensions, because they refer to a different property. There is no 2.5th dimension, in the sense that a vector cannot have 2.5 components. That being said, these fractional dimensions I want to talk about -- _fractal_ dimensions, actually -- are closely related to the ordinary concept of dimensions. They arise when we try to assign a topological dimension to fractal curves.

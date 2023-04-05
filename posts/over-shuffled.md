@@ -7,8 +7,6 @@ date: 2015-04-10
 
 How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle -- the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?
 
-<!--more-->
-
 > **Edit**: Some time after writing this article, I rediscovered Jeff Atwood's blog post [The Danger of Naïveté][jeff] from 2007. I read it years ago; it was the clearly the inspiration for this article. Had I recalled it, instead of assuming I picked up the idea in some book, I probably wouldn't have written this. In any case, readers should consider this as an alternative presentation of the ideas in Jeff's article. ---MK, 12 Aug. 2017
 
 # Simple shuffle

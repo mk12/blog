@@ -7,8 +7,6 @@ date: 2015-05-10
 
 What is infinity? Perhaps, like me, you were told that it's just a _concept_ to remind us that there is no largest number. It's true that if you treat it like a regular number, subject to the usual rules of arithmetic, you run into all kinds of confusing nonsense. But this needn't prevent us from studying the properties of infinity -- it just means we need to be careful. The infinite is far more interesting and surprising than I could have imagined.
 
-<!--more-->
-
 # Cardinality and bijections
 
 In order to understand infinity, we need to make a detour to set theory. A _set_ is a collection of objects, and the _cardinality_ of a set is the number of unique objects it contains. For example, the set $S=\{\bigcirc,\square,\bigtriangleup\}$ has cardinality $\lvert S \rvert = 3$. Two sets have the same cardinality if and only if their objects can be paired off without leaving any out. This pairing-off is a called a _bijection_ or a _one-to-one correspondence_, technically defined as a function that is both injective and surjective.[^1] For example, given the set $B=\{2,3,5\}$, we can prove that $\lvert S \rvert = \lvert B \rvert$ by constructing a bijection $f\colon S\to B$ that maps $\bigcirc$ to 2, $\square$ to 3, and $\bigtriangleup$ to 5.

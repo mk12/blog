@@ -7,8 +7,6 @@ date: 2015-08-02
 
 Writing code that works is hard. It doesn't matter how many times you've gone over it, or how many coworkers have reviewed it. A developer with any experience never expects it to work the first time. If you've just written a thousand lines and they seem to work as expected, your initial reaction should be suspicion -- it will lead to less embarrassment in the long run.
 
-<!--more-->
-
 # Testing 1-2-3
 
 Test suites are meant to fix this problem, or at least improve the situation. The idea is this: write code that does what you want, then write more code to make sure it works. The second step produces a collection of tests. The better your tests, the more confident you can be in your code. Advocates of test-driven development (TDD) would tell you to write the tests _first_, and the implementation second. I think TDD is great, but I don't use it for everything -- I sometimes prefer an exploratory style of programming, and writing extensive tests before my ideas are solidified seems like a waste of time more often than not.[^1]

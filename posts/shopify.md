@@ -8,8 +8,6 @@ draft: true
 
 Well, "at least one article a week" clearly didn't last for long. After publishing my [first year reflection](/blog/post/first-year/), I was really intending to write a reflection post after each term, or at least once a year -- but it never happened. To fix that, I've decided to go back and write the articles I didn't have time or motivation for before, starting with my first co-op: Shopify.
 
-<!--more-->
-
 # Onboarding
 
 May 4, 2015 -- _May the 4th be with you_. I'm not really a Star Wars fan, but I remember the first day of the internship fell on that day. I arrived at 150 Elgin Street by 10:00 a.m., and made my way to the eighth floor. Exiting the elevator, I faced a large comic strip poster:

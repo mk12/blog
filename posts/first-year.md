@@ -7,8 +7,6 @@ date: 2015-04-04
 
 It's hard to believe that my first year of university is almost over. I would say that I survived first-year engineering, except that it's never been about surviving -- I loved every minute of it. It's been an incredible experience, and from what I can see it's only going to get better. In this article I'm going to compress the past decade of my life in a few paragraphs as well as talk about misconceptions, strategies, discoveries, and other experiences.
 
-<!--more-->
-
 # Programming hobby
 
 Ever since I was ten or eleven years old, I knew I was going to write code for a living. I consider myself lucky in this respect, since few people discover their passion so easily, and fewer still are able to do it for a living. For me, it started when I discovered the basics of making webpages on the World Wide Web with the help of my uncle Mike and online tutorials. In hindsight, I had no clue what I was doing half the time. I remember being baffled by the official Java Tutorials, specifically by an example that used an interface called `Relatable` that seemed useless to me. On that occasion and others, I think of eleven-year-old me and wish I could address the confusion with a quick two-minute explanation. But nineteen-year-old me wasn't there, so I continued learning on my own as best I could.

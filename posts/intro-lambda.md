@@ -7,8 +7,6 @@ date: 2015-04-07
 
 Most people think of Newton and Leibniz's infinitesimal calculus when they hear the word _calculus_, but the term is actually more general than that. A calculus is a formal system of calculation or reasoning, usually involving the  symbolic manipulation of expressions. The λ-calculus (_lambda calculus_) is one such system, and it is very important in computer science.
 
-<!--more-->
-
 # Expressions
 
 Everything in the λ-calculus is an expression. There are three types of expressions: variables, abstractions, and applications:
