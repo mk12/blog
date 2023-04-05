@@ -30,20 +30,21 @@ src_css := assets/css/style.css
 index := $(DESTDIR)/index.html
 archive := $(DESTDIR)/post/index.html
 categories := $(DESTDIR)/categories/index.html
-pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
+# pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
-depfiles := $(src_posts:posts/%.md=build/post/%.d)
+extra_depfiles := build/index.d build/post/index.d build/post/categories.d
+depfiles := $(src_posts:posts/%.md=build/post/%.d) $(extra_depfiles)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
-html := $(pages) $(posts)
+pages := $(index) $(archive) $(categories)
+html := $(posts) $(pages)
 
 reload := build/reload.mk
 order := build/order.json
 neighbours := $(src_posts:posts/%.md=build/post/%.json)
 auxiliary := $(reload) $(order) $(neighbours)
 
-directories := build build/post $(DESTDIR) $(DESTDIR)/post \
-	$(sort $(dir $(posts)) $(dir $(assets)))
+directories := build build/post $(sort $(dir $(html)) $(dir $(assets)))
 directories := $(directories:%/=%)
 
 .SUFFIXES:
@@ -72,8 +73,14 @@ $(reload): gen.ts posts $(src_posts) | build/post
 	bun run $< -k order -o $(order) $(src_posts)
 	touch $@
 
+$(index): gen.ts $(order) | highlight.sock
+	bun run $< -k index -r $(order) -o $@ -d build/post/index.d -s highlight.sock
+
 $(archive): gen.ts $(order)
-	bun run $< -k archive -r $(order) -o $@
+	bun run $< -k archive -r $(order) -o $@ -d build/post/index.d
+
+$(categories): gen.ts $(order)
+	bun run $< -k categories -r $(order) -o $@ -d build/post/categories.d
 
 $(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/post/%.json \
 		| highlight.sock

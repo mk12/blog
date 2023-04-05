@@ -50,6 +50,21 @@ async function main(writer: Writer) {
       });
       break;
     }
+    case "index": {
+      const highlightServer = await HighlightServer.connect(args.s);
+      const template = new TemplateRenderer();
+      const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
+      const posts = JSON.parse(await Bun.file(args.r).text());
+      const html = await genIndex(posts, template, markdown);
+      highlightServer.close();
+      writer.write(args.o, postprocess(html));
+      const deps = [
+        ...Array.from(markdown.embeddedFiles),
+        ...template.templatesUsed(),
+      ].join(" ");
+      writer.write(args.d, `${args.o}: ${deps}`);
+      break;
+    }
     case "archive": {
       const template = new TemplateRenderer();
       const posts = JSON.parse(await Bun.file(args.r).text());
@@ -105,11 +120,38 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
   return Array.from(map.entries());
 }
 
-// Generates the blog post archive.
-async function genArchive(
+// Generates the blog homepage.
+function genIndex(
   posts: Posts,
-  template: TemplateRenderer
+  template: TemplateRenderer,
+  markdown: MarkdownRenderer
 ): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
+  const root = "";
+  const title = "Mitchell Kember";
+  const postsPromise = Promise.all(
+    posts.slice(0, 10).map(async ({ path, title, date, summary }) => ({
+      date: dateFormat(date, "dddd, d mmmm yyyy"),
+      href: "post/" + must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+      title,
+      summary: await markdown.render(summary),
+    }))
+  );
+  return template.render("templates/base.html", {
+    root,
+    title,
+    analytics: analytics && Bun.file(analytics).text(),
+    math: postsPromise.then(() => markdown.encounteredMath),
+    body: template.render("templates/index.html", {
+      title,
+      home_url: process.env["HOME_URL"],
+      posts: postsPromise,
+    }),
+  });
+}
+
+// Generates the blog post archive.
+function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
   const analytics = process.env["ANALYTICS"];
   const root = "../";
   const title = "Post Archive";
@@ -118,6 +160,7 @@ async function genArchive(
     title,
     analytics: analytics && Bun.file(analytics).text(),
     body: template.render("templates/listing.html", {
+      root,
       title,
       groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
         ([year, posts]) => ({
@@ -134,7 +177,7 @@ async function genArchive(
 }
 
 // Generates the blog post categories page.
-async function genCategories(
+function genCategories(
   posts: Posts,
   template: TemplateRenderer
 ): Promise<string> {
@@ -146,6 +189,7 @@ async function genCategories(
     title,
     analytics: analytics && Bun.file(analytics).text(),
     body: template.render("templates/listing.html", {
+      root,
       title,
       groups: groupBy(posts, (post) => post.category).map(
         ([category, posts]) => ({
@@ -167,7 +211,7 @@ interface Navigation {
 }
 
 // Generates a blog post from its Markdown content.
-async function genPost(
+function genPost(
   fileContent: string,
   navigation: Navigation,
   template: TemplateRenderer,
@@ -208,6 +252,7 @@ interface Metadata {
   category: string;
   // Format: YYYY-MM-DD.
   date: string;
+  summary: string;
 }
 
 // Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
@@ -219,6 +264,7 @@ function extractMetadata(content: string): [Metadata, string] {
     .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
     .replace(/\n/g, ",");
   const meta = JSON.parse("{" + fields + "}");
+  meta.summary = must(body.match(/^\s*(.*)/))[1];
   return [meta, body];
 }
 

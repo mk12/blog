@@ -1,0 +1,21 @@
+<h1 class="blog-title">
+  <a class="no-ul" href="{{ home_url }}">MK</a>
+</h1>
+
+<section>
+{{ range posts }}
+  <section class="summary">
+    <span class="post-meta">{{ date }}</span>
+    <h2 class="post-title"><a class="no-ul" href="{{ href }}">{{ title }}</a></h2>
+    {{ summary }}
+    <div class="read-more-link">
+      <a class="no-ul subtle" href="{{ href }}">Read more&nbsp;»</a>
+    </div>
+  </section>
+{{ end }}
+</section>
+
+<div class="list-links">
+  <a class="no-ul subtle" href="post/index.html">Older posts&nbsp;»</a>
+  <a class="no-ul subtle" href="categories/index.html">Categories&nbsp;»</a>
+</div>

@@ -24,7 +24,7 @@ main() {
     cd "$(dirname "$0")"
     trap cleanup EXIT
     while :; do
-        new_output=$(find public -type f -name "*.html" | fzf)
+        new_output=$(! make -qp | rg '^(public/.*\.html):' -r '$1' -o | fzf)
         output=${new_output:-$output}
         kill_entr
         fd | entr -ns 'refresh' & entr_pid=$!
@@ -33,7 +33,9 @@ main() {
 }
 
 refresh() {
-    make "-j$ncpu" "$output" public/style.css && open -g "$output"
+    if make "-j$ncpu" "$output" public/style.css; then
+        open -g "$output"
+    fi
 }
 
 # Make functions work in entr.
