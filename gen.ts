@@ -42,7 +42,6 @@ async function main(writer: Writer) {
       sorted.forEach(({ path }, i) => {
         const out = join(
           dirname(args.o),
-          "post",
           basename(path, ".md") + ".json"
         );
         const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
@@ -53,13 +52,13 @@ async function main(writer: Writer) {
     case "index": {
       const highlightServer = await HighlightServer.connect(args.s);
       const template = new TemplateRenderer();
-      const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
-      const posts = JSON.parse(await Bun.file(args.r).text());
+      const markdown = new MarkdownRenderer("INVALID_DIR", highlightServer);
+      const posts = JSON.parse(await Bun.file(args._[0]).text());
       const html = await genIndex(posts, template, markdown);
       highlightServer.close();
       writer.write(args.o, postprocess(html));
       const deps = [
-        ...Array.from(markdown.embeddedFiles),
+        ...Array.from(markdown.embeddedAssets),
         ...template.templatesUsed(),
       ].join(" ");
       writer.write(args.d, `${args.o}: ${deps}`);
@@ -67,7 +66,7 @@ async function main(writer: Writer) {
     }
     case "archive": {
       const template = new TemplateRenderer();
-      const posts = JSON.parse(await Bun.file(args.r).text());
+      const posts = JSON.parse(await Bun.file(args._[0]).text());
       const html = await genArchive(posts, template);
       writer.write(args.o, postprocess(html));
       const deps = template.templatesUsed().join(" ");
@@ -76,7 +75,7 @@ async function main(writer: Writer) {
     }
     case "categories": {
       const template = new TemplateRenderer();
-      const posts = JSON.parse(await Bun.file(args.r).text());
+      const posts = JSON.parse(await Bun.file(args._[0]).text());
       const html = await genCategories(posts, template);
       writer.write(args.o, postprocess(html));
       const deps = template.templatesUsed().join(" ");
@@ -85,27 +84,27 @@ async function main(writer: Writer) {
     }
     case "post": {
       const [content, jsonText, highlightServer] = await Promise.all([
-        Bun.file(args.i).text(),
-        Bun.file(args.j).text(),
+        Bun.file(args._[0]).text(),
+        Bun.file(args._[1]).text(),
         HighlightServer.connect(args.s),
       ]);
       const navigation = JSON.parse(jsonText) as Navigation;
       const template = new TemplateRenderer();
-      const markdown = new MarkdownRenderer(dirname(args.i), highlightServer);
+      const markdown = new MarkdownRenderer(dirname(args._[0]), highlightServer);
       const html = await genPost(content, navigation, template, markdown);
       highlightServer.close();
       writer.write(args.o, postprocess(html));
       const deps = [
-        ...Array.from(markdown.embeddedFiles),
+        ...Array.from(markdown.embeddedAssets),
         ...template.templatesUsed(),
       ].join(" ");
-      writer.write(args.d, `${args.o}: ${deps}`);
+      const orderOnlyDeps = Array.from(markdown.linkedAssets);
+      writer.write(args.d, `${args.o}: ${deps} | ${orderOnlyDeps}`);
       break;
     }
     default:
       console.error(`${args.k}: unexpected kind`);
       process.exit(1);
-      break;
   }
 }
 
@@ -278,7 +277,8 @@ function extractMetadata(content: string): [Metadata, string] {
 // Renders Markdown to HTML using the marked library with extensions.
 class MarkdownRenderer {
   encounteredMath = false;
-  embeddedFiles = new Set<string>();
+  embeddedAssets = new Set<string>();
+  linkedAssets = new Set<string>();
 
   constructor(workingDir: string, server: HighlightServer) {
     marked.use({
@@ -305,9 +305,11 @@ class MarkdownRenderer {
             const image = token as unknown as Image;
             if (image.href.endsWith(".svg")) {
               const path = join(workingDir, image.href);
-              this.embeddedFiles.add(path);
+              this.embeddedAssets.add(path);
               image.svg = await Bun.file(path).text();
             } else {
+              const path = join(workingDir, image.href);
+              this.linkedAssets.add(path);
               const match = image.href.match(/^\.\.\/assets\/(.*)$/);
               image.href = "../../" + must(match)[1];
             }

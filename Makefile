@@ -30,26 +30,26 @@ src_css := assets/css/style.css
 index := $(DESTDIR)/index.html
 archive := $(DESTDIR)/post/index.html
 categories := $(DESTDIR)/categories/index.html
-# pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
+
+pages := $(index) $(archive) $(categories)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
-extra_depfiles := build/index.d build/post/index.d build/categories/index.d
-depfiles := $(src_posts:posts/%.md=build/post/%.d) $(extra_depfiles)
+html := $(posts) $(pages)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
-pages := $(index) $(archive) $(categories)
-html := $(posts) $(pages)
+artifacts := $(html) $(assets) $(css)
 
-reload := build/reload.mk
-order := build/order.json
-neighbours := $(src_posts:posts/%.md=build/post/%.json)
-auxiliary := $(reload) $(order) $(neighbours)
+prebuild := build/prebuild.mk
+manifest := build/manifest.json
+dep = $(patsubst %,build/%.d,$(subst /,_,$(1:$(DESTDIR)/%.html=%)))
+depfiles := $(call dep,$(html))
+auxiliary := $(prebuild) $(manifest) $(depfiles)
 
-directories := $(sort $(dir $(html) $(assets) $(depfiles)))
+directories := $(sort $(dir $(artifacts) $(auxiliary)))
 directories := $(directories:%/=%)
 
 .SUFFIXES:
 
-all: $(html)
+all: $(artifacts)
 
 help:
 	$(info $(usage))
@@ -63,26 +63,25 @@ validate: $(html)
 clean:
 	rm -rf $(default_destdir) build
 
-$(reload): gen.ts posts $(src_posts) | build/post
-	bun run $< -k order -o $(order) $(src_posts)
+$(prebuild): gen.ts posts $(src_posts)
+	bun run $< -k order -o $(manifest) $(src_posts)
 	touch $@
 
-$(html): $(DESTDIR)/%.html: gen.ts | $(css) $(dir build/%.d)
-	bun run $< -o $@ -d build/$*.d $(gen_args)
+$(index): kind := index
+$(archive): kind := archive
+$(categories): kind := categories
+$(posts): kind := post
 
+$(pages): gen.ts $(manifest)
+$(pages): inputs = $(word 2,$^)
+$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json
+$(posts): inputs = $(wordlist 2,3,$^)
 $(index) $(posts): | highlight.sock
-$(index) $(posts): gen_args += -s highlight.sock
 
-$(pages): $(order)
-$(pages): gen_args += -r $(order)
+highlight_flag = $(if $(filter highlight.sock,$|),-s highlight.sock)
 
-$(index): gen_args += -k index
-$(archive): gen_args += -k archive
-$(categories): gen_args += -k categories
-$(categories): | build/categories
-
-$(posts): $(DESTDIR)/post/%/index.html: posts/%.md build/post/%.json
-$(posts): gen_args += -k post -i $(@:$(DESTDIR)/post/%/index.html=posts/%.md) -j $(@:$(DESTDIR)/post/%/index.html=build/post/%.json)
+$(html):
+	bun run $< $(inputs) -k $(kind) -o $@ -d $(call dep,$@) $(highlight_flag)
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
@@ -106,10 +105,10 @@ $(directories):
 	mkdir -p $@
 
 ifeq (,$(filter help clean,$(MAKECMDGOALS)))
-include $(reload)
+include $(prebuild)
 -include $(depfiles)
 endif
 
 .SECONDEXPANSION:
 
-$(html) $(assets) $(css) $(auxiliary) $(directories): | $$(@D)
+$(artifacts) $(auxiliary) $(directories): | $$(@D)
