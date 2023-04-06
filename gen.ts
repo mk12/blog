@@ -102,6 +102,10 @@ async function main(writer: Writer) {
       writer.write(args.d, `${args.o}: ${deps}`);
       break;
     }
+    default:
+      console.error(`${args.k}: unexpected kind`);
+      process.exit(1);
+      break;
   }
 }
 
@@ -196,7 +200,10 @@ function genCategories(
           name: category,
           pages: posts.map(({ path, title, date }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href: "../post/" + must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+            href:
+              "../post/" +
+              must(path.match(/^posts\/(.*)\.md$/))[1] +
+              "/index.html",
             title,
           })),
         })

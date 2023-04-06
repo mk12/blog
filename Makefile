@@ -32,7 +32,7 @@ archive := $(DESTDIR)/post/index.html
 categories := $(DESTDIR)/categories/index.html
 # pages := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
-extra_depfiles := build/index.d build/post/index.d build/post/categories.d
+extra_depfiles := build/index.d build/post/index.d build/categories/index.d
 depfiles := $(src_posts:posts/%.md=build/post/%.d) $(extra_depfiles)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
@@ -44,13 +44,12 @@ order := build/order.json
 neighbours := $(src_posts:posts/%.md=build/post/%.json)
 auxiliary := $(reload) $(order) $(neighbours)
 
-directories := build build/post $(sort $(dir $(html)) $(dir $(assets)))
+directories := $(sort $(dir $(html) $(assets) $(depfiles)))
 directories := $(directories:%/=%)
 
 .SUFFIXES:
 
-all: $(html) $(assets) $(css)
-	@echo TODO
+all: $(html)
 
 help:
 	$(info $(usage))
@@ -64,27 +63,26 @@ validate: $(html)
 clean:
 	rm -rf $(default_destdir) build
 
-# $(html): gen.ts | build highlight.sock
-
-# $(index): gen.ts $(src_posts) | build
-# 	bun run $< -o $@
-
 $(reload): gen.ts posts $(src_posts) | build/post
 	bun run $< -k order -o $(order) $(src_posts)
 	touch $@
 
-$(index): gen.ts $(order) | highlight.sock
-	bun run $< -k index -r $(order) -o $@ -d build/post/index.d -s highlight.sock
+$(html): $(DESTDIR)/%.html: gen.ts | $(css) $(dir build/%.d)
+	bun run $< -o $@ -d build/$*.d $(gen_args)
 
-$(archive): gen.ts $(order)
-	bun run $< -k archive -r $(order) -o $@ -d build/post/index.d
+$(index) $(posts): | highlight.sock
+$(index) $(posts): gen_args += -s highlight.sock
 
-$(categories): gen.ts $(order)
-	bun run $< -k categories -r $(order) -o $@ -d build/post/categories.d
+$(pages): $(order)
+$(pages): gen_args += -r $(order)
 
-$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/post/%.json \
-		| highlight.sock
-	bun run $< -k post -i $(word 2,$^) -j $(word 3,$^) -o $@ -d build/post/$*.d -s highlight.sock
+$(index): gen_args += -k index
+$(archive): gen_args += -k archive
+$(categories): gen_args += -k categories
+$(categories): | build/categories
+
+$(posts): $(DESTDIR)/post/%/index.html: posts/%.md build/post/%.json
+$(posts): gen_args += -k post -i $(@:$(DESTDIR)/post/%/index.html=posts/%.md) -j $(@:$(DESTDIR)/post/%/index.html=build/post/%.json)
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
