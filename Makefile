@@ -64,7 +64,7 @@ clean:
 	rm -rf $(default_destdir) build
 
 $(prebuild): gen.ts posts $(src_posts)
-	bun run $< -k order -o $(manifest) $(src_posts)
+	bun run $< -k manifest -o $(manifest) $(src_posts)
 	touch $@
 
 $(index): kind := index

@@ -6,11 +6,10 @@ import dateFormat from "dateformat";
 import { Socket } from "bun";
 import katex, { KatexOptions } from "katex";
 import { basename, dirname, join } from "path";
-import { readFile } from "fs/promises";
 
 function usage() {
   console.log(
-    `Usage: bun run ${process.argv[1]} [options]
+    `Usage: bun run ${process.argv[1]} [options] [FILE ...]
 
 Generates a file for the blog
 
@@ -18,7 +17,6 @@ Options:
     -h, --help  Show this help message
     -k KIND     Kind of file to generate
     -o OUTFILE  Output file
-    -i INFILE   Input Markdown file
     -d DEPFILE  Output depfile for Make
     -s SOCKET   Highlight server socket`
   );
@@ -31,7 +29,7 @@ async function main(writer: Writer) {
     return;
   }
   switch (args.k) {
-    case "order": {
+    case "manifest": {
       const getMeta = async (path: string) =>
         extractMetadata(await Bun.file(path).text())[0];
       const posts = await Promise.all(
@@ -40,10 +38,7 @@ async function main(writer: Writer) {
       const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
       writer.write(args.o, JSON.stringify(sorted));
       sorted.forEach(({ path }, i) => {
-        const out = join(
-          dirname(args.o),
-          basename(path, ".md") + ".json"
-        );
+        const out = join(dirname(args.o), basename(path, ".md") + ".json");
         const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
         writer.writeIfChanged(out, JSON.stringify(nav));
       });
@@ -90,7 +85,10 @@ async function main(writer: Writer) {
       ]);
       const navigation = JSON.parse(jsonText) as Navigation;
       const template = new TemplateRenderer();
-      const markdown = new MarkdownRenderer(dirname(args._[0]), highlightServer);
+      const markdown = new MarkdownRenderer(
+        dirname(args._[0]),
+        highlightServer
+      );
       const html = await genPost(content, navigation, template, markdown);
       highlightServer.close();
       writer.write(args.o, postprocess(html));
@@ -567,7 +565,7 @@ interface NestedContext extends Record<string, ContextValue> {}
 type TemplateCommand =
   | { kind: "text"; text: string }
   | { kind: "var"; variable: string }
-  | { kind: "begin"; variable: string }
+  | { kind: "begin"; variable: string; negate: boolean }
   | { kind: "end" };
 
 // Renders HTML templates using syntax similar to Go templates.
@@ -595,18 +593,29 @@ class TemplateRenderer {
   private static parse(source: string): TemplateCommand[] {
     const commands: TemplateCommand[] = [];
     let offset = 0;
+    const ifVarStack = [];
     for (const match of source.matchAll(
-      /(\s*)\{\{\s*(?:end|(?:(if|range)\s*)?(\S+))\s*\}\}/g
+      /(\s*)\{\{\s*(?:(end|else)|(?:(if|range)\s*)?(\S+))\s*\}\}/g
     )) {
       const idx = must(match.index);
       let text = source.slice(offset, idx);
-      const [wholeMatch, whitespace, begin, variable] = match;
-      if (!begin && variable) text += whitespace;
+      const [wholeMatch, whitespace, endOrElse, ifOrRange, variable] = match;
+      if (!ifOrRange && variable) text += whitespace;
       commands.push({ kind: "text", text });
       offset = idx + wholeMatch.length;
-      if (!variable) commands.push({ kind: "end" });
-      else if (!begin) commands.push({ kind: "var", variable });
-      else commands.push({ kind: "begin", variable });
+      if (endOrElse === "end") {
+        commands.push({ kind: "end" });
+        ifVarStack.pop();
+      } else if (endOrElse === "else") {
+        commands.push({ kind: "end" });
+        const variable = must(ifVarStack[ifVarStack.length - 1]);
+        commands.push({ kind: "begin", variable, negate: true });
+      } else if (ifOrRange) {
+        commands.push({ kind: "begin", variable, negate: false });
+        ifVarStack.push(variable);
+      } else {
+        commands.push({ kind: "var", variable });
+      }
     }
     commands.push({ kind: "text", text: source.slice(offset).trimEnd() });
     return commands;
@@ -627,12 +636,15 @@ class TemplateRenderer {
           }
           case "var": {
             let value = context[cmd.variable];
-            if (value) result += value;
+            result += must(
+              value,
+              `Missing template variable "${cmd.variable}"`
+            );
             break;
           }
           case "begin": {
             const value = context[cmd.variable];
-            if (value) {
+            if (!value === cmd.negate) {
               let values: ContextValue[] = Array.isArray(value)
                 ? value
                 : [value];
@@ -782,8 +794,8 @@ function assert(condition: boolean, msg?: string): asserts condition {
 }
 
 // Asserts that a value is not undefined.
-function must<T>(value: T | undefined | null): T {
-  assert(value != undefined);
+function must<T>(value: T | undefined | null, msg?: string): T {
+  assert(value != undefined, msg);
   return value;
 }
 

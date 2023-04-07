@@ -1,5 +1,9 @@
 <h1 class="blog-title">
-  <a class="no-ul" href="{{ home_url }}">MK</a>
+  {{ if home_url }}
+  <a class="no-ul" href="{{ . }}">MK</a>
+  {{ else }}
+  MK
+  {{ end }}
 </h1>
 
 <section>
