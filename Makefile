@@ -30,19 +30,20 @@ src_css := assets/css/style.css
 index := $(DESTDIR)/index.html
 archive := $(DESTDIR)/post/index.html
 categories := $(DESTDIR)/categories/index.html
-
 pages := $(index) $(archive) $(categories)
 posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
-html := $(posts) $(pages)
+html := $(pages) $(posts)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
 artifacts := $(html) $(assets) $(css)
 
 prebuild := build/prebuild.mk
 manifest := build/manifest.json
-dep = $(patsubst %,build/%.d,$(subst /,_,$(1:$(DESTDIR)/%.html=%)))
-depfiles := $(call dep,$(html))
+depfiles = $(html:$(DESTDIR)/%.html=build/%.d)
 auxiliary := $(prebuild) $(manifest) $(depfiles)
+
+sock := highlight.sock
+fifo := highlight.fifo
 
 directories := $(sort $(dir $(artifacts) $(auxiliary)))
 directories := $(directories:%/=%)
@@ -64,24 +65,17 @@ clean:
 	rm -rf $(default_destdir) build
 
 $(prebuild): gen.ts posts $(src_posts)
-	bun run $< -k manifest -o $(manifest) $(src_posts)
+	bun run $< manifest -o $(manifest) $(src_posts)
 	touch $@
 
-$(index): kind := index
-$(archive): kind := archive
-$(categories): kind := categories
-$(posts): kind := post
+dep = $(@:$(DESTDIR)/%.html=build/%.d)
+$(foreach var,index archive categories,$(eval $($(var)): name := $(var)))
 
 $(pages): gen.ts $(manifest)
-$(pages): inputs = $(word 2,$^)
-$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json
-$(posts): inputs = $(wordlist 2,3,$^)
-$(index) $(posts): | highlight.sock
+	bun run $< page $(name) -o $@ -d $(dep) $(manifest)
 
-highlight_flag = $(if $(filter highlight.sock,$|),-s highlight.sock)
-
-$(html):
-	bun run $< $(inputs) -k $(kind) -o $@ -d $(call dep,$@) $(highlight_flag)
+$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
+	bun run $< post -o $@ -d $(dep) -s $(sock) posts/$*.md build/$*.json
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
@@ -89,16 +83,16 @@ $(assets): $(DESTDIR)/%: | assets/%
 $(css): $(src_css)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
 
-.INTERMEDIATE: highlight.sock highlight.fifo
+.INTERMEDIATE: $(sock) $(fifo)
 
 build/highlight: highlight/main.go
 	cd $(dir $<) && go build -o ../$@
 
-highlight.sock: build/highlight highlight.fifo
-	$< $@ $(word 2,$^) &
-	< $(word 2,$^)
+$(sock): build/highlight $(fifo)
+	$< $@ $(fifo) &
+	< $(fifo)
 
-highlight.fifo:
+$(fifo):
 	mkfifo $@
 
 $(directories):

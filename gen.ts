@@ -8,101 +8,82 @@ import katex, { KatexOptions } from "katex";
 import { basename, dirname, join } from "path";
 
 function usage() {
+  const program = basename(process.argv[1]);
   console.log(
-    `Usage: bun run ${process.argv[1]} [options] [FILE ...]
+    `Usage: bun run ${program} COMMAND [FILE ...] [OPTIONS]
 
 Generates a file for the blog
 
+Commands:
+    manifest POST1.md POST2.md ...
+        Write the manifest and navigation JSON files
+    page {index,post/index,categories/index} MANIFEST.json
+        Write an HTML file for a website page
+    post POST.md NAVIGATION.json
+        Write an HTML file for a blog post
+
 Options:
     -h, --help  Show this help message
-    -k KIND     Kind of file to generate
     -o OUTFILE  Output file
     -d DEPFILE  Output depfile for Make
     -s SOCKET   Highlight server socket`
   );
 }
 
-async function main(writer: Writer) {
+async function main() {
   const args = getopts(process.argv.slice(2));
   if (args.h || args.help) {
     usage();
     return;
   }
-  switch (args.k) {
-    case "manifest": {
-      const getMeta = async (path: string) =>
-        extractMetadata(await Bun.file(path).text())[0];
-      const posts = await Promise.all(
-        args._.map(async (path) => ({ path, ...(await getMeta(path)) }))
+  const command = args._.shift();
+  const inputs = args._;
+  if (command === "manifest") {
+    genManifest(inputs, args.o);
+    return;
+  }
+  const template = new TemplateRenderer();
+  const highlight = new HighlightServer(args.s);
+  const markdown = new MarkdownRenderer(highlight, dirname(inputs[0]));
+  let html;
+  switch (command) {
+    case "page":
+      const kind = args._.shift();
+      const posts = JSON.parse(await Bun.file(inputs[0]).text());
+      switch (kind) {
+        case "index":
+          html = genIndex(posts, template, markdown);
+          break;
+        case "archive":
+          html = genArchive(posts, template);
+          break;
+        case "categories":
+          html = genCategories(posts, template);
+          break;
+        default:
+          console.error(`${kind}: unexpected page kind`);
+          process.exit(1);
+      }
+      break;
+    case "post":
+      const [content, jsonText] = await Promise.all(
+        inputs.map((f) => Bun.file(f).text())
       );
-      const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
-      writer.write(args.o, JSON.stringify(sorted));
-      sorted.forEach(({ path }, i) => {
-        const out = join(dirname(args.o), basename(path, ".md") + ".json");
-        const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
-        writer.writeIfChanged(out, JSON.stringify(nav));
-      });
-      break;
-    }
-    case "index": {
-      const highlightServer = await HighlightServer.connect(args.s);
-      const template = new TemplateRenderer();
-      const markdown = new MarkdownRenderer("INVALID_DIR", highlightServer);
-      const posts = JSON.parse(await Bun.file(args._[0]).text());
-      const html = await genIndex(posts, template, markdown);
-      highlightServer.close();
-      writer.write(args.o, postprocess(html));
-      const deps = [
-        ...Array.from(markdown.embeddedAssets),
-        ...template.templatesUsed(),
-      ].join(" ");
-      writer.write(args.d, `${args.o}: ${deps}`);
-      break;
-    }
-    case "archive": {
-      const template = new TemplateRenderer();
-      const posts = JSON.parse(await Bun.file(args._[0]).text());
-      const html = await genArchive(posts, template);
-      writer.write(args.o, postprocess(html));
-      const deps = template.templatesUsed().join(" ");
-      writer.write(args.d, `${args.o}: ${deps}`);
-      break;
-    }
-    case "categories": {
-      const template = new TemplateRenderer();
-      const posts = JSON.parse(await Bun.file(args._[0]).text());
-      const html = await genCategories(posts, template);
-      writer.write(args.o, postprocess(html));
-      const deps = template.templatesUsed().join(" ");
-      writer.write(args.d, `${args.o}: ${deps}`);
-      break;
-    }
-    case "post": {
-      const [content, jsonText, highlightServer] = await Promise.all([
-        Bun.file(args._[0]).text(),
-        Bun.file(args._[1]).text(),
-        HighlightServer.connect(args.s),
-      ]);
       const navigation = JSON.parse(jsonText) as Navigation;
-      const template = new TemplateRenderer();
-      const markdown = new MarkdownRenderer(
-        dirname(args._[0]),
-        highlightServer
-      );
-      const html = await genPost(content, navigation, template, markdown);
-      highlightServer.close();
-      writer.write(args.o, postprocess(html));
-      const deps = [
-        ...Array.from(markdown.embeddedAssets),
-        ...template.templatesUsed(),
-      ].join(" ");
-      const orderOnlyDeps = Array.from(markdown.linkedAssets);
-      writer.write(args.d, `${args.o}: ${deps} | ${orderOnlyDeps}`);
+      html = genPost(content, navigation, template, markdown);
       break;
-    }
     default:
-      console.error(`${args.k}: unexpected kind`);
+      console.error(`${command}: unexpected command`);
       process.exit(1);
+  }
+  highlight.close();
+  Bun.write(args.o, postprocess(await html));
+  if (args.d) {
+    const deps = [
+      ...Array.from(markdown.embeddedAssets),
+      ...template.templatesUsed(),
+    ].join(" ");
+    Bun.write(args.d, `${args.o}: ${deps}`);
   }
 }
 
@@ -119,6 +100,22 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
     }
   }
   return Array.from(map.entries());
+}
+
+// Generates the JSON manifest.
+async function genManifest(inputs: string[], output: string) {
+  const getMeta = async (path: string) =>
+    extractMetadata(await Bun.file(path).text())[0];
+  const posts = await Promise.all(
+    inputs.map(async (path) => ({ path, ...(await getMeta(path)) }))
+  );
+  const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
+  Bun.write(output, JSON.stringify(sorted));
+  sorted.forEach(({ path }, i) => {
+    const out = join(dirname(output), basename(path, ".md") + ".json");
+    const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
+    writeIfChanged(out, JSON.stringify(nav));
+  });
 }
 
 // Generates the blog homepage.
@@ -276,9 +273,8 @@ function extractMetadata(content: string): [Metadata, string] {
 class MarkdownRenderer {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
-  linkedAssets = new Set<string>();
 
-  constructor(workingDir: string, server: HighlightServer) {
+  constructor(server: HighlightServer, workingDir?: string) {
     marked.use({
       smartypants: true,
       extensions: [
@@ -302,12 +298,10 @@ class MarkdownRenderer {
           case "image":
             const image = token as unknown as Image;
             if (image.href.endsWith(".svg")) {
-              const path = join(workingDir, image.href);
+              const path = join(must(workingDir), image.href);
               this.embeddedAssets.add(path);
               image.svg = await Bun.file(path).text();
             } else {
-              const path = join(workingDir, image.href);
-              this.linkedAssets.add(path);
               const match = image.href.match(/^\.\.\/assets\/(.*)$/);
               image.href = "../../" + must(match)[1];
             }
@@ -674,49 +668,50 @@ class TemplateRenderer {
 
 // Client that communicates with highlight/main.go over a Unix socket.
 class HighlightServer {
-  private socket: Socket;
-  private responses: Deferred<string>[];
+  private socketPath: string;
+  private socket?: Socket;
+  private responses: Deferred<string>[] = [];
 
-  constructor(socket: Socket) {
-    this.socket = socket;
-    this.responses = [];
+  constructor(socketPath: string) {
+    this.socketPath = socketPath;
   }
 
-  static connect(socketPath: string): Promise<HighlightServer> {
-    const server = deferred<HighlightServer>();
+  private connect(): Promise<Socket> {
+    const result = deferred<Socket>();
     let buffer = "";
     Bun.connect({
-      unix: socketPath,
+      unix: this.socketPath,
       socket: {
         binaryType: "uint8array",
-        open(socket) {
-          server.resolve(new HighlightServer(socket));
-        },
-        data(socket, data: Uint8Array) {
+        open: (socket) => result.resolve(socket),
+        data: (socket, data: Uint8Array) => {
           buffer += new TextDecoder().decode(data);
           let idx;
           while ((idx = buffer.indexOf("\0")) >= 0) {
-            must(server.value).handleResponse(buffer.slice(0, idx));
+            this.handleResponse(buffer.slice(0, idx));
             buffer = buffer.slice(idx + 1);
           }
         },
-        error(socket, error) {
-          must(server.value).nextWaiting().reject(error);
+        error: (socket, error) => {
+          this.nextWaiting().reject(error);
         },
       },
-    }).catch(server.reject);
-    return server.promise;
+    }).catch(result.reject);
+    return result.promise;
   }
 
-  highlight(lang: string, code: string): Promise<string> {
+  async highlight(lang: string, code: string): Promise<string> {
     const response = deferred<string>();
     this.responses.push(response);
+    if (this.socket === undefined) {
+      this.socket = await this.connect();
+    }
     this.socket.write(`${lang}:${code}\0`);
     return response.promise;
   }
 
   close(): void {
-    this.socket.end();
+    this.socket?.end();
   }
 
   private handleResponse(raw: string) {
@@ -759,31 +754,13 @@ function postprocess(html: string): string {
   return html;
 }
 
-// Helper class for collecting writes that only need to be awaited on exit.
-class Writer {
-  promises: Promise<number>[] = [];
-
-  // Writes `content` to `path`.
-  write(path: string, content: string): void {
-    this.promises.push(Bun.write(path, content));
-  }
-
-  // Writes `content` to `path` only if different from its current content.
-  writeIfChanged(path: string, content: string): void {
-    this.promises.push(
-      (async () => {
-        let old;
-        try {
-          old = await Bun.file(path).text();
-        } catch (ev) {}
-        return content === old ? 0 : Bun.write(path, content);
-      })()
-    );
-  }
-
-  async wait(): Promise<void> {
-    await Promise.all(this.promises);
-  }
+// Writes content to path if is different from its current content.
+async function writeIfChanged(path: string, content: string): Promise<number> {
+  const same = await Bun.file(path)
+    .text()
+    .then((old) => old === content)
+    .catch(() => false);
+  return same ? 0 : Bun.write(path, content);
 }
 
 // Asserts that `condition` is true.
@@ -819,6 +796,4 @@ function deferred<T>(): Deferred<T> {
   return obj;
 }
 
-const writer = new Writer();
-await main(writer);
-await writer.wait();
+await main();
