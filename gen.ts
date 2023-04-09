@@ -48,9 +48,9 @@ async function main() {
   let html;
   switch (command) {
     case "page":
-      const kind = args._.shift();
+      const name = args._.shift();
       const posts = JSON.parse(await Bun.file(inputs[0]).text());
-      switch (kind) {
+      switch (name) {
         case "index":
           html = genIndex(posts, template, markdown);
           break;
@@ -61,7 +61,7 @@ async function main() {
           html = genCategories(posts, template);
           break;
         default:
-          console.error(`${kind}: unexpected page kind`);
+          console.error(`${name}: unexpected page name`);
           process.exit(1);
       }
       break;
@@ -76,8 +76,8 @@ async function main() {
       console.error(`${command}: unexpected command`);
       process.exit(1);
   }
-  highlight.close();
   Bun.write(args.o, postprocess(await html));
+  highlight.close();
   if (args.d) {
     const deps = [
       ...Array.from(markdown.embeddedAssets),
@@ -668,22 +668,63 @@ class TemplateRenderer {
 
 // Client that communicates with highlight/main.go over a Unix socket.
 class HighlightServer {
-  private socketPath: string;
-  private socket?: Socket;
+  private state:
+    | { mode: "init"; path: string }
+    | { mode: "connecting"; promise: Promise<Socket> }
+    | { mode: "connected"; socket: Socket };
   private responses: Deferred<string>[] = [];
 
-  constructor(socketPath: string) {
-    this.socketPath = socketPath;
+  constructor(path: string) {
+    this.state = { mode: "init", path };
   }
 
-  private connect(): Promise<Socket> {
-    const result = deferred<Socket>();
+  async highlight(lang: string, code: string): Promise<string> {
+    const response = defer<string>();
+    this.responses.push(response);
+    (await this.socket()).write(`${lang}:${code}\0`);
+    return response.promise;
+  }
+
+  close(): void {
+    assert(this.state.mode !== "connecting");
+    if (this.state.mode === "connected") {
+      this.state.socket.end();
+    }
+  }
+
+  private async socket(): Promise<Socket> {
+    switch (this.state.mode) {
+      case "init":
+        const path = this.state.path;
+        const deferred = defer<Socket>();
+        this.state = { mode: "connecting", promise: deferred.promise };
+        this.connect(
+          path,
+          (socket: Socket) => {
+            this.state = { mode: "connected", socket };
+            deferred.resolve(socket);
+          },
+          deferred.reject
+        );
+        return this.state.promise;
+      case "connecting":
+        return this.state.promise;
+      case "connected":
+        return this.state.socket;
+    }
+  }
+
+  private connect(
+    path: string,
+    onSuccess: (s: Socket) => void,
+    onFailure: () => void
+  ) {
     let buffer = "";
     Bun.connect({
-      unix: this.socketPath,
+      unix: path,
       socket: {
         binaryType: "uint8array",
-        open: (socket) => result.resolve(socket),
+        open: (socket) => onSuccess(socket),
         data: (socket, data: Uint8Array) => {
           buffer += new TextDecoder().decode(data);
           let idx;
@@ -696,22 +737,7 @@ class HighlightServer {
           this.nextWaiting().reject(error);
         },
       },
-    }).catch(result.reject);
-    return result.promise;
-  }
-
-  async highlight(lang: string, code: string): Promise<string> {
-    const response = deferred<string>();
-    this.responses.push(response);
-    if (this.socket === undefined) {
-      this.socket = await this.connect();
-    }
-    this.socket.write(`${lang}:${code}\0`);
-    return response.promise;
-  }
-
-  close(): void {
-    this.socket?.end();
+    }).catch(onFailure);
   }
 
   private handleResponse(raw: string) {
@@ -784,7 +810,7 @@ interface Deferred<T> {
 }
 
 // Returns a promise that can be manually resolved or rejected from the outside.
-function deferred<T>(): Deferred<T> {
+function defer<T>(): Deferred<T> {
   const obj = {} as Deferred<T>;
   obj.promise = new Promise<T>((resolve, reject) => {
     obj.resolve = (value) => {

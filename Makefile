@@ -68,14 +68,13 @@ $(prebuild): gen.ts posts $(src_posts)
 	bun run $< manifest -o $(manifest) $(src_posts)
 	touch $@
 
-dep = $(@:$(DESTDIR)/%.html=build/%.d)
 $(foreach var,index archive categories,$(eval $($(var)): name := $(var)))
 
 $(pages): gen.ts $(manifest)
-	bun run $< page $(name) -o $@ -d $(dep) $(manifest)
+	bun run $< page $(name) -o $@ -d build/$(name).d $(manifest)
 
 $(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
-	bun run $< post -o $@ -d $(dep) -s $(sock) posts/$*.md build/$*.json
+	bun run $< post -o $@ -d build/$*.d -s $(sock) posts/$*.md build/$*.json
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/$(firstword $|) $@
