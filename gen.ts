@@ -37,6 +37,7 @@ async function main() {
     return;
   }
   const command = args._.shift();
+  if (!command) throw Error("missing command");
   const inputs = args._;
   if (command === "manifest") {
     genManifest(inputs, args.o);
@@ -45,46 +46,14 @@ async function main() {
   const template = new TemplateRenderer();
   const highlight = new HighlightServer(args.s);
   const markdown = new MarkdownRenderer(highlight, dirname(inputs[0]));
-  let html;
-  switch (command) {
-    case "page":
-      const name = args._.shift();
-      const posts = JSON.parse(await Bun.file(inputs[0]).text());
-      switch (name) {
-        case "index":
-          html = genIndex(posts, template, markdown);
-          break;
-        case "archive":
-          html = genArchive(posts, template);
-          break;
-        case "categories":
-          html = genCategories(posts, template);
-          break;
-        default:
-          console.error(`${name}: unexpected page name`);
-          process.exit(1);
-      }
-      break;
-    case "post":
-      const [content, jsonText] = await Promise.all(
-        inputs.map((f) => Bun.file(f).text())
-      );
-      const navigation = JSON.parse(jsonText) as Navigation;
-      html = genPost(content, navigation, template, markdown);
-      break;
-    default:
-      console.error(`${command}: unexpected command`);
-      process.exit(1);
-  }
-  Bun.write(args.o, postprocess(await html));
+  const html = await genHtml(command, inputs, template, markdown);
+  Bun.write(args.o, postprocess(html));
   highlight.close();
-  if (args.d) {
-    const deps = [
-      ...Array.from(markdown.embeddedAssets),
-      ...template.templatesUsed(),
-    ].join(" ");
-    Bun.write(args.d, `${args.o}: ${deps}`);
-  }
+  const deps = [
+    ...Array.from(markdown.embeddedAssets),
+    ...template.templatesUsed(),
+  ].join(" ");
+  Bun.write(args.d, `${args.o}: ${deps}`);
 }
 
 type Posts = (Metadata & { path: string })[];
@@ -116,6 +85,37 @@ async function genManifest(inputs: string[], output: string) {
     const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
     writeIfChanged(out, JSON.stringify(nav));
   });
+}
+
+async function genHtml(
+  command: string,
+  inputs: string[],
+  template: TemplateRenderer,
+  markdown: MarkdownRenderer
+): Promise<string> {
+  switch (command) {
+    case "page":
+      const [name, manifest] = inputs;
+      const posts = JSON.parse(await Bun.file(manifest).text());
+      switch (name) {
+        case "index":
+          return genIndex(posts, template, markdown);
+        case "archive":
+          return genArchive(posts, template);
+        case "categories":
+          return genCategories(posts, template);
+        default:
+          throw Error(`${name}: unexpected page name`);
+      }
+    case "post":
+      const [content, jsonText] = await Promise.all(
+        inputs.map((f) => Bun.file(f).text())
+      );
+      const navigation = JSON.parse(jsonText) as Navigation;
+      return genPost(content, navigation, template, markdown);
+    default:
+      throw Error(`${command}: unexpected command`);
+  }
 }
 
 // Generates the blog homepage.
@@ -265,7 +265,9 @@ function extractMetadata(content: string): [Metadata, string] {
     .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
     .replace(/\n/g, ",");
   const meta = JSON.parse("{" + fields + "}");
-  meta.summary = must(body.match(/^\s*(.*)/))[1];
+  const match = body.match(/^\s*(.*)/);
+  if (!match) throw Error("post has no summary paragraph");
+  meta.summary = match[1];
   return [meta, body];
 }
 
@@ -792,7 +794,7 @@ async function writeIfChanged(path: string, content: string): Promise<number> {
 // Asserts that `condition` is true.
 function assert(condition: boolean, msg?: string): asserts condition {
   if (!condition) {
-    throw new Error(msg);
+    throw Error(msg);
   }
 }
 

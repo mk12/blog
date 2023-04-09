@@ -27,11 +27,15 @@ src_posts := $(wildcard posts/*.md)
 src_assets := $(wildcard assets/img/*.jpg)
 src_css := assets/css/style.css
 
+page_names := index archive categories
+post_names := $(src_posts:posts/%.md=%)
+html_names := $(page_names) $(post_names)
+
 index := $(DESTDIR)/index.html
 archive := $(DESTDIR)/post/index.html
 categories := $(DESTDIR)/categories/index.html
-pages := $(index) $(archive) $(categories)
-posts := $(src_posts:posts/%.md=$(DESTDIR)/post/%/index.html)
+pages := $(foreach n,$(page_names),$($(n)))
+posts := $(post_names:%=$(DESTDIR)/post/%/index.html)
 html := $(pages) $(posts)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
@@ -39,14 +43,13 @@ artifacts := $(html) $(assets) $(css)
 
 prebuild := build/prebuild.mk
 manifest := build/manifest.json
-depfiles = $(html:$(DESTDIR)/%.html=build/%.d)
+depfiles = $(html_names:%=build/%.d)
 auxiliary := $(prebuild) $(manifest) $(depfiles)
 
 sock := highlight.sock
 fifo := highlight.fifo
 
 directories := $(sort $(dir $(artifacts) $(auxiliary)))
-directories := $(directories:%/=%)
 
 .SUFFIXES:
 
@@ -68,16 +71,16 @@ $(prebuild): gen.ts posts $(src_posts)
 	bun run $< manifest -o $(manifest) $(src_posts)
 	touch $@
 
-$(foreach var,index archive categories,$(eval $($(var)): name := $(var)))
+$(foreach n,$(page_names),$(eval $($(n)): name := $(n)))
 
 $(pages): gen.ts $(manifest)
 	bun run $< page $(name) -o $@ -d build/$(name).d $(manifest)
 
 $(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
-	bun run $< post -o $@ -d build/$*.d -s $(sock) posts/$*.md build/$*.json
+	bun run $< post posts/$*.md build/$*.json -o $@ -d build/$*.d -s $(sock)
 
 $(assets): $(DESTDIR)/%: | assets/%
-	ln -sfn $(CURDIR)/$(firstword $|) $@
+	ln -sfn $(CURDIR)/assets/$* $@
 
 $(css): $(src_css)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
@@ -104,4 +107,4 @@ endif
 
 .SECONDEXPANSION:
 
-$(artifacts) $(auxiliary) $(directories): | $$(@D)
+$(artifacts) $(auxiliary): | $$(@D)/
