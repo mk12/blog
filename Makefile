@@ -40,21 +40,19 @@ posts := $(post_names:%=$(DESTDIR)/post/%/index.html)
 html := $(pages) $(posts)
 assets := $(src_assets:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
-artifacts := $(html) $(assets) $(css)
+all := $(html) $(assets) $(css)
 
 prebuild := build/prebuild.mk
 manifest := build/manifest.json
 depfiles = $(html_names:%=build/%.d)
-auxiliary := $(prebuild) $(manifest) $(depfiles)
+aux := $(prebuild) $(manifest) $(depfiles)
 
 sock := highlight.sock
 fifo := highlight.fifo
 
-directories := $(sort $(dir $(artifacts) $(auxiliary)))
-
 .SUFFIXES:
 
-all: $(artifacts)
+all: $(all)
 
 help:
 	$(info $(usage))
@@ -100,7 +98,7 @@ $(sock): build/highlight $(fifo)
 $(fifo):
 	mkfifo $@
 
-$(directories):
+$(sort $(dir $(all) $(aux))):
 	mkdir -p $@
 
 ifeq (,$(filter help clean,$(MAKECMDGOALS)))
@@ -110,4 +108,4 @@ endif
 
 .SECONDEXPANSION:
 
-$(artifacts) $(auxiliary): | $$(@D)/
+$(all) $(aux): | $$(@D)/
