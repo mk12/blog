@@ -27,7 +27,6 @@ Options:
     -h, --help  Show this help message
     -o OUTFILE  Output file
     -d DEPFILE  Output depfile for Make
-    -t TARGET   Target to use in depfile
     -s SOCKET   Highlight server socket`
   );
 }
@@ -52,7 +51,10 @@ async function main() {
   Bun.write(args.o, postprocess(html));
   highlight.close();
   const deps = [...markdown.deps(), ...template.deps()].join(" ");
-  Bun.write(args.d, `${args.t}: ${deps}`);
+  const destDir = must(process.env["DESTDIR"]);
+  assert(args.o.startsWith(destDir))
+  const target = "$(DESTDIR)" + args.o.slice(destDir.length);
+  Bun.write(args.d, `$(DESTDIR)/${args.o}: ${deps}`);
 }
 
 type Posts = (Metadata & { path: string })[];

@@ -20,7 +20,7 @@ endef
 default_destdir := public
 default_font_url := ../fonts
 
-DESTDIR ?= $(default_destdir)
+export DESTDIR ?= $(default_destdir)
 FONT_URL ?= $(default_font_url)
 
 posts_wildcard := posts/*.md
@@ -71,14 +71,12 @@ $(prebuild): gen.ts posts $(src_posts)
 	touch $@
 
 $(foreach n,$(page_names),$(eval $($(n)): name := $(n)))
-$(posts): name = $*
-depflags = -d build/$(name).d -t $(@:$(DESTDIR)/%='$$(DESTDIR)/%')
 
 $(pages): gen.ts $(manifest)
-	bun run $< page $(name) $(manifest) -o $@ $(depflags)
+	bun run $< page $(name) $(manifest) -o $@ -d build/$(name).d
 
 $(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
-	bun run $< post posts/$*.md build/$*.json -o $@ -s $(sock) $(depflags)
+	bun run $< post posts/$*.md build/$*.json -o $@ -d build/$*.d -s $(sock)
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/assets/$* $@
