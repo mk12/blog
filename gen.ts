@@ -17,8 +17,9 @@ Generates a file for the blog
 Commands:
     manifest POST1.md POST2.md ...
         Write the manifest and navigation JSON files
-    page {index,post/index,categories/index} MANIFEST.json
+    page NAME MANIFEST.json
         Write an HTML file for a website page
+        Allowed names: index, post/index, categories/index
     post POST.md NAVIGATION.json
         Write an HTML file for a blog post
 
@@ -26,6 +27,7 @@ Options:
     -h, --help  Show this help message
     -o OUTFILE  Output file
     -d DEPFILE  Output depfile for Make
+    -t TARGET   Target to use in depfile
     -s SOCKET   Highlight server socket`
   );
 }
@@ -49,11 +51,8 @@ async function main() {
   const html = await genHtml(command, inputs, template, markdown);
   Bun.write(args.o, postprocess(html));
   highlight.close();
-  const deps = [
-    ...Array.from(markdown.embeddedAssets),
-    ...template.templatesUsed(),
-  ].join(" ");
-  Bun.write(args.d, `${args.o}: ${deps}`);
+  const deps = [...markdown.deps(), ...template.deps()].join(" ");
+  Bun.write(args.d, `${args.t}: ${deps}`);
 }
 
 type Posts = (Metadata & { path: string })[];
@@ -144,6 +143,9 @@ function genIndex(
       title,
       home_url: process.env["HOME_URL"],
       posts: postsPromise,
+      copyright: template.render("templates/copyright.html", {
+        year: new Date().getFullYear().toString(),
+      }),
     }),
   });
 }
@@ -170,6 +172,9 @@ function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
           })),
         })
       ),
+      copyright: template.render("templates/copyright.html", {
+        year: new Date().getFullYear().toString(),
+      }),
     }),
   });
 }
@@ -202,6 +207,9 @@ function genCategories(
           })),
         })
       ),
+      copyright: template.render("templates/copyright.html", {
+        year: new Date().getFullYear().toString(),
+      }),
     }),
   });
 }
@@ -323,6 +331,10 @@ class MarkdownRenderer {
 
   renderInline(src: string): string {
     return marked.parseInline(src);
+  }
+
+  deps(): string[] {
+    return Array.from(this.embeddedAssets);
   }
 }
 
@@ -582,7 +594,7 @@ class TemplateRenderer {
     );
   }
 
-  templatesUsed(): string[] {
+  deps(): string[] {
     return Array.from(this.cache.keys());
   }
 

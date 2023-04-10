@@ -23,7 +23,8 @@ default_font_url := ../fonts
 DESTDIR ?= $(default_destdir)
 FONT_URL ?= $(default_font_url)
 
-src_posts := $(wildcard posts/*.md)
+posts_wildcard := posts/*.md
+src_posts := $(wildcard $(posts_wildcard))
 src_assets := $(wildcard assets/img/*.jpg)
 src_css := assets/css/style.css
 
@@ -68,16 +69,18 @@ clean:
 	rm -rf $(default_destdir) build
 
 $(prebuild): gen.ts posts $(src_posts)
-	bun run $< manifest -o $(manifest) $(src_posts)
+	bun run $< manifest -o $(manifest) $(posts_wildcard)
 	touch $@
 
 $(foreach n,$(page_names),$(eval $($(n)): name := $(n)))
+$(posts): name = $*
+depflags = -d build/$(name).d -t $(@:$(DESTDIR)/%='$$(DESTDIR)/%')
 
 $(pages): gen.ts $(manifest)
-	bun run $< page $(name) -o $@ -d build/$(name).d $(manifest)
+	bun run $< page $(name) $(manifest) -o $@ $(depflags)
 
 $(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
-	bun run $< post posts/$*.md build/$*.json -o $@ -d build/$*.d -s $(sock)
+	bun run $< post posts/$*.md build/$*.json -o $@ -s $(sock) $(depflags)
 
 $(assets): $(DESTDIR)/%: | assets/%
 	ln -sfn $(CURDIR)/assets/$* $@
@@ -101,7 +104,7 @@ $(directories):
 	mkdir -p $@
 
 ifeq (,$(filter help clean,$(MAKECMDGOALS)))
-include $(prebuild)
+-include $(prebuild)
 -include $(depfiles)
 endif
 
