@@ -1,4 +1,4 @@
-module github.com/mk12/blog/highlight
+module github.com/mk12/blog/hlsvc
 
 go 1.19
 
