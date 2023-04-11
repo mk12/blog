@@ -34,9 +34,9 @@ asset := $(src_asset:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
 all := $(html) $(assets) $(css)
 
-json := build/json.stamp
-gen := $(json) $(html)
-dep := $(json) $(html:$(DESTDIR)/%.html=build/%.d)
+stamp := build/stamp
+gen := $(stamp) $(html)
+dep := $(stamp) $(html:$(DESTDIR)/%.html=build/%.d)
 
 .SUFFIXES:
 
@@ -54,7 +54,7 @@ validate: $(html)
 clean:
 	rm -rf $(default_destdir) build
 
-$(json): posts $(src_post)
+$(stamp): posts $(src_post)
 $(post): | hlsvc.sock
 
 $(gen): gen.ts

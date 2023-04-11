@@ -3,206 +3,182 @@
 import getopts from "getopts";
 import { marked } from "marked";
 import dateFormat from "dateformat";
-import { FileSink, Socket } from "bun";
+import { Socket, file } from "bun";
 import katex, { KatexOptions } from "katex";
 import { basename, join } from "path";
 import { readdir } from "fs/promises";
 import { mkdir } from "fs/promises";
 import { dirname } from "path";
-import { utimes } from "fs/promises";
+import { Writable } from "stream";
 
-function usage(out: FileSink) {
+function usage(out: Writable) {
   const program = basename(process.argv[1]);
   out.write(
     `Usage: bun run ${program} OUT_FILE
 
-Generate a file for the blog
+Generate files for the blog
 
-Arguments:
-    OUT_FILE    File to generate
-
-Options:
-    -h, --help  Show this help message
-    -j, --json  Generate JSON build files`
+If OUT_FILE is build/stamp, touches it after writing JSON files in build/.
+If OUT_FILE looks like $DESTDIR/foo/bar.html, writes it and build/foo/bar.d.
+`
   );
 }
 
 const destDirVar = "DESTDIR";
-const highlightSocketPath = "hlsvc.sock";
-const srcPostsDir = "posts";
-const srcPostsExt = ".md";
+const hlsvcSocket = "hlsvc.sock";
+const srcPostDir = "posts";
 const dstPostDir = "post";
 const buildDir = "build";
-const postsJsonPath = join(buildDir, "posts.json");
+const manifestPath = join(buildDir, "posts.json");
 
 async function main() {
   const args = getopts(process.argv.slice(2));
+  const out = args._[0];
   if (args.h || args.help) {
-    usage(Bun.stdout.writer());
+    usage(process.stdout);
   } else if (args._.length !== 1) {
-    usage(Bun.stderr.writer());
+    usage(process.stderr);
     process.exit(1);
-  } else if (args._[0] === "build/json.stamp") {
-    await genJson();
-    Bun.write(args._[0], "");
+  } else if (out === join(buildDir, "stamp")) {
+    await genJsonFiles();
+    Bun.write(out, "");
   } else {
-    await genFile(args._[0]);
+    await genHtmlFile(out);
   }
 }
 
-type Posts = (Metadata & { path: string })[];
+// Data stored in the posts manifest file.
+type Manifest = (Metadata & { path: string })[];
 
-function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
-  const map = new Map<U, T[]>();
-  for (const item of array) {
-    const k = key(item);
-    if (map.has(k)) {
-      map.get(k)?.push(item);
-    } else {
-      map.set(k, [item]);
-    }
-  }
-  return Array.from(map.entries());
+// Data stored in the JSON file for each post.
+interface Neighbors {
+  older: string;
+  newer: string;
 }
 
-async function genJson() {
-  const filenames = await readdir(srcPostsDir);
-  const posts = await Promise.all(
-    filenames
-      .filter((n) => n.endsWith(srcPostsExt))
-      .map(async (name) => {
-        const src = join(srcPostsDir, name);
-        const dst = join(dstPostDir, removeExt(name), "index.html");
-        const [meta, _rest] = extractMetadata(await Bun.file(src).text());
-        return { path: dst, ...meta };
-      })
+// Generates JSON files in the build directory.
+async function genJsonFiles() {
+  const filenames = await readdir(srcPostDir);
+  const posts: Manifest = reverseChronological(
+    await Promise.all(
+      filenames
+        .filter((n) => n.endsWith(".md"))
+        .map(async (name) => {
+          const srcPath = join(srcPostDir, name);
+          const dstPath = join(dstPostDir, removeExt(name), "index.html");
+          const [meta, _rest] = splitMetadata(await Bun.file(srcPath).text());
+          return { path: dstPath, ...meta };
+        })
+    )
   );
-  const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
-  await mkdir(dirname(postsJsonPath), { recursive: true });
-  writeIfChanged(postsJsonPath, JSON.stringify(sorted));
-  sorted.forEach(({ path }, i) => {
+  writeIfChanged(manifestPath, JSON.stringify(posts));
+  posts.forEach(({ path }, i) => {
     const out = join(buildDir, changeExt(path, ".json"));
-    const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
-    mkdir(dirname(out), { recursive: true }).then(() =>
-      writeIfChanged(out, JSON.stringify(nav))
-    );
+    const neighbors = { newer: posts[i - 1]?.path, older: posts[i + 1]?.path };
+    writeIfChanged(out, JSON.stringify(neighbors));
   });
 }
 
-async function genFile(fullFile: string) {
-  const destDir = must(Bun.env[destDirVar]);
+// Generates an HTML file in $DESTDIR.
+async function genHtmlFile(fullFile: string) {
+  const destDir = must(process.env[destDirVar]);
   assert(fullFile.startsWith(destDir + "/"));
   const file = fullFile.slice(destDir.length + 1);
   const postsJson = new PostsJson();
-  const template = new TemplateRenderer();
-  const highlight = new HighlightServer();
-  const markdown = new MarkdownRenderer(highlight);
-  let html;
-  let extraDeps = [];
-  switch (file) {
-    case "index.html":
-      html = await genHtml(
-        "page",
-        ["index", "build/posts.json"],
-        postsJson,
-        template,
-        markdown
-      );
-      break;
-    case "post/index.html":
-      html = await genHtml(
-        "page",
-        ["archive", "build/posts.json"],
-        postsJson,
-        template,
-        markdown
-      );
-      break;
-    case "categories/index.html":
-      html = await genHtml(
-        "page",
-        ["categories", "build/posts.json"],
-        postsJson,
-        template,
-        markdown
-      );
-      break;
-    default:
-      const match = must(file.match(/^post\/(.*)\/index.html$/));
-      const inputs = [
-        join(srcPostsDir, match[1]) + srcPostsExt,
-        join(buildDir, changeExt(file, ".json")),
-      ];
-      extraDeps.push(...inputs);
-      html = await genHtml("post", inputs, postsJson, template, markdown);
-      break;
-  }
+  const postSrc = new PostSrc(file);
+  const template = new Template();
+  const highlight = new Highlight();
+  const markdown = new Markdown(highlight);
+  const html = await genHtml(
+    file,
+    postsJson,
+    postSrc,
+    template,
+    markdown,
+  );
   Bun.write(fullFile, postprocess(html));
   highlight.close();
-  const deps = [
-    ...markdown.deps(),
-    ...template.deps(),
-    ...postsJson.deps(),
-    ...extraDeps,
-  ].join(" ");
+  const deps = [];
+  for (const d of [markdown, template, postsJson, postSrc]) {
+    deps.push(...d.deps());
+  }
   Bun.write(
     join(buildDir, changeExt(file, ".d")),
-    `$(${destDirVar})/${file}: ${deps}`
+    `$(${destDirVar})/${file}: ${deps.join(" ")}`
   );
 }
 
+// TODO: fix, this is weird
 class PostsJson {
   private used = false;
 
-  async posts(): Promise<Posts> {
+  async posts(): Promise<Manifest> {
     this.used = true;
-    return JSON.parse(await Bun.file(postsJsonPath).text());
+    return JSON.parse(await Bun.file(manifestPath).text());
   }
 
   deps(): string[] {
-    return this.used ? [postsJsonPath] : [];
+    return this.used ? [manifestPath] : [];
+  }
+}
+
+// TODO: fix, this is weird
+class PostSrc {
+  private used = false;
+  private dst: string;
+
+  constructor(dst: string) {
+    this.dst = dst;
+  }
+
+  async get(): Promise<[string, Neighbors]> {
+    this.used = true;
+    return Promise.all([
+      Bun.file(this.md()).text(),
+      Bun.file(this.json()).text().then(JSON.parse),
+    ]);
+  }
+
+  private md(): string {
+    return join(srcPostDir, basename(dirname(this.dst))) + ".md";
+  }
+
+  private json(): string {
+    return join(buildDir, changeExt(this.dst, ".json"));
+  }
+
+  deps(): string[] {
+    return this.used ? [this.md(), this.json()] : [];
   }
 }
 
 async function genHtml(
-  command: string,
-  inputs: string[],
+  file: string,
   postsJson: PostsJson,
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
+  postSrc: PostSrc,
+  template: Template,
+  markdown: Markdown,
 ): Promise<string> {
-  switch (command) {
-    case "page":
-      const [name, manifest] = inputs;
-      const posts = await postsJson.posts();
-      switch (name) {
-        case "index":
-          return genIndex(posts, template, markdown);
-        case "archive":
-          return genArchive(posts, template);
-        case "categories":
-          return genCategories(posts, template);
-        default:
-          throw Error(`${name}: unexpected page name`);
-      }
-    case "post":
-      const [content, jsonText] = await Promise.all(
-        inputs.map((f) => Bun.file(f).text())
-      );
-      const navigation = JSON.parse(jsonText) as Navigation;
-      return genPost(content, navigation, template, markdown);
+  switch (file) {
+    case "index.html":
+      return genIndex(await postsJson.posts(), template, markdown);
+    case "post/index.html":
+      return genArchive(await postsJson.posts(), template);
+    case "categories/index.html":
+      return genCategories(await postsJson.posts(), template);
     default:
-      throw Error(`${command}: unexpected command`);
+      const [content, neighbors] = await postSrc.get();
+      return genPost(content, neighbors, template, markdown);
   }
 }
 
 // Generates the blog homepage.
 function genIndex(
-  posts: Posts,
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
+  posts: Manifest,
+  template: Template,
+  markdown: Markdown
 ): Promise<string> {
-  const analytics = Bun.env["ANALYTICS"];
+  const analytics = process.env["ANALYTICS"];
   const root = "";
   const title = "Mitchell Kember";
   const postsPromise = Promise.all(
@@ -220,7 +196,7 @@ function genIndex(
     math: postsPromise.then(() => markdown.encounteredMath),
     body: template.render("templates/index.html", {
       title,
-      home_url: Bun.env["HOME_URL"],
+      home_url: process.env["HOME_URL"],
       posts: postsPromise,
       copyright: template.render("templates/copyright.html", {
         year: new Date().getFullYear().toString(),
@@ -230,8 +206,8 @@ function genIndex(
 }
 
 // Generates the blog post archive.
-function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
-  const analytics = Bun.env["ANALYTICS"];
+function genArchive(posts: Manifest, template: Template): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
   const root = "../";
   const title = "Post Archive";
   return template.render("templates/base.html", {
@@ -259,11 +235,8 @@ function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
 }
 
 // Generates the blog post categories page.
-function genCategories(
-  posts: Posts,
-  template: TemplateRenderer
-): Promise<string> {
-  const analytics = Bun.env["ANALYTICS"];
+function genCategories(posts: Manifest, template: Template): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
   const root = "../";
   const title = "Categories";
   return template.render("templates/base.html", {
@@ -290,21 +263,16 @@ function genCategories(
   });
 }
 
-interface Navigation {
-  older: string;
-  newer: string;
-}
-
 // Generates a blog post from its Markdown content.
 function genPost(
   fileContent: string,
-  navigation: Navigation,
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
+  navigation: Neighbors,
+  template: Template,
+  markdown: Markdown
 ): Promise<string> {
-  const [meta, bodyMd] = extractMetadata(fileContent);
+  const [meta, bodyMd] = splitMetadata(fileContent);
   const bodyHtml = markdown.render(bodyMd);
-  const analytics = Bun.env["ANALYTICS"];
+  const analytics = process.env["ANALYTICS"];
   const root = "../../";
   return template.render("templates/base.html", {
     root,
@@ -317,7 +285,7 @@ function genPost(
       description: markdown.renderInline(meta.description),
       body: bodyHtml,
       pagenav: template.render("templates/pagenav.html", {
-        home: Bun.env["HOME_URL"],
+        home: process.env["HOME_URL"],
         root,
         older:
           navigation.older?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
@@ -342,7 +310,7 @@ interface Metadata {
 
 // Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
 // Returns the metadata and the rest of the file content.
-function extractMetadata(content: string): [Metadata, string] {
+function splitMetadata(content: string): [Metadata, string] {
   const [before, body] = content.split("\n---\n", 2);
   const fields = before
     .replace(/^---\n/, "")
@@ -356,11 +324,11 @@ function extractMetadata(content: string): [Metadata, string] {
 }
 
 // Renders Markdown to HTML using the marked library with extensions.
-class MarkdownRenderer {
+class Markdown {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
 
-  constructor(server: HighlightServer) {
+  constructor(server: Highlight) {
     marked.use({
       smartypants: true,
       extensions: [
@@ -384,7 +352,7 @@ class MarkdownRenderer {
           case "image":
             const image = token as unknown as Image;
             if (image.href.endsWith(".svg")) {
-              const path = join(srcPostsDir, image.href);
+              const path = join(srcPostDir, image.href);
               this.embeddedAssets.add(path);
               image.svg = await Bun.file(path).text();
             } else {
@@ -643,6 +611,7 @@ type ContextValue =
   | NestedContext
   | undefined;
 
+// Helper for defining `ContextValue` recursively.
 interface NestedContext extends Record<string, ContextValue> {}
 
 // Commands used in a parsed template.
@@ -653,18 +622,18 @@ type TemplateCommand =
   | { kind: "end" };
 
 // Renders HTML templates using syntax similar to Go templates.
-class TemplateRenderer {
+class Template {
   private cache: Map<string, TemplateCommand[]> = new Map();
 
   // Renders an HTML template.
   async render(path: string, context: Context): Promise<string> {
     let template = this.cache.get(path);
     if (template === undefined) {
-      template = TemplateRenderer.parse(await Bun.file(path).text());
+      template = Template.parse(await Bun.file(path).text());
       this.cache.set(path, template);
     }
     const values = await Promise.all(Object.values(context));
-    return TemplateRenderer.apply(
+    return Template.apply(
       template,
       Object.fromEntries(Object.keys(context).map((key, i) => [key, values[i]]))
     );
@@ -756,8 +725,8 @@ class TemplateRenderer {
   }
 }
 
-// Client that communicates with highlight/main.go over a Unix socket.
-class HighlightServer {
+// Client that communicates with hlsvc/main.go over a Unix socket.
+class Highlight {
   private state:
     | { mode: "init" }
     | { mode: "connecting"; promise: Promise<Socket> }
@@ -788,7 +757,7 @@ class HighlightServer {
         const deferred = defer<Socket>();
         this.state = { mode: "connecting", promise: deferred.promise };
         this.connect(
-          highlightSocketPath,
+          hlsvcSocket,
           (socket: Socket) => {
             this.state = { mode: "connected", socket };
             deferred.resolve(socket);
@@ -870,12 +839,15 @@ function postprocess(html: string): string {
 }
 
 // Writes content to path if is different from its current content.
-async function writeIfChanged(path: string, content: string): Promise<number> {
+async function writeIfChanged(path: string, content: string): Promise<void> {
   const same = await Bun.file(path)
     .text()
     .then((old) => old === content)
     .catch(() => false);
-  return same ? 0 : Bun.write(path, content);
+  if (!same) {
+    await mkdir(dirname(path), { recursive: true });
+    await Bun.write(path, content);
+  }
 }
 
 // Changes the extension of a path.
@@ -886,6 +858,25 @@ function changeExt(path: string, ext: string): string {
 // Removes the extension from a path.
 function removeExt(path: string): string {
   return path.slice(0, path.lastIndexOf("."));
+}
+
+// Sorts an array with YYYY-MM-DD dates in reverse chronological order.
+function reverseChronological<T extends { date: string }[]>(array: T): T {
+  return array.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// Groups an array into subarrays where each item has the same key.
+function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
+  const map = new Map<U, T[]>();
+  for (const item of array) {
+    const k = key(item);
+    if (map.has(k)) {
+      map.get(k)?.push(item);
+    } else {
+      map.set(k, [item]);
+    }
+  }
+  return Array.from(map.entries());
 }
 
 // Asserts that `condition` is true.
