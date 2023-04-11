@@ -3,58 +3,51 @@
 import getopts from "getopts";
 import { marked } from "marked";
 import dateFormat from "dateformat";
-import { Socket } from "bun";
+import { FileSink, Socket } from "bun";
 import katex, { KatexOptions } from "katex";
-import { basename, dirname, join } from "path";
+import { basename, join } from "path";
+import { readdir } from "fs/promises";
+import { mkdir } from "fs/promises";
+import { dirname } from "path";
+import { utimes } from "fs/promises";
 
-function usage() {
+function usage(out: FileSink) {
   const program = basename(process.argv[1]);
-  console.log(
-    `Usage: bun run ${program} COMMAND [FILE ...] [OPTIONS]
+  out.write(
+    `Usage: bun run ${program} OUT_FILE
 
-Generates a file for the blog
+Generate a file for the blog
 
-Commands:
-    manifest POST1.md POST2.md ...
-        Write the manifest and navigation JSON files
-    page NAME MANIFEST.json
-        Write an HTML file for a website page
-        Allowed names: index, post/index, categories/index
-    post POST.md NAVIGATION.json
-        Write an HTML file for a blog post
+Arguments:
+    OUT_FILE    File to generate
 
 Options:
     -h, --help  Show this help message
-    -o OUTFILE  Output file
-    -d DEPFILE  Output depfile for Make
-    -s SOCKET   Highlight server socket`
+    -j, --json  Generate JSON build files`
   );
 }
+
+const destDirVar = "DESTDIR";
+const highlightSocketPath = "hlsvc.sock";
+const srcPostsDir = "posts";
+const srcPostsExt = ".md";
+const dstPostDir = "post";
+const buildDir = "build";
+const postsJsonPath = join(buildDir, "posts.json");
 
 async function main() {
   const args = getopts(process.argv.slice(2));
   if (args.h || args.help) {
-    usage();
-    return;
+    usage(Bun.stdout.writer());
+  } else if (args._.length !== 1) {
+    usage(Bun.stderr.writer());
+    process.exit(1);
+  } else if (args._[0] === "build/json.stamp") {
+    await genJson();
+    Bun.write(args._[0], "");
+  } else {
+    await genFile(args._[0]);
   }
-  const command = args._.shift();
-  if (!command) throw Error("missing command");
-  const inputs = args._;
-  if (command === "manifest") {
-    genManifest(inputs, args.o);
-    return;
-  }
-  const template = new TemplateRenderer();
-  const highlight = new HighlightServer(args.s);
-  const markdown = new MarkdownRenderer(highlight, dirname(inputs[0]));
-  const html = await genHtml(command, inputs, template, markdown);
-  Bun.write(args.o, postprocess(html));
-  highlight.close();
-  const deps = [...markdown.deps(), ...template.deps()].join(" ");
-  const destDir = must(process.env["DESTDIR"]);
-  assert(args.o.startsWith(destDir))
-  const target = "$(DESTDIR)" + args.o.slice(destDir.length);
-  Bun.write(args.d, `$(DESTDIR)/${args.o}: ${deps}`);
 }
 
 type Posts = (Metadata & { path: string })[];
@@ -72,32 +65,116 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
   return Array.from(map.entries());
 }
 
-// Generates the JSON manifest.
-async function genManifest(inputs: string[], output: string) {
-  const getMeta = async (path: string) =>
-    extractMetadata(await Bun.file(path).text())[0];
+async function genJson() {
+  const filenames = await readdir(srcPostsDir);
   const posts = await Promise.all(
-    inputs.map(async (path) => ({ path, ...(await getMeta(path)) }))
+    filenames
+      .filter((n) => n.endsWith(srcPostsExt))
+      .map(async (name) => {
+        const src = join(srcPostsDir, name);
+        const dst = join(dstPostDir, removeExt(name), "index.html");
+        const [meta, _rest] = extractMetadata(await Bun.file(src).text());
+        return { path: dst, ...meta };
+      })
   );
   const sorted = posts.sort((a, b) => b.date.localeCompare(a.date));
-  Bun.write(output, JSON.stringify(sorted));
+  await mkdir(dirname(postsJsonPath), { recursive: true });
+  writeIfChanged(postsJsonPath, JSON.stringify(sorted));
   sorted.forEach(({ path }, i) => {
-    const out = join(dirname(output), basename(path, ".md") + ".json");
+    const out = join(buildDir, changeExt(path, ".json"));
     const nav = { newer: sorted[i - 1]?.path, older: sorted[i + 1]?.path };
-    writeIfChanged(out, JSON.stringify(nav));
+    mkdir(dirname(out), { recursive: true }).then(() =>
+      writeIfChanged(out, JSON.stringify(nav))
+    );
   });
+}
+
+async function genFile(fullFile: string) {
+  const destDir = must(Bun.env[destDirVar]);
+  assert(fullFile.startsWith(destDir + "/"));
+  const file = fullFile.slice(destDir.length + 1);
+  const postsJson = new PostsJson();
+  const template = new TemplateRenderer();
+  const highlight = new HighlightServer();
+  const markdown = new MarkdownRenderer(highlight);
+  let html;
+  let extraDeps = [];
+  switch (file) {
+    case "index.html":
+      html = await genHtml(
+        "page",
+        ["index", "build/posts.json"],
+        postsJson,
+        template,
+        markdown
+      );
+      break;
+    case "post/index.html":
+      html = await genHtml(
+        "page",
+        ["archive", "build/posts.json"],
+        postsJson,
+        template,
+        markdown
+      );
+      break;
+    case "categories/index.html":
+      html = await genHtml(
+        "page",
+        ["categories", "build/posts.json"],
+        postsJson,
+        template,
+        markdown
+      );
+      break;
+    default:
+      const match = must(file.match(/^post\/(.*)\/index.html$/));
+      const inputs = [
+        join(srcPostsDir, match[1]) + srcPostsExt,
+        join(buildDir, changeExt(file, ".json")),
+      ];
+      extraDeps.push(...inputs);
+      html = await genHtml("post", inputs, postsJson, template, markdown);
+      break;
+  }
+  Bun.write(fullFile, postprocess(html));
+  highlight.close();
+  const deps = [
+    ...markdown.deps(),
+    ...template.deps(),
+    ...postsJson.deps(),
+    ...extraDeps,
+  ].join(" ");
+  Bun.write(
+    join(buildDir, changeExt(file, ".d")),
+    `$(${destDirVar})/${file}: ${deps}`
+  );
+}
+
+class PostsJson {
+  private used = false;
+
+  async posts(): Promise<Posts> {
+    this.used = true;
+    return JSON.parse(await Bun.file(postsJsonPath).text());
+  }
+
+  deps(): string[] {
+    return this.used ? [postsJsonPath] : [];
+  }
 }
 
 async function genHtml(
   command: string,
   inputs: string[],
+  postsJson: PostsJson,
   template: TemplateRenderer,
   markdown: MarkdownRenderer
 ): Promise<string> {
   switch (command) {
     case "page":
       const [name, manifest] = inputs;
-      const posts = JSON.parse(await Bun.file(manifest).text());
+      const posts = await postsJson.posts();
       switch (name) {
         case "index":
           return genIndex(posts, template, markdown);
@@ -125,13 +202,13 @@ function genIndex(
   template: TemplateRenderer,
   markdown: MarkdownRenderer
 ): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
+  const analytics = Bun.env["ANALYTICS"];
   const root = "";
   const title = "Mitchell Kember";
   const postsPromise = Promise.all(
     posts.slice(0, 10).map(async ({ path, title, date, summary }) => ({
       date: dateFormat(date, "dddd, d mmmm yyyy"),
-      href: "post/" + must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+      href: path,
       title,
       summary: await markdown.render(summary),
     }))
@@ -143,7 +220,7 @@ function genIndex(
     math: postsPromise.then(() => markdown.encounteredMath),
     body: template.render("templates/index.html", {
       title,
-      home_url: process.env["HOME_URL"],
+      home_url: Bun.env["HOME_URL"],
       posts: postsPromise,
       copyright: template.render("templates/copyright.html", {
         year: new Date().getFullYear().toString(),
@@ -154,7 +231,7 @@ function genIndex(
 
 // Generates the blog post archive.
 function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
+  const analytics = Bun.env["ANALYTICS"];
   const root = "../";
   const title = "Post Archive";
   return template.render("templates/base.html", {
@@ -169,7 +246,7 @@ function genArchive(posts: Posts, template: TemplateRenderer): Promise<string> {
           name: year,
           pages: posts.map(({ path, title, date }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href: must(path.match(/^posts\/(.*)\.md$/))[1] + "/index.html",
+            href: path.slice("post/".length),
             title,
           })),
         })
@@ -186,7 +263,7 @@ function genCategories(
   posts: Posts,
   template: TemplateRenderer
 ): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
+  const analytics = Bun.env["ANALYTICS"];
   const root = "../";
   const title = "Categories";
   return template.render("templates/base.html", {
@@ -201,10 +278,7 @@ function genCategories(
           name: category,
           pages: posts.map(({ path, title, date }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href:
-              "../post/" +
-              must(path.match(/^posts\/(.*)\.md$/))[1] +
-              "/index.html",
+            href: join("..", path),
             title,
           })),
         })
@@ -230,7 +304,7 @@ function genPost(
 ): Promise<string> {
   const [meta, bodyMd] = extractMetadata(fileContent);
   const bodyHtml = markdown.render(bodyMd);
-  const analytics = process.env["ANALYTICS"];
+  const analytics = Bun.env["ANALYTICS"];
   const root = "../../";
   return template.render("templates/base.html", {
     root,
@@ -243,7 +317,7 @@ function genPost(
       description: markdown.renderInline(meta.description),
       body: bodyHtml,
       pagenav: template.render("templates/pagenav.html", {
-        home: process.env["HOME_URL"],
+        home: Bun.env["HOME_URL"],
         root,
         older:
           navigation.older?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
@@ -286,7 +360,7 @@ class MarkdownRenderer {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
 
-  constructor(server: HighlightServer, workingDir?: string) {
+  constructor(server: HighlightServer) {
     marked.use({
       smartypants: true,
       extensions: [
@@ -310,7 +384,7 @@ class MarkdownRenderer {
           case "image":
             const image = token as unknown as Image;
             if (image.href.endsWith(".svg")) {
-              const path = join(must(workingDir), image.href);
+              const path = join(srcPostsDir, image.href);
               this.embeddedAssets.add(path);
               image.svg = await Bun.file(path).text();
             } else {
@@ -685,13 +759,13 @@ class TemplateRenderer {
 // Client that communicates with highlight/main.go over a Unix socket.
 class HighlightServer {
   private state:
-    | { mode: "init"; path: string }
+    | { mode: "init" }
     | { mode: "connecting"; promise: Promise<Socket> }
     | { mode: "connected"; socket: Socket };
   private responses: Deferred<string>[] = [];
 
-  constructor(path: string) {
-    this.state = { mode: "init", path };
+  constructor() {
+    this.state = { mode: "init" };
   }
 
   async highlight(lang: string, code: string): Promise<string> {
@@ -711,11 +785,10 @@ class HighlightServer {
   private async socket(): Promise<Socket> {
     switch (this.state.mode) {
       case "init":
-        const path = this.state.path;
         const deferred = defer<Socket>();
         this.state = { mode: "connecting", promise: deferred.promise };
         this.connect(
-          path,
+          highlightSocketPath,
           (socket: Socket) => {
             this.state = { mode: "connected", socket };
             deferred.resolve(socket);
@@ -803,6 +876,16 @@ async function writeIfChanged(path: string, content: string): Promise<number> {
     .then((old) => old === content)
     .catch(() => false);
   return same ? 0 : Bun.write(path, content);
+}
+
+// Changes the extension of a path.
+function changeExt(path: string, ext: string): string {
+  return removeExt(path) + ext;
+}
+
+// Removes the extension from a path.
+function removeExt(path: string): string {
+  return path.slice(0, path.lastIndexOf("."));
 }
 
 // Asserts that `condition` is true.

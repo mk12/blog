@@ -23,32 +23,20 @@ default_font_url := ../fonts
 export DESTDIR ?= $(default_destdir)
 FONT_URL ?= $(default_font_url)
 
-posts_wildcard := posts/*.md
-src_posts := $(wildcard $(posts_wildcard))
-src_assets := $(wildcard assets/img/*.jpg)
+src_post := $(wildcard posts/*.md)
+src_asset := $(wildcard assets/img/*.jpg)
 src_css := assets/css/style.css
 
-page_names := index archive categories
-post_names := $(src_posts:posts/%.md=%)
-html_names := $(page_names) $(post_names)
-
-index := $(DESTDIR)/index.html
-archive := $(DESTDIR)/post/index.html
-categories := $(DESTDIR)/categories/index.html
-pages := $(foreach n,$(page_names),$($(n)))
-posts := $(post_names:%=$(DESTDIR)/post/%/index.html)
-html := $(pages) $(posts)
-assets := $(src_assets:assets/%=$(DESTDIR)/%)
+page := $(patsubst %,$(DESTDIR)/%.html,index post/index categories/index)
+post := $(src_post:posts/%.md=$(DESTDIR)/post/%/index.html)
+html := $(page) $(post)
+asset := $(src_asset:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
 all := $(html) $(assets) $(css)
 
-prebuild := build/prebuild.mk
-manifest := build/manifest.json
-depfiles = $(html_names:%=build/%.d)
-aux := $(prebuild) $(manifest) $(depfiles)
-
-sock := highlight.sock
-fifo := highlight.fifo
+json := build/json.stamp
+gen := $(json) $(html)
+dep := $(json) $(html:$(DESTDIR)/%.html=build/%.d)
 
 .SUFFIXES:
 
@@ -61,49 +49,42 @@ help:
 check: all validate
 
 validate: $(html)
-	vnu $(html)
+	vnu $^
 
 clean:
 	rm -rf $(default_destdir) build
 
-$(prebuild): gen.ts posts $(src_posts)
-	bun run $< manifest -o $(manifest) $(posts_wildcard)
-	touch $@
+$(json): posts $(src_post)
+$(post): | hlsvc.sock
 
-$(foreach n,$(page_names),$(eval $($(n)): name := $(n)))
+$(gen): gen.ts
+	bun run $< $@
 
-$(pages): gen.ts $(manifest)
-	bun run $< page $(name) $(manifest) -o $@ -d build/$(name).d
-
-$(posts): $(DESTDIR)/post/%/index.html: gen.ts posts/%.md build/%.json | $(sock)
-	bun run $< post posts/$*.md build/$*.json -o $@ -d build/$*.d -s $(sock)
-
-$(assets): $(DESTDIR)/%: | assets/%
-	ln -sfn $(CURDIR)/assets/$* $@
+$(asset): $(DESTDIR)/%: | assets/%
+	ln -sfn $(CURDIR)/(firstword $|) $@
 
 $(css): $(src_css)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
 
-.INTERMEDIATE: $(sock) $(fifo)
+.INTERMEDIATE: hlsvc.sock hlsvc.fifo
 
-build/highlight: highlight/main.go
+build/hlsvc: hlsvc/main.go
 	cd $(dir $<) && go build -o ../$@
 
-$(sock): build/highlight $(fifo)
-	$< $@ $(fifo) &
-	< $(fifo)
+hlsvc.sock: build/hlsvc hlsvc.fifo
+	$< $@ $(word 2,$^) &
+	< $(word 2,$^)
 
-$(fifo):
+hlsvc.fifo:
 	mkfifo $@
 
-$(sort $(dir $(all) $(aux))):
+$(sort $(dir $(all))):
 	mkdir -p $@
 
 ifeq (,$(filter help clean,$(MAKECMDGOALS)))
--include $(prebuild)
--include $(depfiles)
+-include $(dep)
 endif
 
 .SECONDEXPANSION:
 
-$(all) $(aux): | $$(@D)/
+$(all): | $$(@D)/
