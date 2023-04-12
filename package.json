@@ -4,7 +4,6 @@
   "module": "gen.tsx",
   "dependencies": {
     "dateformat": "^5.0.3",
-    "getopts": "^2.3.0",
     "katex": "^0.16.4",
     "marked": "^4.2.12"
   },

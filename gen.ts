@@ -1,9 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
-import getopts from "getopts";
 import { marked } from "marked";
 import dateFormat from "dateformat";
-import { Socket, file } from "bun";
+import { Socket } from "bun";
 import katex, { KatexOptions } from "katex";
 import { basename, join } from "path";
 import { readdir } from "fs/promises";
@@ -16,10 +15,10 @@ function usage(out: Writable) {
   out.write(
     `Usage: bun run ${program} OUT_FILE
 
-Generate files for the blog
+Generate a file for the blog
 
-If OUT_FILE is build/stamp, touches it after writing JSON files in build/.
-If OUT_FILE looks like $DESTDIR/foo/bar.html, writes it and build/foo/bar.d.
+If OUT_FILE is build/stamp, also writes JSON files in build/.
+If OUT_FILE is $DESTDIR/foo/bar.html, also writes build/foo/bar.d.
 `
   );
 }
@@ -32,18 +31,17 @@ const buildDir = "build";
 const manifestPath = join(buildDir, "posts.json");
 
 async function main() {
-  const args = getopts(process.argv.slice(2));
-  const out = args._[0];
-  if (args.h || args.help) {
-    usage(process.stdout);
-  } else if (args._.length !== 1) {
+  const arg = process.argv[2];
+  if (arg === undefined) {
     usage(process.stderr);
     process.exit(1);
-  } else if (out === join(buildDir, "stamp")) {
+  } else if (arg === "-h" || arg === "--help") {
+    usage(process.stdout);
+  } else if (arg === join(buildDir, "stamp")) {
     await genJsonFiles();
-    Bun.write(out, "");
+    Bun.write(arg, "");
   } else {
-    await genHtmlFile(out);
+    await genHtmlFile(arg);
   }
 }
 
@@ -81,21 +79,17 @@ async function genJsonFiles() {
 
 // Generates an HTML file in $DESTDIR.
 async function genHtmlFile(fullFile: string) {
-  const destDir = must(process.env[destDirVar]);
-  assert(fullFile.startsWith(destDir + "/"));
+  const destDir = process.env[destDirVar];
+  if (!destDir) throw Error(`\$${destDirVar} is not set`);
+  if (!fullFile.startsWith(destDir + "/"))
+    throw Error(`invalid file: ${fullFile}`);
   const file = fullFile.slice(destDir.length + 1);
   const postsJson = new PostsJson();
   const postSrc = new PostSrc(file);
   const template = new Template();
   const highlight = new Highlight();
   const markdown = new Markdown(highlight);
-  const html = await genHtml(
-    file,
-    postsJson,
-    postSrc,
-    template,
-    markdown,
-  );
+  const html = await genHtml(file, postsJson, postSrc, template, markdown);
   Bun.write(fullFile, postprocess(html));
   highlight.close();
   const deps = [];
@@ -157,7 +151,7 @@ async function genHtml(
   postsJson: PostsJson,
   postSrc: PostSrc,
   template: Template,
-  markdown: Markdown,
+  markdown: Markdown
 ): Promise<string> {
   switch (file) {
     case "index.html":
@@ -351,13 +345,14 @@ class Markdown {
             break;
           case "image":
             const image = token as unknown as Image;
-            if (image.href.endsWith(".svg")) {
-              const path = join(srcPostDir, image.href);
+            if (image.src.endsWith(".svg")) {
+              const path = join(srcPostDir, image.src);
               this.embeddedAssets.add(path);
               image.svg = await Bun.file(path).text();
             } else {
-              const match = image.href.match(/^\.\.\/assets\/(.*)$/);
-              image.href = "../../" + must(match)[1];
+              const match = image.src.match(/^\.\.\/assets\/(.*)$/);
+              if (!match) throw Error(`invalid image src: ${image.src}`);
+              image.src = "../../" + match[1];
             }
             break;
           case "math":
@@ -397,7 +392,7 @@ const codeExt: marked.RendererExtension = {
 interface Image {
   type: "image";
   raw: string;
-  href: string;
+  src: string;
   svg?: string;
   above: boolean;
   tokens: marked.Token[];
@@ -416,15 +411,15 @@ const imageExt: marked.TokenizerAndRendererExtension = {
         type: "image",
         raw: match[0],
         above: !!match[1],
-        href: match[3],
+        src: match[3],
         tokens,
       };
     }
   },
   renderer(token) {
-    const { href, svg, above, tokens } = token as Image;
+    const { src, svg, above, tokens } = token as Image;
     const caption = this.parser.parseInline(tokens);
-    const img = svg ?? `<img src=${href}>`;
+    const img = svg ?? `<img src=${src}>`;
     if (above) {
       return `<figure><figcaption class="above">${caption}</figcaption>${img}</figure>`;
     }
@@ -576,7 +571,7 @@ const footnoteDefBlockExt: marked.TokenizerAndRendererExtension = {
   },
   renderer(token) {
     const { tokens } = token as FootnoteDefBlock;
-    const items = this.parser.parse(must(tokens));
+    const items = this.parser.parse(tokens);
     return `\
 <div class="footnotes" role="doc-endnotes"><hr><ol>${items}</ol></div>`;
   },
@@ -586,7 +581,7 @@ const footnoteDefItemExt: marked.RendererExtension = {
   name: "footnote_def_item",
   renderer(token) {
     const { id, tokens } = token as FootnoteDefItem;
-    const content = this.parser.parseInline(must(tokens)).trimEnd();
+    const content = this.parser.parseInline(tokens).trimEnd();
     return `\
 <li id = "fn:${id}">\
 <p>${content}&nbsp;\
@@ -650,7 +645,9 @@ class Template {
     for (const match of source.matchAll(
       /(\s*)\{\{\s*(?:(end|else)|(?:(if|range)\s*)?(\S+))\s*\}\}/g
     )) {
-      const idx = must(match.index);
+      const idx = match.index;
+      if (idx === undefined)
+        throw Error(`invalid template command: ${match[0]}`);
       let text = source.slice(offset, idx);
       const [wholeMatch, whitespace, endOrElse, ifOrRange, variable] = match;
       if (!ifOrRange && variable) text += whitespace;
@@ -661,7 +658,8 @@ class Template {
         ifVarStack.pop();
       } else if (endOrElse === "else") {
         commands.push({ kind: "end" });
-        const variable = must(ifVarStack[ifVarStack.length - 1]);
+        const variable = ifVarStack[ifVarStack.length - 1];
+        if (!variable) throw Error("else without corresponding if");
         commands.push({ kind: "begin", variable, negate: true });
       } else if (ifOrRange) {
         commands.push({ kind: "begin", variable, negate: false });
@@ -689,10 +687,9 @@ class Template {
           }
           case "var": {
             let value = context[cmd.variable];
-            result += must(
-              value,
-              `Missing template variable "${cmd.variable}"`
-            );
+            if (value === undefined)
+              throw Error(`missing template variable "${cmd.variable}"`);
+            result += value;
             break;
           }
           case "begin": {
@@ -737,33 +734,31 @@ class Highlight {
     this.state = { mode: "init" };
   }
 
+  // Returns HTML that highlights code as the given language.
   async highlight(lang: string, code: string): Promise<string> {
-    const response = defer<string>();
+    const response = new Deferred<string>();
     this.responses.push(response);
     (await this.socket()).write(`${lang}:${code}\0`);
     return response.promise;
   }
 
+  // Closes the connection. Must be called or the progrma won't exit.
   close(): void {
-    assert(this.state.mode !== "connecting");
-    if (this.state.mode === "connected") {
-      this.state.socket.end();
-    }
+    if (this.state.mode === "connecting")
+      throw Error("cannot close socket in the middle of connecting");
+    if (this.state.mode === "connected") this.state.socket.end();
   }
 
   private async socket(): Promise<Socket> {
     switch (this.state.mode) {
       case "init":
-        const deferred = defer<Socket>();
+        const deferred = new Deferred<Socket>();
         this.state = { mode: "connecting", promise: deferred.promise };
-        this.connect(
-          hlsvcSocket,
-          (socket: Socket) => {
-            this.state = { mode: "connected", socket };
-            deferred.resolve(socket);
-          },
-          deferred.reject
-        );
+        const onSuccess = (socket: Socket) => {
+          this.state = { mode: "connected", socket };
+          deferred.resolve(socket);
+        };
+        this.connect(hlsvcSocket, onSuccess, deferred.reject);
         return this.state.promise;
       case "connecting":
         return this.state.promise;
@@ -775,7 +770,7 @@ class Highlight {
   private connect(
     path: string,
     onSuccess: (s: Socket) => void,
-    onFailure: () => void
+    onFailure: (e: Error) => void
   ) {
     let buffer = "";
     Bun.connect({
@@ -783,7 +778,7 @@ class Highlight {
       socket: {
         binaryType: "uint8array",
         open: (socket) => onSuccess(socket),
-        data: (socket, data: Uint8Array) => {
+        data: (_socket, data: Uint8Array) => {
           buffer += new TextDecoder().decode(data);
           let idx;
           while ((idx = buffer.indexOf("\0")) >= 0) {
@@ -791,7 +786,7 @@ class Highlight {
             buffer = buffer.slice(idx + 1);
           }
         },
-        error: (socket, error) => {
+        error: (_socket, error) => {
           this.nextWaiting().reject(error);
         },
       },
@@ -811,7 +806,9 @@ class Highlight {
   }
 
   private nextWaiting(): Deferred<string> {
-    return must(this.responses.shift());
+    const next = this.responses.shift();
+    if (next === undefined) throw Error("no pending request");
+    return next;
   }
 }
 
@@ -838,6 +835,16 @@ function postprocess(html: string): string {
   return html;
 }
 
+// Changes the extension of a path.
+function changeExt(path: string, ext: string): string {
+  return removeExt(path) + ext;
+}
+
+// Removes the extension from a path.
+function removeExt(path: string): string {
+  return path.slice(0, path.lastIndexOf("."));
+}
+
 // Writes content to path if is different from its current content.
 async function writeIfChanged(path: string, content: string): Promise<void> {
   const same = await Bun.file(path)
@@ -848,16 +855,6 @@ async function writeIfChanged(path: string, content: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
     await Bun.write(path, content);
   }
-}
-
-// Changes the extension of a path.
-function changeExt(path: string, ext: string): string {
-  return removeExt(path) + ext;
-}
-
-// Removes the extension from a path.
-function removeExt(path: string): string {
-  return path.slice(0, path.lastIndexOf("."));
 }
 
 // Sorts an array with YYYY-MM-DD dates in reverse chronological order.
@@ -879,37 +876,22 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
   return Array.from(map.entries());
 }
 
-// Asserts that `condition` is true.
-function assert(condition: boolean, msg?: string): asserts condition {
-  if (!condition) {
-    throw Error(msg);
-  }
-}
-
-// Asserts that a value is not undefined.
-function must<T>(value: T | undefined | null, msg?: string): T {
-  assert(value != undefined, msg);
-  return value;
-}
-
-interface Deferred<T> {
+// A promise that can be resolved or rejected from the outside.
+class Deferred<T> {
   promise: Promise<T>;
-  value: T | undefined;
-  resolve: (value: T) => void;
-  reject: (reason?: any) => void;
-}
+  resolve: (value: T) => void = Deferred.unset;
+  reject: (error: Error) => void = Deferred.unset;
 
-// Returns a promise that can be manually resolved or rejected from the outside.
-function defer<T>(): Deferred<T> {
-  const obj = {} as Deferred<T>;
-  obj.promise = new Promise<T>((resolve, reject) => {
-    obj.resolve = (value) => {
-      obj.value = value;
-      resolve(value);
-    };
-    obj.reject = reject;
-  });
-  return obj;
+  private static unset() {
+    throw Error("unreachable since Promise ctor runs callback immediately");
+  }
+
+  constructor() {
+    this.promise = new Promise<T>((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+  }
 }
 
 await main();
