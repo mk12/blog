@@ -74,9 +74,8 @@ type YmdDate = string;
 // An entry in posts.json, used for generating pages like the index.
 // TODO: extend metadata
 // TODO: GlobalManifest?
-interface Entry {
+interface Entry extends Metadata {
   slug: string;
-  meta: Metadata;
   // First paragraph of the post body.
   summary: string;
 }
@@ -119,11 +118,11 @@ async function genJsonFiles() {
         const srcPath = join(srcPostDir, name);
         const { meta, body } = parsePost(await Bun.file(srcPath).text());
         const summary = getSummary(body);
-        return { slug, summary, meta };
+        return { slug, summary, ...meta };
       })
   );
   // Sort posts in reverse chronological order.
-  posts.sort((a, b) => b.meta.date.localeCompare(a.meta.date));
+  posts.sort((a, b) => b.date.localeCompare(a.date));
   writeIfChanged(postsFile, JSON.stringify(posts));
   // Write external info JSON files for each post.
   posts.forEach(({ slug }, i) => {
@@ -198,14 +197,12 @@ function renderIndex(
   markdown: MarkdownRenderer
 ): Promise<string> {
   const postsPromise = Promise.all(
-    posts
-      .slice(0, 10)
-      .map(async ({ slug, summary, meta: { title, date } }) => ({
-        date: dateFormat(date, "dddd, d mmmm yyyy"),
-        href: `post/${slug}/index.html`,
-        title,
-        summary: await markdown.render(summary),
-      }))
+    posts.slice(0, 10).map(async ({ slug, summary, title, date }) => ({
+      date: dateFormat(date, "dddd, d mmmm yyyy"),
+      href: `post/${slug}/index.html`,
+      title,
+      summary: await markdown.render(summary),
+    }))
   );
   return template.render("templates/index.html", {
     title: "Mitchell Kember",
@@ -222,10 +219,10 @@ function renderArchive(
   return template.render("templates/listing.html", {
     title: "Post Archive",
     math: false,
-    groups: groupBy(posts, (post) => dateFormat(post.meta.date, "yyyy")).map(
+    groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
       ([year, posts]) => ({
         name: year,
-        pages: posts.map(({ slug, meta: { title, date } }) => ({
+        pages: posts.map(({ slug, title, date }) => ({
           date: dateFormat(date, "d mmm yyyy"),
           href: `${slug}/index.html`,
           title,
@@ -243,10 +240,10 @@ function renderCategories(
   return template.render("templates/listing.html", {
     title: "Categories",
     math: false,
-    groups: groupBy(posts, (post) => post.meta.category).map(
+    groups: groupBy(posts, (post) => post.category).map(
       ([category, posts]) => ({
         name: category,
-        pages: posts.map(({ slug, meta: { title, date } }) => ({
+        pages: posts.map(({ slug, title, date }) => ({
           date: dateFormat(date, "d mmm yyyy"),
           href: `../post/${slug}/index.html`,
           title,
