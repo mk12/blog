@@ -1,8 +1,0 @@
-<nav class="page-nav">
-  <ul>
-    <li class="nav-newer"><a href="{{ with .Next }}{{ .Permalink }}{{ else }}{{ .Site.Home.Permalink }}{{ end }}">«&nbsp;New<span>er</span></a></li><!--
-    --><li class="nav-home"><a href="{{ .Site.Params.homepage }}">Home</a></li><!--
-    --><li class="nav-toc"><a href="{{ .Site.Home.Permalink }}">Blog</a></li><!--
-    --><li class="nav-older"><a href="{{ with .Prev }}{{ .Permalink }}{{ else }}{{ .Site.Home.Permalink }}post/{{ end }}">Old<span>er</span>&nbsp;»</a></li>
-  </ul>
-</nav>
