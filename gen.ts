@@ -68,6 +68,7 @@ interface Metadata {
 type YmdDate = string;
 
 // An entry in posts.json, used for generating pages like the index.
+// TODO: extend metadata
 interface Entry {
   slug: string;
   meta: Metadata;
@@ -151,38 +152,18 @@ async function genHtmlFile(path: string) {
   );
 }
 
-// Manages access to input sources.
-class Input {
-  private files = new Set<string>();
-
-  private read(file: string): Promise<string> {
-    this.files.add(file);
-    return Bun.file(file).text();
-  }
-
-  async posts(): Promise<Entry[]> {
-    return JSON.parse(await this.read(postsFile));
-  }
-
-  async post(slug: string): Promise<Post> {
-    return parsePost(await this.read(srcFile(slug)));
-  }
-
-  async externalInfo(slug: string): Promise<ExternalInfo> {
-    return JSON.parse(await this.read(extFile(slug)));
-  }
-
-  deps(): string[] {
-    return Array.from(this.files);
-  }
-}
-
 async function renderPage(
   relPath: string,
   input: Input,
   template: Template,
   markdown: Markdown
 ): Promise<string> {
+  const analytics = process.env["ANALYTICS"];
+  template.define({
+    analytics: analytics ? Bun.file(analytics).text() : false,
+    home_url: process.env["HOME_URL"] ?? false,
+    year: new Date().getFullYear().toString(),
+  });
   switch (relPath) {
     case "index.html":
       return genIndex(await input.posts(), template, markdown);
@@ -208,7 +189,6 @@ function genIndex(
   template: Template,
   markdown: Markdown
 ): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
   const postsPromise = Promise.all(
     posts
       .slice(0, 10)
@@ -222,21 +202,16 @@ function genIndex(
   return template.render("templates/index.html", {
     root: "",
     title: "Mitchell Kember",
-    analytics: analytics ? Bun.file(analytics).text() : false,
     math: postsPromise.then(() => markdown.encounteredMath),
-    home_url: process.env["HOME_URL"] ?? false,
     posts: postsPromise,
-    year: new Date().getFullYear().toString(),
   });
 }
 
 // Generates the blog post archive.
 function genArchive(posts: Entry[], template: Template): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
   return template.render("templates/listing.html", {
     root: "../",
     title: "Post Archive",
-    analytics: analytics ? Bun.file(analytics).text() : false,
     math: false,
     groups: groupBy(posts, (post) => dateFormat(post.meta.date, "yyyy")).map(
       ([year, posts]) => ({
@@ -248,17 +223,14 @@ function genArchive(posts: Entry[], template: Template): Promise<string> {
         })),
       })
     ),
-    year: new Date().getFullYear().toString(),
   });
 }
 
 // Generates the blog post categories page.
 function genCategories(posts: Entry[], template: Template): Promise<string> {
-  const analytics = process.env["ANALYTICS"];
   return template.render("templates/listing.html", {
     root: "../",
     title: "Categories",
-    analytics: analytics ? Bun.file(analytics).text() : false,
     math: false,
     groups: groupBy(posts, (post) => post.meta.category).map(
       ([category, posts]) => ({
@@ -270,7 +242,6 @@ function genCategories(posts: Entry[], template: Template): Promise<string> {
         })),
       })
     ),
-    year: new Date().getFullYear().toString(),
   });
 }
 
@@ -281,20 +252,43 @@ function genPost(
   template: Template,
   markdown: Markdown
 ): Promise<string> {
-  const bodyHtml = markdown.render(post.body);
-  const analytics = process.env["ANALYTICS"];
+  const html = markdown.render(post.body);
   return template.render("templates/post.html", {
     root: "../../",
     title: markdown.renderInline(post.meta.title),
-    math: bodyHtml.then(() => markdown.encounteredMath),
-    analytics: analytics ? Bun.file(analytics).text() : false,
+    math: html.then(() => markdown.encounteredMath),
     date: dateFormat(post.meta.date, "dddd, d mmmm yyyy"),
     description: markdown.renderInline(post.meta.description),
-    article: bodyHtml,
-    home: process.env["HOME_URL"] ?? false,
+    article: html,
     older: info.older ? `../${info.older}/index.html` : "../index.html",
     newer: info.newer ? `../${info.newer}/index.html` : "../../index.html",
   });
+}
+
+// Manages access to input sources.
+class Input {
+  private files = new Set<string>();
+
+  private read(file: string): Promise<string> {
+    this.files.add(file);
+    return Bun.file(file).text();
+  }
+
+  async posts(): Promise<Entry[]> {
+    return JSON.parse(await this.read(postsFile));
+  }
+
+  async post(slug: string): Promise<Post> {
+    return parsePost(await this.read(srcFile(slug)));
+  }
+
+  async externalInfo(slug: string): Promise<ExternalInfo> {
+    return JSON.parse(await this.read(extFile(slug)));
+  }
+
+  deps(): string[] {
+    return Array.from(this.files);
+  }
 }
 
 // Renders Markdown to HTML using the marked library with extensions.
@@ -573,7 +567,7 @@ const footnoteDefItemExt: marked.RendererExtension = {
 // A context provides values for variables in a template.
 type Context = Record<string, Value | Promise<Value>>;
 type ResolvedContext = Record<string, Value>;
-type Value = string | boolean | Value[] | NestedContext | undefined;
+type Value = string | boolean | Value[] | NestedContext;
 interface NestedContext extends Record<string, Value> {}
 
 // Representation of a compiled template.
@@ -589,8 +583,16 @@ type Command =
 // Renders HTML templates using syntax similar to Go templates.
 class Template {
   private cache: Map<string, Program> = new Map();
+  private defaults: Context = {};
 
+  // Defines variables to use by default when rendering templates.
+  define(context: Context) {
+    Object.assign(this.defaults, context);
+  }
+
+  // Renders a template with the given context variables.
   async render(path: string, context: Context): Promise<string> {
+    context = { ...this.defaults, ...context };
     const [template, values] = await Promise.all([
       this.getTemplate(path),
       Promise.all(Object.values(context)),
