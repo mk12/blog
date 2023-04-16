@@ -5,6 +5,8 @@ Targets:
 	all       Build the blog
 	help      Show this help message
 	check     Run before committing
+	fmt       Format source files
+	lint 	  Lint source files
 	validate  Validate HTML files
 	clean     Remove build output
 
@@ -15,7 +17,7 @@ Variables:
 	ANALYTICS  HTML file to include for analytics
 endef
 
-.PHONY: all help check validate clean
+.PHONY: all help check fmt lint validate clean
 
 default_destdir := public
 default_font_url := ../fonts
@@ -32,7 +34,7 @@ post := $(src_post:posts/%.md=$(DESTDIR)/post/%/index.html)
 html := $(page) $(post)
 asset := $(src_asset:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
-all := $(html) $(assets) $(css)
+all := $(html) $(asset) $(css)
 
 stamp := build/stamp
 gen := $(stamp) $(html)
@@ -46,7 +48,17 @@ help:
 	$(info $(usage))
 	@:
 
-check: all validate
+check: all fmt lint validate
+
+fmt:
+	bun x prettier -w src/*.ts
+	go fmt -C hlsvc
+
+lint:
+	bun x eslint --fix src/*.ts
+	go vet -C hlsvc
+	go fix -C hlsvc
+	go mod tidy -C hlsvc
 
 validate: $(html)
 	vnu $^
@@ -57,11 +69,11 @@ clean:
 $(stamp): posts $(src_post)
 $(post): | hlsvc.sock
 
-$(gen): gen.ts
+$(gen): src/main.ts $(wildcard src/*.ts)
 	bun run $< $@
 
 $(asset): $(DESTDIR)/%: | assets/%
-	ln -sfn $(CURDIR)/(firstword $|) $@
+	ln -sfn $(CURDIR)/$(firstword $|) $@
 
 $(css): $(src_css)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@

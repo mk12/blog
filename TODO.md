@@ -1,3 +1,4 @@
+- update README
 - drafts
 - dark mode (including SVGs)
 - fix heading levels https://marked.js.org/using_pro#walk-tokens
