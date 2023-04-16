@@ -17,18 +17,11 @@ function usage(out: Writable) {
 
 Generate a file for the blog
 
-If OUT_FILE is build/stamp, also writes JSON files in build/.
-If OUT_FILE is $DESTDIR/foo/bar.html, also writes build/foo/bar.d.
+- If OUT_FILE is build/stamp, also writes JSON files in build/
+- If OUT_FILE is $DESTDIR/foo/bar.html, also writes build/foo/bar.d
 `
   );
 }
-
-const destDirVar = "DESTDIR";
-const hlsvcSocket = "hlsvc.sock";
-const srcPostDir = "posts";
-const dstPostDir = "post";
-const buildDir = "build";
-const manifestPath = join(buildDir, "posts.json");
 
 async function main() {
   const arg = process.argv[2];
@@ -37,7 +30,7 @@ async function main() {
     process.exit(1);
   } else if (arg === "-h" || arg === "--help") {
     usage(process.stdout);
-  } else if (arg === join(buildDir, "stamp")) {
+  } else if (arg === stampFile) {
     await genJsonFiles();
     Bun.write(arg, "");
   } else {
@@ -45,130 +38,170 @@ async function main() {
   }
 }
 
-// Data stored in the posts manifest file.
-type Manifest = (Metadata & { path: string })[];
+const destDirVar = "DESTDIR";
+const hlsvcSocket = "hlsvc.sock";
+const srcPostDir = "posts";
+const dstPostDir = "post";
+const buildDir = "build";
+const stampFile = `${buildDir}/stamp`;
+const postsFile = `${buildDir}/posts.json`;
 
-// Data stored in the JSON file for each post.
-interface Neighbors {
-  older: string;
-  newer: string;
+// const depFile = (p: Path) => join(buildDir, changeExt(p, ".d"));
+// const srcFile = (p: Path) => join(srcPostDir, basename(dirname(p))) + ".md";
+// const navFile = (p: Path) => join(buildDir, changeExt(p, ".json"));
+
+// A Markdown blog post with the metadata parsed out.
+interface Post {
+  meta: Metadata;
+  body: string;
+}
+
+// YAML metadata from the top of a blog post Markdown file.
+interface Metadata {
+  title: string;
+  description: string;
+  category: string;
+  date: YmdDate;
+}
+
+// A date in YYYY-MM-DD format.
+type YmdDate = string;
+
+// An entry in posts.json, used for generating pages like the index.
+interface Entry {
+  slug: string;
+  meta: Metadata;
+  // First paragraph of the post body.
+  summary: string;
+}
+
+// External information stored in per-post JSON files.
+interface ExternalInfo {
+  // Slug of the next older post, if one exists.
+  older?: string;
+  // Slug of the next newer post, if one exists.
+  newer?: string;
+}
+
+// Parses the metadata from a block post.
+function parsePost(content: string): Post {
+  const [before, body] = content.split("\n---\n", 2);
+  const fields = before
+    .replace(/^---\n/, "")
+    .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
+    .replace(/\n/g, ",");
+  const metadata = JSON.parse("{" + fields + "}");
+  return { meta: metadata, body };
+}
+
+// Returns the first paragraph of the post body.
+function getSummary(body: string): string {
+  const match = body.match(/^\s*(.*)/);
+  if (!match) throw Error("post has no summary paragraph");
+  return match[1];
 }
 
 // Generates JSON files in the build directory.
 async function genJsonFiles() {
   const filenames = await readdir(srcPostDir);
-  const posts: Manifest = reverseChronological(
-    await Promise.all(
-      filenames
-        .filter((n) => n.endsWith(".md"))
-        .map(async (name) => {
-          const srcPath = join(srcPostDir, name);
-          const dstPath = join(dstPostDir, removeExt(name), "index.html");
-          const [meta, _rest] = splitMetadata(await Bun.file(srcPath).text());
-          return { path: dstPath, ...meta };
-        })
-    )
+  const posts: Entry[] = await Promise.all(
+    filenames
+      .filter((n) => n.endsWith(".md"))
+      .map(async (name) => {
+        const slug = removeExt(name);
+        const srcPath = join(srcPostDir, name);
+        const { meta, body } = parsePost(await Bun.file(srcPath).text());
+        const summary = getSummary(body);
+        return { slug, summary, meta };
+      })
   );
-  writeIfChanged(manifestPath, JSON.stringify(posts));
-  posts.forEach(({ path }, i) => {
-    const out = join(buildDir, changeExt(path, ".json"));
-    const neighbors = { newer: posts[i - 1]?.path, older: posts[i + 1]?.path };
-    writeIfChanged(out, JSON.stringify(neighbors));
+  // Sort posts in reverse chronological order.
+  posts.sort((a, b) => b.meta.date.localeCompare(a.meta.date));
+  writeIfChanged(postsFile, JSON.stringify(posts));
+  // Write external info JSON files for each post.
+  posts.forEach(({ slug }, i) => {
+    const info: ExternalInfo = {
+      newer: posts[i - 1]?.slug,
+      older: posts[i + 1]?.slug,
+    };
+    writeIfChanged(`build/post/${slug}/index.json`, JSON.stringify(info));
   });
 }
 
 // Generates an HTML file in $DESTDIR.
-async function genHtmlFile(fullFile: string) {
+async function genHtmlFile(path: string) {
   const destDir = process.env[destDirVar];
   if (!destDir) throw Error(`\$${destDirVar} is not set`);
-  if (!fullFile.startsWith(destDir + "/"))
-    throw Error(`invalid file: ${fullFile}`);
-  const file = fullFile.slice(destDir.length + 1);
-  const postsJson = new PostsJson();
-  const postSrc = new PostSrc(file);
+  const relPath = eatPrefix(path, destDir + "/");
+  if (!relPath) throw Error(`${path}: invalid target path`);
+  const hlsvc = new Hlsvc();
+  const input = new Input();
   const template = new Template();
-  const highlight = new Highlight();
-  const markdown = new Markdown(highlight);
-  const html = await genHtml(file, postsJson, postSrc, template, markdown);
-  Bun.write(fullFile, postprocess(html));
-  highlight.close();
-  const deps = [];
-  for (const d of [markdown, template, postsJson, postSrc]) {
-    deps.push(...d.deps());
-  }
+  const markdown = new Markdown(hlsvc);
+  const html = await render(relPath, input, template, markdown);
+  Bun.write(path, postprocess(html));
+  hlsvc.close();
+  const deps = [input, template, markdown].flatMap((x) => x.deps());
   Bun.write(
-    join(buildDir, changeExt(file, ".d")),
-    `$(${destDirVar})/${file}: ${deps.join(" ")}`
+    join(buildDir, changeExt(relPath, ".d")),
+    `$(${destDirVar})/${relPath}: ${deps.join(" ")}`
   );
 }
 
-// TODO: fix, this is weird
-class PostsJson {
-  private used = false;
+// Manages access to input sources.
+class Input {
+  private files = new Set<string>();
 
-  async posts(): Promise<Manifest> {
-    this.used = true;
-    return JSON.parse(await Bun.file(manifestPath).text());
+  private read(file: string): Promise<string> {
+    this.files.add(file);
+    return Bun.file(file).text();
+  }
+
+  async posts(): Promise<Entry[]> {
+    return JSON.parse(await this.read(postsFile));
+  }
+
+  async post(slug: string): Promise<Post> {
+    return parsePost(await this.read(join(srcPostDir, slug + ".md")));
+  }
+
+  async externalInfo(slug: string): Promise<ExternalInfo> {
+    return JSON.parse(await this.read(`${buildDir}/post/${slug}/index.json`));
   }
 
   deps(): string[] {
-    return this.used ? [manifestPath] : [];
+    return Array.from(this.files);
   }
 }
 
-// TODO: fix, this is weird
-class PostSrc {
-  private used = false;
-  private dst: string;
-
-  constructor(dst: string) {
-    this.dst = dst;
-  }
-
-  async get(): Promise<[string, Neighbors]> {
-    this.used = true;
-    return Promise.all([
-      Bun.file(this.md()).text(),
-      Bun.file(this.json()).text().then(JSON.parse),
-    ]);
-  }
-
-  private md(): string {
-    return join(srcPostDir, basename(dirname(this.dst))) + ".md";
-  }
-
-  private json(): string {
-    return join(buildDir, changeExt(this.dst, ".json"));
-  }
-
-  deps(): string[] {
-    return this.used ? [this.md(), this.json()] : [];
-  }
-}
-
-async function genHtml(
-  file: string,
-  postsJson: PostsJson,
-  postSrc: PostSrc,
+async function render(
+  relPath: string,
+  input: Input,
   template: Template,
   markdown: Markdown
 ): Promise<string> {
-  switch (file) {
+  switch (relPath) {
     case "index.html":
-      return genIndex(await postsJson.posts(), template, markdown);
+      return genIndex(await input.posts(), template, markdown);
     case "post/index.html":
-      return genArchive(await postsJson.posts(), template);
+      return genArchive(await input.posts(), template);
     case "categories/index.html":
-      return genCategories(await postsJson.posts(), template);
+      return genCategories(await input.posts(), template);
     default:
-      const [content, neighbors] = await postSrc.get();
-      return genPost(content, neighbors, template, markdown);
+      const match = relPath.match(/^post\/(.*)\/index.html$/);
+      if (!match) throw Error(`${relPath}: invalid post path`);
+      const slug = match[1];
+      const [post, info] = await Promise.all([
+        input.post(slug),
+        input.externalInfo(slug),
+      ]);
+      return genPost(post, info, template, markdown);
   }
 }
 
 // Generates the blog homepage.
 function genIndex(
-  posts: Manifest,
+  posts: Entry[],
   template: Template,
   markdown: Markdown
 ): Promise<string> {
@@ -176,12 +209,14 @@ function genIndex(
   const root = "";
   const title = "Mitchell Kember";
   const postsPromise = Promise.all(
-    posts.slice(0, 10).map(async ({ path, title, date, summary }) => ({
-      date: dateFormat(date, "dddd, d mmmm yyyy"),
-      href: path,
-      title,
-      summary: await markdown.render(summary),
-    }))
+    posts
+      .slice(0, 10)
+      .map(async ({ slug, summary, meta: { title, date } }) => ({
+        date: dateFormat(date, "dddd, d mmmm yyyy"),
+        href: `post/${slug}/index.html`,
+        title,
+        summary: await markdown.render(summary),
+      }))
   );
   return template.render("templates/base.html", {
     root,
@@ -200,7 +235,7 @@ function genIndex(
 }
 
 // Generates the blog post archive.
-function genArchive(posts: Manifest, template: Template): Promise<string> {
+function genArchive(posts: Entry[], template: Template): Promise<string> {
   const analytics = process.env["ANALYTICS"];
   const root = "../";
   const title = "Post Archive";
@@ -211,12 +246,12 @@ function genArchive(posts: Manifest, template: Template): Promise<string> {
     body: template.render("templates/listing.html", {
       root,
       title,
-      groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
+      groups: groupBy(posts, (post) => dateFormat(post.meta.date, "yyyy")).map(
         ([year, posts]) => ({
           name: year,
-          pages: posts.map(({ path, title, date }) => ({
+          pages: posts.map(({ slug, meta: { title, date } }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href: path.slice("post/".length),
+            href: `${slug}/index.html`,
             title,
           })),
         })
@@ -229,7 +264,7 @@ function genArchive(posts: Manifest, template: Template): Promise<string> {
 }
 
 // Generates the blog post categories page.
-function genCategories(posts: Manifest, template: Template): Promise<string> {
+function genCategories(posts: Entry[], template: Template): Promise<string> {
   const analytics = process.env["ANALYTICS"];
   const root = "../";
   const title = "Categories";
@@ -240,12 +275,12 @@ function genCategories(posts: Manifest, template: Template): Promise<string> {
     body: template.render("templates/listing.html", {
       root,
       title,
-      groups: groupBy(posts, (post) => post.category).map(
+      groups: groupBy(posts, (post) => post.meta.category).map(
         ([category, posts]) => ({
           name: category,
-          pages: posts.map(({ path, title, date }) => ({
+          pages: posts.map(({ slug, meta: { title, date } }) => ({
             date: dateFormat(date, "d mmm yyyy"),
-            href: join("..", path),
+            href: `../post/${slug}/index.html`,
             title,
           })),
         })
@@ -259,62 +294,32 @@ function genCategories(posts: Manifest, template: Template): Promise<string> {
 
 // Generates a blog post from its Markdown content.
 function genPost(
-  fileContent: string,
-  navigation: Neighbors,
+  post: Post,
+  info: ExternalInfo,
   template: Template,
   markdown: Markdown
 ): Promise<string> {
-  const [meta, bodyMd] = splitMetadata(fileContent);
-  const bodyHtml = markdown.render(bodyMd);
+  const bodyHtml = markdown.render(post.body);
   const analytics = process.env["ANALYTICS"];
   const root = "../../";
   return template.render("templates/base.html", {
     root,
-    title: meta.title,
+    title: post.meta.title,
     math: bodyHtml.then(() => markdown.encounteredMath),
     analytics: analytics && Bun.file(analytics).text(),
     body: template.render("templates/post.html", {
-      title: markdown.renderInline(meta.title),
-      date: dateFormat(meta.date, "dddd, d mmmm yyyy"),
-      description: markdown.renderInline(meta.description),
+      title: markdown.renderInline(post.meta.title),
+      date: dateFormat(post.meta.date, "dddd, d mmmm yyyy"),
+      description: markdown.renderInline(post.meta.description),
       body: bodyHtml,
       pagenav: template.render("templates/pagenav.html", {
         home: process.env["HOME_URL"],
         root,
-        older:
-          navigation.older?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
-          "../index.html",
-        newer:
-          navigation.newer?.replace(/^posts\/(.+)\.md$/, "../$1/index.html") ??
-          "../../index.html",
+        older: info.older ? `../${info.older}/index.html` : "../index.html",
+        newer: info.newer ? `../${info.newer}/index.html` : "../../index.html",
       }),
     }),
   });
-}
-
-// Metadata for a blog post.
-interface Metadata {
-  title: string;
-  description: string;
-  category: string;
-  // Format: YYYY-MM-DD.
-  date: string;
-  summary: string;
-}
-
-// Parses YAML-ish metadata at the top of a Markdown file between `---` lines.
-// Returns the metadata and the rest of the file content.
-function splitMetadata(content: string): [Metadata, string] {
-  const [before, body] = content.split("\n---\n", 2);
-  const fields = before
-    .replace(/^---\n/, "")
-    .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
-    .replace(/\n/g, ",");
-  const meta = JSON.parse("{" + fields + "}");
-  const match = body.match(/^\s*(.*)/);
-  if (!match) throw Error("post has no summary paragraph");
-  meta.summary = match[1];
-  return [meta, body];
 }
 
 // Renders Markdown to HTML using the marked library with extensions.
@@ -322,7 +327,7 @@ class Markdown {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
 
-  constructor(server: Highlight) {
+  constructor(hlsvc: Hlsvc) {
     marked.use({
       smartypants: true,
       extensions: [
@@ -335,24 +340,23 @@ class Markdown {
         footnoteDefBlockExt,
         footnoteDefItemExt,
       ],
-      walkTokens: async (token) => {
-        switch (token.type as string) {
+      walkTokens: async (anyToken) => {
+        const token = anyToken as Code | Image | Math | DisplayMath;
+        switch (token.type) {
           case "code":
-            const code = token as Code;
-            code.highlighted = code.lang
-              ? await server.highlight(code.lang, code.text)
-              : code.text;
+            token.highlighted = token.lang
+              ? await hlsvc.highlight(token.lang, token.text)
+              : token.text;
             break;
           case "image":
-            const image = token as unknown as Image;
-            if (image.src.endsWith(".svg")) {
-              const path = join(srcPostDir, image.src);
+            if (token.src.endsWith(".svg")) {
+              const path = join(srcPostDir, token.src);
               this.embeddedAssets.add(path);
-              image.svg = await Bun.file(path).text();
+              token.svg = await Bun.file(path).text();
             } else {
-              const match = image.src.match(/^\.\.\/assets\/(.*)$/);
-              if (!match) throw Error(`invalid image src: ${image.src}`);
-              image.src = "../../" + match[1];
+              const match = token.src.match(/^\.\.\/assets\/(.*)$/);
+              if (!match) throw Error(`invalid image src: ${token.src}`);
+              token.src = "../../" + match[1];
             }
             break;
           case "math":
@@ -722,27 +726,25 @@ class Template {
   }
 }
 
-// Client that communicates with hlsvc/main.go over a Unix socket.
-class Highlight {
+// Client for the hlsvc Unix socket server.
+class Hlsvc {
   private state:
     | { mode: "init" }
     | { mode: "connecting"; promise: Promise<Socket> }
     | { mode: "connected"; socket: Socket };
-  private responses: Deferred<string>[] = [];
+  private interests: Deferred<string>[] = [];
 
   constructor() {
     this.state = { mode: "init" };
   }
 
-  // Returns HTML that highlights code as the given language.
   async highlight(lang: string, code: string): Promise<string> {
-    const response = new Deferred<string>();
-    this.responses.push(response);
+    const interest = new Deferred<string>();
+    this.interests.push(interest);
     (await this.socket()).write(`${lang}:${code}\0`);
-    return response.promise;
+    return interest.promise;
   }
 
-  // Closes the connection. Must be called or the progrma won't exit.
   close(): void {
     if (this.state.mode === "connecting")
       throw Error("cannot close socket in the middle of connecting");
@@ -787,26 +789,24 @@ class Highlight {
           }
         },
         error: (_socket, error) => {
-          this.nextWaiting().reject(error);
+          this.nextInterest().reject(error);
         },
       },
     }).catch(onFailure);
   }
 
   private handleResponse(raw: string) {
-    const next = this.nextWaiting();
-    const eat = (prefix: string) =>
-      raw.startsWith(prefix) && raw.slice(prefix.length);
-    let errMsg;
-    if ((errMsg = eat("error:"))) {
-      next.reject(new Error(`server responded with error: ${errMsg}`));
+    const interest = this.nextInterest();
+    const error = eatPrefix(raw, "error:");
+    if (error) {
+      interest.reject(new Error(`server responded with error: ${error}`));
     } else {
-      next.resolve(raw);
+      interest.resolve(raw);
     }
   }
 
-  private nextWaiting(): Deferred<string> {
-    const next = this.responses.shift();
+  private nextInterest(): Deferred<string> {
+    const next = this.interests.shift();
     if (next === undefined) throw Error("no pending request");
     return next;
   }
@@ -835,6 +835,11 @@ function postprocess(html: string): string {
   return html;
 }
 
+// If s starts with prefix, removes it and returns the result.
+function eatPrefix(s: string, prefix: string): string | undefined {
+  return s.startsWith(prefix) ? s.slice(prefix.length) : undefined;
+}
+
 // Changes the extension of a path.
 function changeExt(path: string, ext: string): string {
   return removeExt(path) + ext;
@@ -845,7 +850,7 @@ function removeExt(path: string): string {
   return path.slice(0, path.lastIndexOf("."));
 }
 
-// Writes content to path if is different from its current content.
+// Writes to a file if the new content is different.
 async function writeIfChanged(path: string, content: string): Promise<void> {
   const same = await Bun.file(path)
     .text()
@@ -857,8 +862,8 @@ async function writeIfChanged(path: string, content: string): Promise<void> {
   }
 }
 
-// Sorts an array with YYYY-MM-DD dates in reverse chronological order.
-function reverseChronological<T extends { date: string }[]>(array: T): T {
+// Sorts an array by date in reverse chronological order.
+function reverseChronological<T extends { date: YmdDate }[]>(array: T): T {
   return array.sort((a, b) => b.date.localeCompare(a.date));
 }
 
@@ -867,8 +872,9 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
   const map = new Map<U, T[]>();
   for (const item of array) {
     const k = key(item);
-    if (map.has(k)) {
-      map.get(k)?.push(item);
+    const group = map.get(k);
+    if (group !== undefined) {
+      group.push(item);
     } else {
       map.set(k, [item]);
     }
