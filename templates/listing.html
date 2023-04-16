@@ -1,3 +1,5 @@
+{{ include "base.html" }}
+{{ define body }}
 <header class="list-header">
   <a class="no-ul subtle" href="{{ root }}index.html">«&nbsp;Back to blog</a>
   <h1>{{ title }}</h1>
@@ -20,4 +22,5 @@
 </section>
 <div class="after-posts"></div>
 
-{{ copyright }}
+{{ include "copyright.html" }}
+{{ end }}

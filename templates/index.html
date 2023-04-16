@@ -1,3 +1,5 @@
+{{ include "base.html" }}
+{{ define body }}
 <h1 class="blog-title">
   {{ if home_url }}
   <a class="no-ul" href="{{ . }}">MK</a>
@@ -24,4 +26,5 @@
   <a class="no-ul subtle" href="categories/index.html">Categories&nbsp;»</a>
 </div>
 
-{{ copyright }}
+{{ include "copyright.html" }}
+{{ end }}
