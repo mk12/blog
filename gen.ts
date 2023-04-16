@@ -46,9 +46,8 @@ const buildDir = "build";
 const stampFile = `${buildDir}/stamp`;
 const postsFile = `${buildDir}/posts.json`;
 
-// const depFile = (p: Path) => join(buildDir, changeExt(p, ".d"));
-// const srcFile = (p: Path) => join(srcPostDir, basename(dirname(p))) + ".md";
-// const navFile = (p: Path) => join(buildDir, changeExt(p, ".json"));
+const srcFile = (slug: string) => `${srcPostDir}/${slug}.md`;
+const extFile = (slug: string) => `${buildDir}/post/${slug}/index.json`;
 
 // A Markdown blog post with the metadata parsed out.
 interface Post {
@@ -133,7 +132,7 @@ async function genHtmlFile(path: string) {
   const destDir = process.env[destDirVar];
   if (!destDir) throw Error(`\$${destDirVar} is not set`);
   const relPath = eatPrefix(path, destDir + "/");
-  if (!relPath) throw Error(`${path}: invalid target path`);
+  if (!relPath) throw Error(`invalid html file path: ${path}`);
   const hlsvc = new Hlsvc();
   const input = new Input();
   const template = new Template();
@@ -162,11 +161,11 @@ class Input {
   }
 
   async post(slug: string): Promise<Post> {
-    return parsePost(await this.read(join(srcPostDir, slug + ".md")));
+    return parsePost(await this.read(srcFile(slug)));
   }
 
   async externalInfo(slug: string): Promise<ExternalInfo> {
-    return JSON.parse(await this.read(`${buildDir}/post/${slug}/index.json`));
+    return JSON.parse(await this.read(extFile(slug)));
   }
 
   deps(): string[] {
@@ -189,7 +188,7 @@ async function render(
       return genCategories(await input.posts(), template);
     default:
       const match = relPath.match(/^post\/(.*)\/index.html$/);
-      if (!match) throw Error(`${relPath}: invalid post path`);
+      if (!match) throw Error(`invalid post file path: ${relPath}`);
       const slug = match[1];
       const [post, info] = await Promise.all([
         input.post(slug),
