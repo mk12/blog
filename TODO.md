@@ -1,4 +1,5 @@
 - drafts
+- dark mode (including SVGs)
 - fix heading levels https://marked.js.org/using_pro#walk-tokens
 - templates inherit context (and make if/ranges more consistent with nested templates)
 - server that uses websocket so that it can force refresh after watch + make

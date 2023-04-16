@@ -47,7 +47,8 @@ const stampFile = `${buildDir}/stamp`;
 const postsFile = `${buildDir}/posts.json`;
 
 const srcFile = (slug: string) => `${srcPostDir}/${slug}.md`;
-const extFile = (slug: string) => `${buildDir}/post/${slug}/index.json`;
+const extFile = (slug: string) =>
+  `${buildDir}/${dstPostDir}/${slug}/index.json`;
 
 // A Markdown blog post with the metadata parsed out.
 interface Post {
@@ -82,7 +83,7 @@ interface ExternalInfo {
   newer?: string;
 }
 
-// Parses the metadata from a block post.
+// Parses the metadata from a blog post.
 function parsePost(content: string): Post {
   const [before, body] = content.split("\n---\n", 2);
   const fields = before
@@ -93,7 +94,7 @@ function parsePost(content: string): Post {
   return { meta: metadata, body };
 }
 
-// Returns the first paragraph of the post body.
+// Returns the first paragraph of a post body.
 function getSummary(body: string): string {
   const match = body.match(/^\s*(.*)/);
   if (!match) throw Error("post has no summary paragraph");
@@ -123,7 +124,10 @@ async function genJsonFiles() {
       newer: posts[i - 1]?.slug,
       older: posts[i + 1]?.slug,
     };
-    writeIfChanged(`build/post/${slug}/index.json`, JSON.stringify(info));
+    writeIfChanged(
+      `${buildDir}/${dstPostDir}/${slug}/index.json`,
+      JSON.stringify(info)
+    );
   });
 }
 
@@ -137,7 +141,7 @@ async function genHtmlFile(path: string) {
   const input = new Input();
   const template = new Template();
   const markdown = new Markdown(hlsvc);
-  const html = await render(relPath, input, template, markdown);
+  const html = await renderPage(relPath, input, template, markdown);
   Bun.write(path, postprocess(html));
   hlsvc.close();
   const deps = [input, template, markdown].flatMap((x) => x.deps());
@@ -173,7 +177,7 @@ class Input {
   }
 }
 
-async function render(
+async function renderPage(
   relPath: string,
   input: Input,
   template: Template,
@@ -220,11 +224,11 @@ function genIndex(
   return template.render("templates/base.html", {
     root,
     title,
-    analytics: analytics && Bun.file(analytics).text(),
+    analytics: analytics ? Bun.file(analytics).text() : false,
     math: postsPromise.then(() => markdown.encounteredMath),
     body: template.render("templates/index.html", {
       title,
-      home_url: process.env["HOME_URL"],
+      home_url: process.env["HOME_URL"] ?? false,
       posts: postsPromise,
       copyright: template.render("templates/copyright.html", {
         year: new Date().getFullYear().toString(),
@@ -241,7 +245,8 @@ function genArchive(posts: Entry[], template: Template): Promise<string> {
   return template.render("templates/base.html", {
     root,
     title,
-    analytics: analytics && Bun.file(analytics).text(),
+    analytics: analytics ? Bun.file(analytics).text() : false,
+    math: false,
     body: template.render("templates/listing.html", {
       root,
       title,
@@ -270,7 +275,8 @@ function genCategories(posts: Entry[], template: Template): Promise<string> {
   return template.render("templates/base.html", {
     root,
     title,
-    analytics: analytics && Bun.file(analytics).text(),
+    analytics: analytics ? Bun.file(analytics).text() : false,
+    math: false,
     body: template.render("templates/listing.html", {
       root,
       title,
@@ -305,14 +311,14 @@ function genPost(
     root,
     title: post.meta.title,
     math: bodyHtml.then(() => markdown.encounteredMath),
-    analytics: analytics && Bun.file(analytics).text(),
+    analytics: analytics ? Bun.file(analytics).text() : false,
     body: template.render("templates/post.html", {
       title: markdown.renderInline(post.meta.title),
       date: dateFormat(post.meta.date, "dddd, d mmmm yyyy"),
       description: markdown.renderInline(post.meta.description),
       body: bodyHtml,
       pagenav: template.render("templates/pagenav.html", {
-        home: process.env["HOME_URL"],
+        home: process.env["HOME_URL"] ?? false,
         root,
         older: info.older ? `../${info.older}/index.html` : "../index.html",
         newer: info.newer ? `../${info.newer}/index.html` : "../../index.html",
@@ -594,134 +600,130 @@ const footnoteDefItemExt: marked.RendererExtension = {
   },
 };
 
-// A context provides values for variables in a template. The values can be
-// promises, e.g. the result of rendering another template.
-type Context = Record<string, ContextValue | Promise<ContextValue>>;
+// A context provides values for variables in a template.
+type Context = Record<string, Value | Promise<Value>>;
+type ResolvedContext = Record<string, Value>;
+type Value = string | boolean | Value[] | NestedContext | undefined;
+interface NestedContext extends Record<string, Value> {}
 
-// Like `Context` but all promises have been resolved.
-type ConcreteContext = Record<string, ContextValue>;
-
-// Types allowed for variable values in templates.
-type ContextValue =
-  | string
-  | boolean
-  | ContextValue[]
-  | NestedContext
-  | undefined;
-
-// Helper for defining `ContextValue` recursively.
-interface NestedContext extends Record<string, ContextValue> {}
-
-// Commands used in a parsed template.
-type TemplateCommand =
+// Representation of a compiled template.
+type Program = { defs: Definition[]; cmds: Command[] };
+type Definition = { variable: string; program: Program };
+type Command =
   | { kind: "text"; text: string }
-  | { kind: "var"; variable: string }
-  | { kind: "begin"; variable: string; negate: boolean }
-  | { kind: "end" };
+  | { kind: "var"; src: string; variable: string }
+  | { kind: "if"; src: string; variable: string; body: Program; else?: Program }
+  | { kind: "range"; src: string; variable: string; body: Program };
 
 // Renders HTML templates using syntax similar to Go templates.
 class Template {
-  private cache: Map<string, TemplateCommand[]> = new Map();
+  private cache: Map<string, Program> = new Map();
 
-  // Renders an HTML template.
   async render(path: string, context: Context): Promise<string> {
     let template = this.cache.get(path);
     if (template === undefined) {
-      template = Template.parse(await Bun.file(path).text());
+      template = compileTemplate(path, await Bun.file(path).text());
       this.cache.set(path, template);
     }
     const values = await Promise.all(Object.values(context));
-    return Template.apply(
-      template,
-      Object.fromEntries(Object.keys(context).map((key, i) => [key, values[i]]))
+    const ctx = Object.fromEntries(
+      Object.keys(context).map((key, i) => [key, values[i]])
     );
+    const out = { str: "" };
+    execTemplate(template, ctx, out);
+    return out.str;
   }
 
   deps(): string[] {
     return Array.from(this.cache.keys());
   }
+}
 
-  private static parse(source: string): TemplateCommand[] {
-    const commands: TemplateCommand[] = [];
-    let offset = 0;
-    const ifVarStack = [];
-    for (const match of source.matchAll(
-      /(\s*)\{\{\s*(?:(end|else)|(?:(if|range)\s*)?(\S+))\s*\}\}/g
-    )) {
+// Compiles a template to commands.
+function compileTemplate(name: string, source: string): Program {
+  let offset = 0;
+  const matches = source.matchAll(/(\s*)\{\{(.*?)\}\}/g);
+  type Ending = "end" | "else" | "eof";
+  let hitElse = false;
+  const go = (allow: { [k in Ending]?: boolean }): Program => {
+    const prog: Program = { defs: [], cmds: [] };
+    for (const match of matches) {
+      const [all, whitespace, inBraces] = match;
       const idx = match.index;
-      if (idx === undefined)
-        throw Error(`invalid template command: ${match[0]}`);
-      let text = source.slice(offset, idx);
-      const [wholeMatch, whitespace, endOrElse, ifOrRange, variable] = match;
-      if (!ifOrRange && variable) text += whitespace;
-      commands.push({ kind: "text", text });
-      offset = idx + wholeMatch.length;
-      if (endOrElse === "end") {
-        commands.push({ kind: "end" });
-        ifVarStack.pop();
-      } else if (endOrElse === "else") {
-        commands.push({ kind: "end" });
-        const variable = ifVarStack[ifVarStack.length - 1];
-        if (!variable) throw Error("else without corresponding if");
-        commands.push({ kind: "begin", variable, negate: true });
-      } else if (ifOrRange) {
-        commands.push({ kind: "begin", variable, negate: false });
-        ifVarStack.push(variable);
+      if (idx === undefined) throw Error("matchAll returned undefined index");
+      const [line, col] = getLineAndColumn(source, idx + whitespace.length);
+      const src = `${name}:${line}:${col}`;
+      const err = (msg: string) => Error(`${src}: ${all.trim()}: ${msg}`);
+      const text = source.slice(offset, idx);
+      offset = idx + all.length;
+      const textCmd: Command = { kind: "text", text };
+      prog.cmds.push(textCmd);
+      const words = inBraces.trim().split(/\s+/);
+      if (words.length < 1) throw err("expected command");
+      if (words.length > 2) throw err("too many words");
+      const [kind, variable] = words;
+      if (kind === "if" || kind == "range" || kind === "define") {
+        if (variable === undefined) throw err("expected variable");
+        const body = go({ end: true, else: kind === "if" });
+        const elseBody = hitElse ? go({ end: true }) : undefined;
+        if (kind === "define") {
+          prog.defs.push({ variable, program: body });
+        } else {
+          prog.cmds.push({ kind, src, variable, body, else: elseBody });
+        }
+      } else if (kind === "else" || kind === "end") {
+        if (!allow[kind]) throw err(`unexpected command`);
+        hitElse = kind === "else";
+        return prog;
       } else {
-        commands.push({ kind: "var", variable });
+        if (variable !== undefined) throw err("too many words");
+        textCmd.text += whitespace;
+        prog.cmds.push({ kind: "var", src, variable: kind });
       }
     }
-    commands.push({ kind: "text", text: source.slice(offset).trimEnd() });
-    return commands;
-  }
+    if (!allow.eof) throw Error(`${name}: unexpected EOF`);
+    prog.cmds.push({ kind: "text", text: source.slice(offset).trimEnd() });
+    return prog;
+  };
+  return go({ eof: true });
+}
 
-  private static apply(
-    commands: TemplateCommand[],
-    context: ConcreteContext
-  ): string {
-    let result = "";
-    const go = (i: number, context: ConcreteContext) => {
-      while (i < commands.length) {
-        const cmd = commands[i++];
-        switch (cmd.kind) {
-          case "text": {
-            result += cmd.text;
-            break;
-          }
-          case "var": {
-            let value = context[cmd.variable];
-            if (value === undefined)
-              throw Error(`missing template variable "${cmd.variable}"`);
-            result += value;
-            break;
-          }
-          case "begin": {
-            const value = context[cmd.variable];
-            if (!value === cmd.negate) {
-              let values: ContextValue[] = Array.isArray(value)
-                ? value
-                : [value];
-              for (const v of values) {
-                let ctx = { ...context, ".": v };
-                if (typeof v === "object" && !Array.isArray(v)) {
-                  ctx = { ...ctx, ...(v as object) };
-                }
-                go(i, ctx);
-              }
-            }
-            for (let depth = 1; depth > 0; i++) {
-              if (commands[i].kind === "begin") depth++;
-              else if (commands[i].kind === "end") depth--;
-            }
-            break;
-          }
-          case "end":
-            return;
-        }
+// Template output container.
+type Output = { str: string };
+
+// Executes a compiled template with a context.
+function execTemplate(prog: Program, ctx: ResolvedContext, out: Output) {
+  const enter = (value: Value) =>
+    Object.assign(Object.create(ctx), value, { ".": value });
+  for (const def of prog.defs) {
+    const out = { str: "" };
+    execTemplate(def.program, ctx, out);
+    ctx[def.variable] = out.str;
+  }
+  for (const cmd of prog.cmds) {
+    if (cmd.kind === "text") {
+      out.str += cmd.text;
+      continue;
+    }
+    const err = (msg: string) => Error(`${cmd.src}: ${msg}`);
+    const value = ctx[cmd.variable];
+    if (value === undefined) throw err(`"${cmd.variable}" is not defined`);
+    if (cmd.kind === "var") {
+      out.str += value;
+    } else if (cmd.kind === "if") {
+      if (value) {
+        execTemplate(cmd.body, enter(value), out);
+      } else if (cmd.else !== undefined) {
+        execTemplate(cmd.else, enter(value), out);
       }
-    };
-    go(0, context);
-    return result;
+    } else if (cmd.kind === "range") {
+      if (!Array.isArray(value)) {
+        throw err(`range: "${cmd.variable}" is not an array`);
+      }
+      for (const item of value) {
+        execTemplate(cmd.body, enter(item), out);
+      }
+    }
   }
 }
 
@@ -861,11 +863,6 @@ async function writeIfChanged(path: string, content: string): Promise<void> {
   }
 }
 
-// Sorts an array by date in reverse chronological order.
-function reverseChronological<T extends { date: YmdDate }[]>(array: T): T {
-  return array.sort((a, b) => b.date.localeCompare(a.date));
-}
-
 // Groups an array into subarrays where each item has the same key.
 function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
   const map = new Map<U, T[]>();
@@ -879,6 +876,15 @@ function groupBy<T, U>(array: T[], key: (item: T) => U): [U, T[]][] {
     }
   }
   return Array.from(map.entries());
+}
+
+// Converts a byte offset to 1-based line and column numbers.
+function getLineAndColumn(source: string, offset: number): [number, number] {
+  const matches = Array.from(source.slice(0, offset).matchAll(/\n/g));
+  const line = matches.length + 1;
+  const last = matches[matches.length - 1]?.index;
+  const col = last !== undefined ? offset - last : offset + 1;
+  return [line, col];
 }
 
 // A promise that can be resolved or rejected from the outside.
