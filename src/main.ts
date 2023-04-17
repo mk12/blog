@@ -2,18 +2,12 @@
 
 import dateFormat from "dateformat";
 import { readdir } from "fs/promises";
-import { basename, join } from "path";
+import { basename, dirname, join } from "path";
 import { Writable } from "stream";
 import { HlsvcClient } from "./hlsvc";
 import { MarkdownRenderer } from "./markdown";
 import { TemplateRenderer } from "./template";
-import {
-  changeExt,
-  eatPrefix,
-  groupBy,
-  removeExt,
-  writeIfChanged,
-} from "./util";
+import { changeExt, eat, groupBy, removeExt, writeIfChanged } from "./util";
 
 function usage(out: Writable) {
   const program = basename(process.argv[1]);
@@ -47,184 +41,150 @@ const destDirVar = "DESTDIR";
 const srcPostDir = "posts";
 const dstPostDir = "post";
 const buildDir = "build";
-const stampFile = `${buildDir}/stamp`;
-const postsFile = `${buildDir}/posts.json`;
+const stampFile = join(buildDir, "stamp");
+const postsFile = join(buildDir, "posts.json");
+const slug = (path: string) => basename(dirname(path));
+const srcFile = (path: string) => join(srcPostDir, slug(path) + ".md");
+const depFile = (path: string) => join(buildDir, changeExt(path, ".d"));
+const ctxFile = (path: string) => join(buildDir, changeExt(path, ".json"));
 
-const srcFile = (slug: string) => `${srcPostDir}/${slug}.md`;
-const extFile = (slug: string) =>
-  `${buildDir}/${dstPostDir}/${slug}/index.json`;
-
-// A Markdown blog post with the metadata parsed out.
-interface Post {
-  meta: Metadata;
-  body: string;
-}
-
-// YAML metadata from the top of a blog post Markdown file.
+// YAML metadata from the top of a Markdown file.
 interface Metadata {
   title: string;
   description: string;
   category: string;
   date: YmdDate;
+  draft: boolean;
 }
 
 // A date in YYYY-MM-DD format.
 type YmdDate = string;
 
-// An entry in posts.json, used for generating pages like the index.
-// TODO: extend metadata
-// TODO: GlobalManifest?
-interface Entry extends Metadata {
-  slug: string;
+// Information about a post stored in posts.json.
+interface Post extends Metadata {
+  // Path relative to the blog root.
+  path: string;
   // First paragraph of the post body.
   summary: string;
 }
 
-// External information stored in per-post JSON files.
-// TODO: LocalManifest?
-interface ExternalInfo {
-  // Slug of the next older post, if one exists.
+// Contextual information stored in per-post JSON files.
+interface Context {
+  // Path of the next older post, if one exists.
   older?: string;
-  // Slug of the next newer post, if one exists.
+  // Path of the next newer post, if one exists.
   newer?: string;
 }
 
-// Parses the metadata from a blog post.
-function parsePost(content: string): Post {
-  const [before, body] = content.split("\n---\n", 2);
-  const fields = before
-    .replace(/^---\n/, "")
-    .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
-    .replace(/\n/g, ",");
-  const metadata = JSON.parse("{" + fields + "}");
-  return { meta: metadata, body };
+// A full post with metadata parsed out.
+interface PostWithBody extends Metadata {
+  // Markdown post body.
+  body: string;
 }
 
-// Returns the first paragraph of a post body.
-function getSummary(body: string): string {
-  const match = body.match(/^\s*(.*)/);
-  if (!match) throw Error("post has no summary paragraph");
-  return match[1];
-}
+// All the information needed to render a post page.
+interface PostWithContext extends PostWithBody, Context {}
 
 // Generates JSON files in the build directory.
 async function genJsonFiles() {
   const filenames = await readdir(srcPostDir);
-  const posts: Entry[] = await Promise.all(
+  const posts: Post[] = await Promise.all(
     filenames
       .filter((n) => n.endsWith(".md"))
       .map(async (name) => {
-        const slug = removeExt(name);
         const srcPath = join(srcPostDir, name);
-        const { meta, body } = parsePost(await Bun.file(srcPath).text());
-        const summary = getSummary(body);
-        return { slug, summary, ...meta };
+        const dstPath = join(dstPostDir, removeExt(name), "index.html");
+        const { body, ...meta } = parsePost(await Bun.file(srcPath).text());
+        return { path: dstPath, summary: getSummary(body), ...meta };
       })
   );
   // Sort posts in reverse chronological order.
   posts.sort((a, b) => b.date.localeCompare(a.date));
   writeIfChanged(postsFile, JSON.stringify(posts));
-  // Write external info JSON files for each post.
-  posts.forEach(({ slug }, i) => {
-    const info: ExternalInfo = {
-      newer: posts[i - 1]?.slug,
-      older: posts[i + 1]?.slug,
+  // Write context files for each post.
+  posts.forEach(({ path }, i) => {
+    const ctx: Context = {
+      newer: posts[i - 1]?.path,
+      older: posts[i + 1]?.path,
     };
-    writeIfChanged(
-      `${buildDir}/${dstPostDir}/${slug}/index.json`,
-      JSON.stringify(info)
-    );
+    writeIfChanged(ctxFile(path), JSON.stringify(ctx));
   });
 }
 
 // Generates an HTML file in $DESTDIR.
-async function genHtmlFile(path: string) {
+async function genHtmlFile(fullPath: string) {
   const destDir = process.env[destDirVar];
   if (!destDir) throw Error(`$${destDirVar} is not set`);
-  const relPath = eatPrefix(path, destDir + "/");
-  if (!relPath) throw Error(`invalid html file path: ${path}`);
+  const path = eat(fullPath, destDir + "/");
+  if (!path) throw Error(`invalid html file path: ${fullPath}`);
   const hlsvc = new HlsvcClient();
-  const input = new Input();
+  const input = new InputReader();
   const template = new TemplateRenderer();
   const markdown = new MarkdownRenderer(hlsvc, srcPostDir);
-  const html = await render(relPath, input, template, markdown);
-  Bun.write(path, postprocess(html));
+  const link = new LinkMaker(path);
+  const html = await renderHtml(path, input, { template, markdown, link });
+  Bun.write(fullPath, postprocess(html));
   hlsvc.close();
   const deps = [input, template, markdown].flatMap((x) => x.deps());
-  Bun.write(
-    join(buildDir, changeExt(relPath, ".d")),
-    `$(${destDirVar})/${relPath}: ${deps.join(" ")}`
-  );
+  Bun.write(depFile(path), `$(${destDirVar})/${path}: ${deps.join(" ")}`);
 }
 
-async function render(
-  relPath: string,
-  input: Input,
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
-): Promise<string> {
+// Tools used to render HTML pages.
+interface Tools {
+  template: TemplateRenderer;
+  markdown: MarkdownRenderer;
+  link: LinkMaker;
+}
+
+// Renders a page, returning a string of HTML.
+async function renderHtml(path: string, input: InputReader, tools: Tools) {
   const analytics = process.env["ANALYTICS"];
-  template.define({
-    root: relPath.replaceAll(/[^/]+/g, "..").replace(/\.\.$/, ""),
+  tools.template.define({
+    root: path.replaceAll(/[^/]+/g, "..").replace(/\.\.$/, ""),
     analytics: analytics ? Bun.file(analytics).text() : false,
     home_url: process.env["HOME_URL"] ?? false,
     year: new Date().getFullYear().toString(),
   });
-  switch (relPath) {
+  switch (path) {
     case "index.html":
-      return renderIndex(await input.posts(), template, markdown);
+      return renderIndex(await input.posts(), tools);
     case "post/index.html":
-      return renderArchive(await input.posts(), template);
+      return renderArchive(await input.posts(), tools);
     case "categories/index.html":
-      return renderCategories(await input.posts(), template);
-    default: {
-      const match = relPath.match(/^post\/(.*)\/index.html$/);
-      if (!match) throw Error(`invalid post file path: ${relPath}`);
-      const slug = match[1];
-      const [post, info] = await Promise.all([
-        input.post(slug),
-        input.externalInfo(slug),
-      ]);
-      return renderPost(post, info, template, markdown);
-    }
+      return renderCategories(await input.posts(), tools);
+    default:
+      return renderPost(await input.post(path), tools);
   }
 }
 
 // Renders the blog homepage.
-function renderIndex(
-  posts: Entry[],
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
-): Promise<string> {
-  const postsPromise = Promise.all(
-    posts.slice(0, 10).map(async ({ slug, summary, title, date }) => ({
+function renderIndex(posts: Post[], { template, markdown }: Tools) {
+  const recentPosts = Promise.all(
+    posts.slice(0, 10).map(async ({ path, summary, title, date }) => ({
       date: dateFormat(date, "dddd, d mmmm yyyy"),
-      href: `post/${slug}/index.html`,
+      href: path,
       title,
       summary: await markdown.render(summary),
     }))
   );
   return template.render("templates/index.html", {
     title: "Mitchell Kember",
-    math: postsPromise.then(() => markdown.encounteredMath),
-    posts: postsPromise,
+    math: recentPosts.then(() => markdown.encounteredMath),
+    posts: recentPosts,
   });
 }
 
 // Renders the blog post archive.
-function renderArchive(
-  posts: Entry[],
-  template: TemplateRenderer
-): Promise<string> {
+function renderArchive(posts: Post[], { template, link }: Tools) {
   return template.render("templates/listing.html", {
     title: "Post Archive",
     math: false,
     groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
       ([year, posts]) => ({
         name: year,
-        pages: posts.map(({ slug, title, date }) => ({
+        pages: posts.map(({ path, title, date }) => ({
           date: dateFormat(date, "d mmm yyyy"),
-          href: `${slug}/index.html`,
+          href: link.to(path),
           title,
         })),
       })
@@ -233,19 +193,16 @@ function renderArchive(
 }
 
 // Renders the blog post categories page.
-function renderCategories(
-  posts: Entry[],
-  template: TemplateRenderer
-): Promise<string> {
+function renderCategories(posts: Post[], { template, link }: Tools) {
   return template.render("templates/listing.html", {
     title: "Categories",
     math: false,
     groups: groupBy(posts, (post) => post.category).map(
       ([category, posts]) => ({
         name: category,
-        pages: posts.map(({ slug, title, date }) => ({
+        pages: posts.map(({ path, title, date }) => ({
           date: dateFormat(date, "d mmm yyyy"),
-          href: `../post/${slug}/index.html`,
+          href: link.to(path),
           title,
         })),
       })
@@ -255,25 +212,23 @@ function renderCategories(
 
 // Renders a blog post from its Markdown content.
 function renderPost(
-  post: Post,
-  info: ExternalInfo,
-  template: TemplateRenderer,
-  markdown: MarkdownRenderer
-): Promise<string> {
+  post: PostWithContext,
+  { template, markdown, link }: Tools
+) {
   const html = markdown.render(post.body);
   return template.render("templates/post.html", {
-    title: markdown.renderInline(post.meta.title),
+    title: markdown.renderInline(post.title),
     math: html.then(() => markdown.encounteredMath),
-    date: dateFormat(post.meta.date, "dddd, d mmmm yyyy"),
-    description: markdown.renderInline(post.meta.description),
+    date: dateFormat(post.date, "dddd, d mmmm yyyy"),
+    description: markdown.renderInline(post.description),
     article: html,
-    older: info.older ? `../${info.older}/index.html` : "../index.html",
-    newer: info.newer ? `../${info.newer}/index.html` : "../../index.html",
+    older: link.to(post.older ?? "post/index.html"),
+    newer: link.to(post.newer ?? "index.html"),
   });
 }
 
 // Manages access to input sources.
-class Input {
+class InputReader {
   private files = new Set<string>();
 
   private read(file: string): Promise<string> {
@@ -281,21 +236,60 @@ class Input {
     return Bun.file(file).text();
   }
 
-  async posts(): Promise<Entry[]> {
+  async posts(): Promise<Post[]> {
     return JSON.parse(await this.read(postsFile));
   }
 
-  async post(slug: string): Promise<Post> {
-    return parsePost(await this.read(srcFile(slug)));
-  }
-
-  async externalInfo(slug: string): Promise<ExternalInfo> {
-    return JSON.parse(await this.read(extFile(slug)));
+  async post(path: string): Promise<PostWithContext> {
+    const [markdown, json] = await Promise.all([
+      this.read(srcFile(path)),
+      this.read(ctxFile(path)),
+    ]);
+    const post = parsePost(markdown);
+    const ctx: Context = JSON.parse(json);
+    return { ...post, ...ctx };
   }
 
   deps(): string[] {
     return Array.from(this.files);
   }
+}
+
+// Helper for making relative links.
+class LinkMaker {
+  private dir: string;
+
+  constructor(from: string) {
+    this.dir = dirname(from);
+  }
+
+  to(path: string) {
+    // TODO(https://github.com/oven-sh/bun/issues/2671): Use `relative`.
+    const from = this.dir.split("/");
+    const to = path.split("/");
+    let i = 0;
+    while (i < Math.min(from.length, to.length) && from[i] === to[i]) {
+      i++;
+    }
+    return "../".repeat(from.length - i) + to.slice(i).join("/");
+  }
+}
+
+// Parses the metadata from a blog post.
+function parsePost(content: string): PostWithBody {
+  const [before, body] = content.split("\n---\n", 2);
+  const fields = before
+    .replace(/^---\n/, "")
+    .replace(/^(\w+):\s*(.*?)\s*$/gm, '"$1":"$2"')
+    .replace(/\n/g, ",");
+  return { ...JSON.parse("{" + fields + "}"), body };
+}
+
+// Returns the first paragraph of a post body.
+function getSummary(body: string): string {
+  const match = body.match(/^\s*(.*)/);
+  if (!match) throw Error("post has no summary paragraph");
+  return match[1];
 }
 
 // Postprocesses HTML output.

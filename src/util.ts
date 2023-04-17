@@ -4,7 +4,7 @@ import { mkdir } from "fs/promises";
 import { dirname } from "path";
 
 // If s starts with prefix, removes it and returns the result.
-export function eatPrefix(s: string, prefix: string): string | undefined {
+export function eat(s: string, prefix: string): string | undefined {
   return s.startsWith(prefix) ? s.slice(prefix.length) : undefined;
 }
 

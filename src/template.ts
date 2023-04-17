@@ -6,10 +6,11 @@ import { dirname, join } from "path";
 type Context = Record<string, Value | Promise<Value>>;
 type ResolvedContext = Record<string, Value>;
 type Value = string | boolean | Value[] | NestedContext;
+
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface NestedContext extends Record<string, Value> {}
 
-// Representation of a compiled template.
+// A compiled template.
 type Template = { defs: Definition[]; cmds: Command[] };
 type Definition = { variable: string; body: Template };
 type Command =
@@ -31,7 +32,7 @@ export class TemplateRenderer {
   private defaults: Context = {};
 
   // Defines variables to use by default when rendering templates.
-  define(context: Context) {
+  define(context: Context): void {
     Object.assign(this.defaults, context);
   }
 
@@ -139,7 +140,7 @@ function compile(name: string, source: string): [Template, Deps] {
 type Output = { str: string };
 
 // Executes a compiled template with a context.
-function execute(prog: Template, ctx: ResolvedContext, out: Output) {
+function execute(prog: Template, ctx: ResolvedContext, out: Output): void {
   const enter = (value: Value) =>
     Object.assign(Object.create(ctx), value, { ".": value });
   for (const def of prog.defs) {
@@ -177,7 +178,7 @@ function execute(prog: Template, ctx: ResolvedContext, out: Output) {
   }
 }
 
-// Converts a byte offset to 1-based line and column numbers.
+// Converts a character offset to 1-based line and column numbers.
 function getLineAndColumn(source: string, offset: number): [number, number] {
   const matches = Array.from(source.slice(0, offset).matchAll(/\n/g));
   const line = matches.length + 1;

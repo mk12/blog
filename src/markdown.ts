@@ -5,7 +5,7 @@ import { marked } from "marked";
 import { join } from "path";
 import { HlsvcClient } from "./hlsvc";
 
-// Renders Markdown to HTML using the marked library with extensions.
+// A Markdown-to-HTML renderer using the marked library.
 export class MarkdownRenderer {
   encounteredMath = false;
   embeddedAssets = new Set<string>();

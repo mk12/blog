@@ -1,11 +1,11 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 import { Socket } from "bun";
-import { eatPrefix } from "./util";
+import { eat } from "./util";
 
 const socketPath = "hlsvc.sock";
 
-// Client for the Go hlsvc Unix socket server.
+// Client bindings for the hlsvc server.
 export class HlsvcClient {
   private state:
     | { mode: "init" }
@@ -56,7 +56,7 @@ export class HlsvcClient {
     path: string,
     onSuccess: (s: Socket) => void,
     onFailure: (e: Error) => void
-  ) {
+  ): void {
     let buffer = "";
     Bun.connect({
       unix: path,
@@ -78,9 +78,9 @@ export class HlsvcClient {
     }).catch(onFailure);
   }
 
-  private handleResponse(raw: string) {
+  private handleResponse(raw: string): void {
     const interest = this.nextInterest();
-    const error = eatPrefix(raw, "error:");
+    const error = eat(raw, "error:");
     if (error) {
       interest.reject(new Error(`server responded with error: ${error}`));
     } else {
