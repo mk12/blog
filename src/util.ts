@@ -3,6 +3,34 @@
 import { mkdir } from "fs/promises";
 import { dirname } from "path";
 
+// Helper for writing multiple files and awaiting at the end.
+export class Writer {
+  private promises: Promise<void>[] = [];
+
+  private static async do(path: string, content: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await Bun.write(path, content);
+  }
+
+  write(path: string, content: string): void {
+    this.promises.push(Writer.do(path, content));
+  }
+
+  writeIfChanged(path: string, content: string): void {
+    this.promises.push(
+      Bun.file(path)
+        .text()
+        .then((old) => old === content)
+        .catch(() => false)
+        .then((same) => (same ? undefined : Writer.do(path, content)))
+    );
+  }
+
+  async wait(): Promise<void> {
+    await Promise.all(this.promises);
+  }
+}
+
 // If s starts with prefix, removes it and returns the result.
 export function eat(s: string, prefix: string): string | undefined {
   return s.startsWith(prefix) ? s.slice(prefix.length) : undefined;

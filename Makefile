@@ -36,13 +36,13 @@ asset := $(src_asset:assets/%=$(DESTDIR)/%)
 css := $(DESTDIR)/style.css
 all := $(html) $(asset) $(css)
 
-stamp := build/stamp
-gen := $(stamp) $(html)
-dep := $(stamp) $(html:$(DESTDIR)/%.html=build/%.d)
+prep := build/prep.d
+gen := $(prep) $(html)
+dep := $(prep) $(html:$(DESTDIR)/%.html=build/%.d)
 
 .SUFFIXES:
 
-all: $(all)
+all: $(html)
 
 help:
 	$(info $(usage))
@@ -51,11 +51,11 @@ help:
 check: all fmt lint validate
 
 fmt:
-	bun x prettier -w src/*.ts
+	bunx prettier -w src/*.ts
 	go fmt -C hlsvc
 
 lint:
-	bun x eslint --fix src/*.ts
+	bunx eslint --fix src/*.ts
 	go vet -C hlsvc
 	go fix -C hlsvc
 	go mod tidy -C hlsvc
@@ -66,7 +66,8 @@ validate: $(html)
 clean:
 	rm -rf $(default_destdir) build
 
-$(stamp): posts $(src_post)
+$(prep): posts $(src_post)
+$(html): | $(css)
 $(post): | hlsvc.sock
 
 $(gen): src/main.ts $(wildcard src/*.ts)

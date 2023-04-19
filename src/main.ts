@@ -7,7 +7,7 @@ import { Writable } from "stream";
 import { HlsvcClient } from "./hlsvc";
 import { MarkdownRenderer } from "./markdown";
 import { TemplateRenderer } from "./template";
-import { changeExt, eat, groupBy, removeExt, writeIfChanged } from "./util";
+import { Writer, changeExt, eat, groupBy, removeExt } from "./util";
 
 function usage(out: Writable) {
   const program = basename(process.argv[1]);
@@ -16,7 +16,7 @@ function usage(out: Writable) {
 
 Generate a file for the blog
 
-- If OUT_FILE is build/stamp, also writes JSON files in build/
+- If OUT_FILE is build/prep.d, also writes various files in build/
 - If OUT_FILE is $DESTDIR/foo/bar.html, also writes build/foo/bar.d
 `
   );
@@ -24,29 +24,31 @@ Generate a file for the blog
 
 async function main() {
   const arg = process.argv[2];
+  const writer = new Writer();
   if (arg === undefined) {
     usage(process.stderr);
     process.exit(1);
   } else if (arg === "-h" || arg === "--help") {
     usage(process.stdout);
-  } else if (arg === stampFile) {
-    await genJsonFiles();
-    Bun.write(arg, "");
+  } else if (arg === prepFile) {
+    await genBuildFiles(writer);
   } else {
-    await genHtmlFile(arg);
+    await genHtmlFile(arg, writer);
   }
+  await writer.wait();
 }
 
 const destDirVar = "DESTDIR";
 const srcPostDir = "posts";
 const dstPostDir = "post";
 const buildDir = "build";
-const stampFile = join(buildDir, "stamp");
+const prepFile = join(buildDir, "prep.d");
 const postsFile = join(buildDir, "posts.json");
 const slug = (path: string) => basename(dirname(path));
 const srcFile = (path: string) => join(srcPostDir, slug(path) + ".md");
-const depFile = (path: string) => join(buildDir, changeExt(path, ".d"));
 const ctxFile = (path: string) => join(buildDir, changeExt(path, ".json"));
+const depFile = (path: string) => join(buildDir, changeExt(path, ".d"));
+const assetUrl = (srcPath: string) => eat(srcPath, "assets/");
 
 // YAML metadata from the top of a Markdown file.
 interface Metadata {
@@ -54,7 +56,6 @@ interface Metadata {
   description: string;
   category: string;
   date: YmdDate;
-  draft: boolean;
 }
 
 // A date in YYYY-MM-DD format.
@@ -91,9 +92,10 @@ interface PostWithBody extends Metadata {
 // All the information needed to render a post page.
 interface PostWithContext extends PostWithBody, Context {}
 
-// Generates JSON files in the build directory.
-async function genJsonFiles() {
+// Generates files in the build directory that prepare for a full build.
+async function genBuildFiles(writer: Writer) {
   const filenames = await readdir(srcPostDir);
+  let extraDeps = "";
   const posts: Post[] = await Promise.all(
     filenames
       .filter((n) => n.endsWith(".md"))
@@ -101,38 +103,44 @@ async function genJsonFiles() {
         const srcPath = join(srcPostDir, name);
         const dstPath = join(dstPostDir, removeExt(name), "index.html");
         const { body, ...meta } = parsePost(await Bun.file(srcPath).text());
+        extraDeps += depLine(dstPath, getLinkedAssets(body), "|");
         return { path: dstPath, summary: getSummary(body), ...meta };
       })
   );
-  // Sort posts in reverse chronological order.
+  // Write posts sorted in reverse chronological order.
   posts.sort((a, b) => b.date.localeCompare(a.date));
-  writeIfChanged(postsFile, JSON.stringify(posts));
+  writer.writeIfChanged(postsFile, JSON.stringify(posts));
   // Write context files for each post.
   posts.forEach(({ path }, i) => {
     const ctx: Context = {
       newer: posts[i - 1]?.path,
       older: posts[i + 1]?.path,
     };
-    writeIfChanged(ctxFile(path), JSON.stringify(ctx));
+    writer.writeIfChanged(ctxFile(path), JSON.stringify(ctx));
   });
+  // Write extra discovered deps in the prep file.
+  writer.write(prepFile, extraDeps);
 }
 
 // Generates an HTML file in $DESTDIR.
-async function genHtmlFile(fullPath: string) {
+async function genHtmlFile(fullPath: string, writer: Writer) {
   const destDir = process.env[destDirVar];
   if (!destDir) throw Error(`$${destDirVar} is not set`);
   const path = eat(fullPath, destDir + "/");
   if (!path) throw Error(`invalid html file path: ${fullPath}`);
-  const hlsvc = new HlsvcClient();
   const input = new InputReader();
   const template = new TemplateRenderer();
-  const markdown = new MarkdownRenderer(hlsvc, srcPostDir);
+  const hlsvc = new HlsvcClient();
   const link = new LinkMaker(path);
+  const markdown = new MarkdownRenderer(hlsvc, (srcPath: string) => {
+    const url = assetUrl(srcPath);
+    return url && link.to(url);
+  });
   const html = await renderHtml(path, input, { template, markdown, link });
-  Bun.write(fullPath, postprocess(html));
   hlsvc.close();
+  writer.write(fullPath, postprocess(html));
   const deps = [input, template, markdown].flatMap((x) => x.deps());
-  Bun.write(depFile(path), `$(${destDirVar})/${path}: ${deps.join(" ")}`);
+  writer.write(depFile(path), depLine(path, deps));
 }
 
 // Tools used to render HTML pages.
@@ -221,7 +229,7 @@ function renderPost(
   post: PostWithContext,
   { template, markdown, link }: Tools
 ) {
-  const html = markdown.render(post.body);
+  const html = markdown.render(post.body, srcPostDir);
   return template.render("templates/post.html", {
     title: markdown.renderInline(post.title),
     math: html.then(() => markdown.encounteredMath),
@@ -289,6 +297,21 @@ function getSummary(body: string): string {
   const match = body.match(/^\s*(.*)/);
   if (!match) throw Error("post has no summary paragraph");
   return match[1];
+}
+
+// Returns the asset paths linked (not embedded) by a post body.
+function getLinkedAssets(body: string): string[] {
+  return Array.from(body.matchAll(/\]\((.+?\.jpg)\)/g), (src) => {
+    const url = assetUrl(join(srcPostDir, src[1]));
+    if (!url) throw Error(`invalid asset path: ${src[1]}`);
+    return `$(${destDirVar})/` + url;
+  });
+}
+
+// Returns a line to write in a depfile.
+function depLine(path: string, deps: string[], orderOnly?: "|") {
+  if (deps.length === 0) return "";
+  return `$(${destDirVar})/${path}:${orderOnly ?? ""} ${deps.join(" ")}\n`;
 }
 
 // Postprocesses HTML output.

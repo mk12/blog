@@ -1,5 +1,6 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+import { stat } from "fs/promises";
 import katex, { KatexOptions } from "katex";
 import { marked } from "marked";
 import { join } from "path";
@@ -9,8 +10,14 @@ import { HlsvcClient } from "./hlsvc";
 export class MarkdownRenderer {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
+  private assetUrl: (srcPath: string) => string | undefined;
 
-  constructor(hlsvc: HlsvcClient, workdingDir: string) {
+  constructor(
+    hlsvc: HlsvcClient,
+    // Converts a cwd-relative asset path to a URL.
+    assetUrl: (srcPath: string) => string | undefined
+  ) {
+    this.assetUrl = assetUrl;
     marked.use({
       smartypants: true,
       extensions: [
@@ -24,23 +31,12 @@ export class MarkdownRenderer {
         footnoteDefItemExt,
       ],
       walkTokens: async (anyToken) => {
-        const token = anyToken as Code | Image | Math | DisplayMath;
+        const token = anyToken as Code | Math | DisplayMath;
         switch (token.type) {
           case "code":
             token.highlighted = token.lang
               ? await hlsvc.highlight(token.lang, token.text)
               : token.text;
-            break;
-          case "image":
-            if (token.src.endsWith(".svg")) {
-              const path = join(workdingDir, token.src);
-              this.embeddedAssets.add(path);
-              token.svg = await Bun.file(path).text();
-            } else {
-              const match = token.src.match(/^\.\.\/assets\/(.*)$/);
-              if (!match) throw Error(`invalid image src: ${token.src}`);
-              token.src = "../../" + match[1];
-            }
             break;
           case "math":
           case "display_math":
@@ -51,14 +47,41 @@ export class MarkdownRenderer {
     });
   }
 
-  // Renders block Markdown to HTML.
-  render(src: string): Promise<string> {
-    return marked.parse(src, { async: true });
-  }
-
   // Renders inline Markdown to HTML.
   renderInline(src: string): string {
-    return marked.parseInline(src);
+    return marked.parseInline(src, {
+      walkTokens: (anyToken) => {
+        if (anyToken.type === "image") {
+          const token = anyToken as unknown as Image;
+          throw Error(`image not allowed in renderInline: ${token.src}`);
+        }
+      },
+    });
+  }
+
+  // Renders block Markdown to HTML.
+  render(src: string, sourceDir?: string): Promise<string> {
+    return marked.parse(src, {
+      async: true,
+      walkTokens: async (anyToken) => {
+        if (anyToken.type !== "image") return;
+        const token = anyToken as unknown as Image;
+        if (sourceDir === undefined) {
+          throw Error(`image not allowed without sourceDir: ${token.src}`);
+        }
+        const srcPath = join(sourceDir, token.src);
+        if (token.src.endsWith(".svg")) {
+          this.embeddedAssets.add(srcPath);
+          token.svg = await Bun.file(srcPath).text();
+        } else {
+          // Make sure the file exists, even though we aren't reading it.
+          await stat(srcPath);
+          const url = this.assetUrl(srcPath);
+          if (url === undefined) throw Error(`invalid image src: ${token.src}`);
+          token.src = url;
+        }
+      },
+    });
   }
 
   deps(): string[] {
