@@ -2,7 +2,7 @@
 
 import dateFormat from "dateformat";
 import { readdir } from "fs/promises";
-import { basename, dirname, join } from "path";
+import { basename, dirname, join, relative } from "path";
 import { Writable } from "stream";
 import { HlsvcClient } from "./hlsvc";
 import { MarkdownRenderer } from "./markdown";
@@ -66,6 +66,12 @@ interface Post extends Metadata {
   path: string;
   // First paragraph of the post body.
   summary: string;
+}
+
+// A full post with metadata parsed out.
+interface PostWithBody extends Metadata {
+  // Markdown post body.
+  body: string;
 }
 
 // Contextual information stored in per-post JSON files.
@@ -264,14 +270,7 @@ class LinkMaker {
   }
 
   to(path: string) {
-    // TODO(https://github.com/oven-sh/bun/issues/2671): Use `relative`.
-    const from = this.dir.split("/");
-    const to = path.split("/");
-    let i = 0;
-    while (i < Math.min(from.length, to.length) && from[i] === to[i]) {
-      i++;
-    }
-    return "../".repeat(from.length - i) + to.slice(i).join("/");
+    return relative(this.dir, path);
   }
 }
 

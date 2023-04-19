@@ -2,7 +2,7 @@
 title: Shopify co-op reflection
 description: Belated thoughts on my first internship
 category: Life
-date: 2018-03-04
+date: 2023-04-17
 draft: true
 ---
 
@@ -12,8 +12,8 @@ Well, "at least one article a week" clearly didn't last for long. After publishi
 
 May 4, 2015 -- _May the 4th be with you_. I'm not really a Star Wars fan, but I remember the first day of the internship fell on that day. I arrived at 150 Elgin Street by 10:00 a.m., and made my way to the eighth floor. Exiting the elevator, I faced a large comic strip poster:
 
-> Suddenly, the doors opened...  
-> Exit from that primitive transportation device.  
+> Suddenly, the doors opened...<br>
+> Exit from that primitive transportation device.<br>
 > You have arrived at the **Shopify Mothership**!
 
 That was (and still is, as far as I know) one of many pieces of artwork decorating [the Shopify office][1]. Together with the speakeasy-themed seventh floor and the house-shaped pair programming rooms, the cushioned nooks in walls and the bear bean bag chairs, the hammocks and the indoor go-kart track, they make for a unique tech office.
