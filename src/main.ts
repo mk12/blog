@@ -152,11 +152,13 @@ interface Tools {
 
 // Renders a page, returning a string of HTML.
 async function renderHtml(path: string, input: InputReader, tools: Tools) {
+  const { template, link } = tools;
   const analytics = process.env["ANALYTICS"];
-  tools.template.define({
-    root: path.replaceAll(/[^/]+/g, "..").replace(/\.\.$/, ""),
-    analytics: analytics ? Bun.file(analytics).text() : false,
+  template.define({
     home_url: process.env["HOME_URL"] ?? false,
+    blog_url: link.to("index.html"),
+    style_url: link.to("style.css"),
+    analytics: analytics ? Bun.file(analytics).text() : false,
     year: new Date().getFullYear().toString(),
   });
   switch (path) {
