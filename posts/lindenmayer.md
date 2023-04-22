@@ -84,6 +84,6 @@ The L-system is a wonderful tool for building complexity and infinite detail fro
 
 [aristid]: https://en.wikipedia.org/wiki/Aristid_Lindenmayer
 [cs]: https://en.wikipedia.org/wiki/Cantor_set
-[cti]: /blog/post/chasing-the-infinite/#higher-dimensions
+[cti]: chasing-the-infinite.md#higher-dimensions
 [lin]: http://lindenmayer.mitchellkember.com
 [gh]: https://github.com/mk12/lindenmayer

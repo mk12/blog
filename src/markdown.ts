@@ -10,14 +10,29 @@ import { HlsvcClient } from "./hlsvc";
 export class MarkdownRenderer {
   encounteredMath = false;
   embeddedAssets = new Set<string>();
-  private assetUrl: (srcPath: string) => string | undefined;
+  private toUrl: (srcPath: string) => string | undefined;
+  private commonWalk: (token: marked.Token) => Promise<void>;
 
   constructor(
     hlsvc: HlsvcClient,
-    // Converts a cwd-relative asset path to a URL.
-    assetUrl: (srcPath: string) => string | undefined
+    // Converts a source filesystem path to a URL.
+    toUrl: (srcPath: string) => string | undefined
   ) {
-    this.assetUrl = assetUrl;
+    this.toUrl = toUrl;
+    this.commonWalk = async (anyToken) => {
+      const token = anyToken as Code | Math | DisplayMath;
+      switch (token.type) {
+        case "code":
+          token.highlighted = token.lang
+            ? await hlsvc.highlight(token.lang, token.text)
+            : token.text;
+          break;
+        case "math":
+        case "display_math":
+          this.encounteredMath = true;
+          break;
+      }
+    };
     marked.use({
       smartypants: true,
       extensions: [
@@ -30,30 +45,23 @@ export class MarkdownRenderer {
         footnoteDefBlockExt,
         footnoteDefItemExt,
       ],
-      walkTokens: async (anyToken) => {
-        const token = anyToken as Code | Math | DisplayMath;
-        switch (token.type) {
-          case "code":
-            token.highlighted = token.lang
-              ? await hlsvc.highlight(token.lang, token.text)
-              : token.text;
-            break;
-          case "math":
-          case "display_math":
-            this.encounteredMath = true;
-            break;
-        }
-      },
     });
   }
 
   // Renders inline Markdown to HTML.
   renderInline(src: string): string {
     return marked.parseInline(src, {
-      walkTokens: (anyToken) => {
-        if (anyToken.type === "image") {
-          const token = anyToken as unknown as Image;
-          throw Error(`image not allowed in renderInline: ${token.src}`);
+      walkTokens: (token) => {
+        this.commonWalk(token);
+        if (token.type === "link") {
+          if (isLocalLink(token.href)) {
+            throw Error(
+              `local link not allowed in renderInline: ${token.href}`
+            );
+          }
+        } else if (token.type === "image") {
+          const image = token as unknown as Image;
+          throw Error(`image not allowed in renderInline: ${image.src}`);
         }
       },
     });
@@ -63,22 +71,42 @@ export class MarkdownRenderer {
   render(src: string, sourceDir?: string): Promise<string> {
     return marked.parse(src, {
       async: true,
-      walkTokens: async (anyToken) => {
-        if (anyToken.type !== "image") return;
-        const token = anyToken as unknown as Image;
-        if (sourceDir === undefined) {
-          throw Error(`image not allowed without sourceDir: ${token.src}`);
-        }
-        const srcPath = join(sourceDir, token.src);
-        if (token.src.endsWith(".svg")) {
-          this.embeddedAssets.add(srcPath);
-          token.svg = await Bun.file(srcPath).text();
-        } else {
-          // Make sure the file exists, even though we aren't reading it.
-          await stat(srcPath);
-          const url = this.assetUrl(srcPath);
-          if (url === undefined) throw Error(`invalid image src: ${token.src}`);
-          token.src = url;
+      walkTokens: async (token) => {
+        await this.commonWalk(token);
+        if (token.type === "link") {
+          if (isLocalLink(token.href)) {
+            let path = token.href;
+            let fragment = "";
+            const idx = path.indexOf("#");
+            if (idx >= 0) {
+              path = path.slice(0, idx);
+              fragment = path.slice(idx);
+            }
+            if (sourceDir === undefined) {
+              throw Error(`local link not allowed without sourceDir: ${token.href}`);
+            }
+            const url = this.toUrl(join(sourceDir, path));
+            if (url === undefined)
+              throw Error(`invalid local link: ${token.href}`);
+            token.href = url + fragment;
+          }
+        } else if (token.type === "image") {
+          const image = token as unknown as Image;
+          if (sourceDir === undefined) {
+            throw Error(`image not allowed without sourceDir: ${image.src}`);
+          }
+          const srcPath = join(sourceDir, image.src);
+          if (image.src.endsWith(".svg")) {
+            this.embeddedAssets.add(srcPath);
+            image.svg = await Bun.file(srcPath).text();
+          } else {
+            // Make sure the file exists, even though we aren't reading it.
+            await stat(srcPath);
+            const url = this.toUrl(srcPath);
+            if (url === undefined)
+              throw Error(`invalid image src: ${image.src}`);
+            image.src = url;
+          }
         }
       },
     });
@@ -138,6 +166,13 @@ const imageExt: marked.TokenizerAndRendererExtension = {
     return `<figure>${img}<figcaption>${caption}</figcaption></figure>`;
   },
 };
+
+// Returns true if the link is a path in the local filesystem.
+function isLocalLink(href: string): boolean {
+  if (href.match(/^https?:\/\//)) return false;
+  if (href.includes("://")) throw Error(`unexpected protocol: ${href}`);
+  return true;
+}
 
 const katexOptions: KatexOptions = {
   throwOnError: true,

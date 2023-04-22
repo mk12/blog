@@ -37,6 +37,6 @@ This is a space-filling curve: when we take the process to infinity, it becomes 
 
 Fractal dimensions are a great example of how mathematics develops when strange discoveries challenge long-held intuitions. Consider non-Euclidean geometry: an entire world that remained undiscovered until someone tried swapping out Euclid's parallel postulate for something far stranger. And mathematics has no shortage of strangeness -- I invite you to look up the pathological Weierstrass function and the Monster group (also known as the Friendly Giant). Finally, if your curiosity about dimensions hasn't been satisfied, I highly recommend [_Flatland: A Romance of Many Dimensions_][flatland].
 
-[linden]: /blog/post/lindenmayer
+[linden]: lindenmayer.md
 [koch4]: http://lindenmayer.mitchellkember.com/koch/4
 [flatland]: http://www.geom.uiuc.edu/~banchoff/Flatland/

@@ -26,7 +26,7 @@ type Command =
     }
   | { kind: "range"; src: string; variable: string; body: Template };
 
-// Renders HTML templates using syntax similar to Go templates.
+// Renders templates using syntax similar to Go templates.
 export class TemplateRenderer {
   private cache: Map<string, Template> = new Map();
   private defaults: Context = {};
