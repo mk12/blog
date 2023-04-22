@@ -155,9 +155,10 @@ async function renderHtml(path: string, input: InputReader, tools: Tools) {
   const { template, link } = tools;
   const analytics = process.env["ANALYTICS"];
   template.define({
-    home_url: process.env["HOME_URL"] ?? false,
-    blog_url: link.to("index.html"),
-    style_url: link.to("style.css"),
+    author: "Mitchell Kember",
+    homeUrl: process.env["HOME_URL"] ?? false,
+    blogUrl: link.to("index.html"),
+    styleUrl: link.to("style.css"),
     analytics: analytics ? Bun.file(analytics).text() : false,
     year: new Date().getFullYear().toString(),
   });
