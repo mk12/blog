@@ -1,8 +1,9 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 import dateFormat from "dateformat";
+import { mkdirSync, rmSync, symlinkSync } from "fs";
 import { readdir } from "fs/promises";
-import { basename, dirname, join, relative } from "path";
+import { basename, dirname, join, relative, resolve } from "path";
 import { Writable } from "stream";
 import { HlsvcClient } from "./hlsvc";
 import { MarkdownRenderer } from "./markdown";
@@ -41,14 +42,14 @@ async function main() {
 const destDirVar = "DESTDIR";
 const srcPostDir = "posts";
 const dstPostDir = "post";
+const srcAssetDir = "assets";
 const buildDir = "build";
 const prepFile = join(buildDir, "prep.d");
 const postsFile = join(buildDir, "posts.json");
 const slug = (path: string) => basename(dirname(path));
 const srcFile = (path: string) => join(srcPostDir, slug(path) + ".md");
 const ctxFile = (path: string) => join(buildDir, changeExt(path, ".json"));
-const depFile = (path: string) => join(buildDir, changeExt(path, ".d"));
-const assetUrl = (srcPath: string) => eat(srcPath, "assets/");
+const depFile = (path: string) => join(buildDir, path + ".d");
 
 // YAML metadata from the top of a Markdown file.
 interface Metadata {
@@ -95,7 +96,7 @@ interface PostWithContext extends PostWithBody, Context {}
 // Generates files in the build directory that prepare for a full build.
 async function genBuildFiles(writer: Writer) {
   const filenames = await readdir(srcPostDir);
-  let extraDeps = "";
+  // let extraDeps = "";
   const posts: Post[] = await Promise.all(
     filenames
       .filter((n) => n.endsWith(".md"))
@@ -103,7 +104,7 @@ async function genBuildFiles(writer: Writer) {
         const srcPath = join(srcPostDir, name);
         const dstPath = join(dstPostDir, removeExt(name), "index.html");
         const { body, ...meta } = parsePost(await Bun.file(srcPath).text());
-        extraDeps += depLine(dstPath, getLinkedAssets(body), "|");
+        // extraDeps += depLine(dstPath, getLinkedAssets(body), "|");
         return { path: dstPath, summary: getSummary(body), ...meta };
       })
   );
@@ -119,7 +120,8 @@ async function genBuildFiles(writer: Writer) {
     writer.writeIfChanged(ctxFile(path), JSON.stringify(ctx));
   });
   // Write extra discovered deps in the prep file.
-  writer.write(prepFile, extraDeps);
+  // writer.write(prepFile, extraDeps);
+  writer.write(prepFile, "");
 }
 
 // Generates an HTML file in $DESTDIR.
@@ -133,8 +135,21 @@ async function genHtmlFile(fullPath: string, writer: Writer) {
   const hlsvc = new HlsvcClient();
   const link = new LinkMaker(path);
   const markdown = new MarkdownRenderer(hlsvc, (srcPath: string) => {
-    const url = assetUrl(srcPath);
-    return url && link.to(url);
+    const parts = srcPath.split("/");
+    if (parts.length === 2 && parts[0] === srcPostDir) {
+      if (!parts[1].endsWith(".md")) {
+        throw Error(`expected .md path: ${srcPath}`);
+      }
+      return link.to(`${dstPostDir}/${removeExt(parts[1])}/index.html`);
+    }
+    if (parts.length > 1 && parts[0] === srcAssetDir) {
+      const path = join(...parts.slice(1));
+      const dest = join(destDir, path);
+      mkdirSync(dirname(dest), { recursive: true });
+      rmSync(dest);
+      symlinkSync(resolve(srcPath), dest);
+      return link.to(path);
+    }
   });
   const html = await renderHtml(path, input, { template, markdown, link });
   hlsvc.close();
@@ -302,19 +317,10 @@ function getSummary(body: string): string {
   return match[1];
 }
 
-// Returns the asset paths linked (not embedded) by a post body.
-function getLinkedAssets(body: string): string[] {
-  return Array.from(body.matchAll(/\]\((.+?\.jpg)\)/g), (src) => {
-    const url = assetUrl(join(srcPostDir, src[1]));
-    if (!url) throw Error(`invalid asset path: ${src[1]}`);
-    return `$(${destDirVar})/` + url;
-  });
-}
-
 // Returns a line to write in a depfile.
-function depLine(path: string, deps: string[], orderOnly?: "|") {
+function depLine(path: string, deps: string[]) {
   if (deps.length === 0) return "";
-  return `$(${destDirVar})/${path}:${orderOnly ?? ""} ${deps.join(" ")}\n`;
+  return `$(${destDirVar})/${path}: ${deps.join(" ")}\n`;
 }
 
 // Postprocesses HTML output.
