@@ -2,7 +2,7 @@
 title: Cracking the Caesar cipher
 description: How to crack a Caesar cipher using frequency analysis
 category: Algorithms
-date: 2015-03-30
+date: 2015-03-30T15:52:37-04:00
 ---
 
 Whenever I play around with a new language, I always start by writing a program to crack a Caesar cipher. This problem is perfect for getting a sense of what it's like to work in a given language. It's significantly more interesting than "Hello, World!" but it only takes about a hundred lines to write -- in fact, the line count by itself is a good indication of how expressive the language is.

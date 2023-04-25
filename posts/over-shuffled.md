@@ -2,7 +2,7 @@
 title: An over-shuffled deck
 description: Beware the nonuniform distribution!
 category: Algorithms
-date: 2015-04-10
+date: 2015-04-10T16:42:00-04:00
 ---
 
 How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle -- the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?

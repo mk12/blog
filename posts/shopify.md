@@ -2,7 +2,7 @@
 title: Shopify co-op reflection
 description: Belated thoughts on my first internship
 category: Life
-date: 2023-04-17
+date: 2018-03-04T14:40:00-05:00
 draft: true
 ---
 
