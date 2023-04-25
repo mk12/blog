@@ -6,14 +6,9 @@ I host it at https://mitchellkember.com/blog.
 
 ## Usage
 
-TODO
-<!-- Run `make serve` to serve and live reload the blog. This requires a creating a `fonts` directory or symlink in the repository root containing the WOFF2 fonts.
+Run `make` to build the site.
 
-Run `make DESTDIR=/path/to/website FONT_URL=/path/to/fonts` to build the blog. `DESTDIR` is a fileystem path and `FONT_URL` is a relative URL where WOFF2 fonts are found in the final website. This assumes the blog is embedded in a larger website. -->
-
-## Dependencies
-
-TODO
+Run `make serve` to serve it locally.
 
 ## Fonts
 
