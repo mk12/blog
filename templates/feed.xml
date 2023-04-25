@@ -10,10 +10,10 @@
     <item>
       <title>{{ title }}</title>
       <link>{{ url }}</link>
+      <guid>{{ url }}</guid>
       {{ if date }}
       <pubDate>{{ . }}</pubDate>
       {{ end }}
-      <guid>{{ url }}</guid>
       <description><![CDATA[{{ description }}]]></description>
     </item>
     {{ end }}

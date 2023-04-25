@@ -201,8 +201,7 @@ function renderArchive(posts: Post[], { template, markdown, link }: Tools) {
       ([year, posts]) => ({
         name: year,
         pages: posts.map(({ path, title, date }) => ({
-          // TODO: Remove period after month.
-          date: fmtDate(date, "d mmm. yyyy"),
+          date: fmtDate(date, "d mmm yyyy"),
           href: link.to(path),
           title: markdown.renderInline(title),
         })),
@@ -221,8 +220,7 @@ function renderCategories(posts: Post[], { template, markdown, link }: Tools) {
       .map(([category, posts]) => ({
         name: category,
         pages: posts.map(({ path, title, date }) => ({
-          // TODO: Remove period after month.
-          date: fmtDate(date, "d mmm. yyyy"),
+          date: fmtDate(date, "d mmm yyyy"),
           href: link.to(path),
           title: markdown.renderInline(title),
         })),
