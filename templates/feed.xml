@@ -9,8 +9,10 @@
     {{ range posts }}
     <item>
       <title>{{ title }}</title>
-      <link>{{ url }}</link>
-      <guid>{{ url }}</guid>
+      <guid>{{ guid }}</guid>
+      {{ if link }}
+      <link>{{ . }}</link>
+      {{ end }}
       {{ if date }}
       <pubDate>{{ . }}</pubDate>
       {{ end }}

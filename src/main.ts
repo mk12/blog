@@ -179,7 +179,9 @@ function renderRssFeed(posts: Post[], { template, markdown, link }: Tools) {
   const allPosts = Promise.all(
     posts.map(async ({ path, title, date, summary }) => ({
       title: markdown.renderInline(title),
-      url: link.to(path),
+      // TODO: pass this in env var.
+      link: "https://mitchellkember.com" + link.to(path),
+      guid: link.to(path),
       date: date === "DRAFT" ? false : new Date(date).toUTCString(),
       description: await markdown.render(summary, srcPostDir),
     }))
