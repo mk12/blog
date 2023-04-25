@@ -73,7 +73,12 @@ Finally, before rounding and storing the bytes, we need to apply _gamma correcti
 
 With Luminosity, I used the ubiquitous sRGB color space. The transformation from linear to sRGB is almost a gamma function, but not quite because it includes a linear part at the beginning to avoid having infinite slope at the origin. We can define it as a piecewise function:
 
-$$f(c)=\begin{cases}12.92c & \text{if}\;c \le 0.0031308;\\ 1.055c^{\frac1{2.4}}-0.055 & \text{otherwise.} \end{cases}$$
+$$
+f(c)=\begin{cases}
+12.92c & \text{if}\;c \le 0.0031308;\\
+1.055c^{\frac1{2.4}}-0.055 & \text{otherwise.}
+\end{cases}
+$$
 
 # Conclusion
 
