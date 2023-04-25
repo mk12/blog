@@ -7,13 +7,13 @@ const metadata_separator: []const u8 = "---";
 const draft_date: u64 = std.math.maxInt(u64);
 
 const Post = struct {
-    date: u64,
+    date: []const u8,
     json: []const u8,
 };
 
 fn descPostDate(context: void, lhs: Post, rhs: Post) bool {
     _ = context;
-    return lhs.date > rhs.date;
+    return std.mem.order(u8, lhs.date, rhs.date) == .gt;
 }
 
 const max_posts: usize = 100;
@@ -49,22 +49,21 @@ pub fn main() !void {
         const first_line = try reader.readUntilDelimiterOrEof(&line_buffer, '\n');
         if (first_line == null or !std.mem.eql(u8, first_line.?, metadata_separator))
             fail("{s}/{s}: missing '{s}'", .{ posts_dir, name, metadata_separator });
-        var date: ?u64 = null;
+        var date: ?[]const u8 = null;
         while (try reader.readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
             if (std.mem.eql(u8, line, metadata_separator)) break;
             const idx = std.mem.indexOf(u8, line, ": ") orelse
                 fail("{s}/{s}: '{s}': missing colon", .{ posts_dir, name, line });
             const key = line[0..idx];
             const value = line[idx + 2 ..];
+            const prev_pos = scratch.pos;
             try std.fmt.format(scratch_writer, ",\"{s}\": \"{s}\"", .{ key, value });
             if (std.mem.eql(u8, key, "date")) {
                 if (std.mem.eql(u8, value, "DRAFT")) {
-                    date = draft_date;
                     if (!include_drafts) continue :file_loop;
-                } else {
-                    const digits = value[0..4] ++ value[5..7] ++ value[8..10];
-                    date = std.mem.readIntBig(u64, digits);
                 }
+                const value_pos = prev_pos + 2 + key.len + 4;
+                date = scratch_buffer[value_pos .. value_pos + value.len];
             }
         }
         try scratch_writer.writeAll(",\"summary\": \"");

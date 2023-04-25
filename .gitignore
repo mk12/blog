@@ -1,6 +1,8 @@
 /public
 /fonts
 /build
+zig-cache
+zig-out
 node_modules
 *.sock
 *.fifo

@@ -106,6 +106,7 @@ function compile(name: string, source: string): [Template, Deps] {
       if (kind === "include") {
         const match = variable.match(/^"(.*)"$/);
         if (!match) throw err("invalid include path");
+        textCmd.text += whitespace;
         const path = match[1];
         const cmd: Command = { kind };
         template.cmds.push(cmd);
@@ -146,7 +147,7 @@ function execute(prog: Template, ctx: ResolvedContext, out: Output): void {
   for (const def of prog.defs) {
     const out = { str: "" };
     execute(def.body, ctx, out);
-    ctx[def.variable] = out.str;
+    ctx[def.variable] = out.str.trim();
   }
   for (const cmd of prog.cmds) {
     if (cmd.kind === "text") {

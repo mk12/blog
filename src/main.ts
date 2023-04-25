@@ -1,66 +1,57 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 import dateFormat from "dateformat";
-import { mkdirSync, rmSync, symlinkSync } from "fs";
-import { readdir } from "fs/promises";
+import { mkdirSync, symlinkSync } from "fs";
 import { basename, dirname, join, relative, resolve } from "path";
 import { Writable } from "stream";
 import { HlsvcClient } from "./hlsvc";
 import { MarkdownRenderer } from "./markdown";
 import { TemplateRenderer } from "./template";
-import { Writer, changeExt, eat, groupBy, removeExt } from "./util";
+import { Writer, groupBy, removeExt } from "./util";
 
 function usage(out: Writable) {
   const program = basename(process.argv[1]);
   out.write(
-    `Usage: bun run ${program} OUT_FILE
+    `Usage: bun run ${program} DIR FILE
 
-Generate a file for the blog
-
-- If OUT_FILE is build/prep.d, also writes various files in build/
-- If OUT_FILE is $DESTDIR/foo/bar.html, also writes build/foo/bar.d
+Generate DIR/FILE and its depfile DIR/FILE.d
 `
   );
 }
 
 async function main() {
-  const arg = process.argv[2];
-  const writer = new Writer();
-  if (arg === undefined) {
+  const args = process.argv.slice(2);
+  if (args.includes("-h") || args.includes("--help")) {
+    usage(process.stdout);
+    return;
+  }
+  if (args.length !== 2) {
     usage(process.stderr);
     process.exit(1);
-  } else if (arg === "-h" || arg === "--help") {
-    usage(process.stdout);
-  } else if (arg === prepFile) {
-    await genBuildFiles(writer);
-  } else {
-    await genHtmlFile(arg, writer);
   }
+  const [dir, file] = process.argv.slice(2);
+  const writer = new Writer();
+  await generate(dir, file, writer);
   await writer.wait();
 }
 
-const destDirVar = "DESTDIR";
 const srcPostDir = "posts";
 const dstPostDir = "post";
 const srcAssetDir = "assets";
-const buildDir = "build";
-const prepFile = join(buildDir, "prep.d");
-const postsFile = join(buildDir, "posts.json");
+const postsFile = join(process.env["DESTDIR"]!, ".posts.json");
 const slug = (path: string) => basename(dirname(path));
 const srcFile = (path: string) => join(srcPostDir, slug(path) + ".md");
-const ctxFile = (path: string) => join(buildDir, changeExt(path, ".json"));
-const depFile = (path: string) => join(buildDir, path + ".d");
 
 // YAML metadata from the top of a Markdown file.
 interface Metadata {
   title: string;
   description: string;
   category: string;
-  date: YmdDate;
+  date: Rfc3339Date | "DRAFT";
 }
 
-// A date in YYYY-MM-DD format.
-type YmdDate = string;
+// A timestamp that remembers the local date for its timezone.
+type Rfc3339Date = string;
 
 // Information about a post stored in posts.json.
 interface Post extends Metadata {
@@ -93,43 +84,9 @@ interface PostWithBody extends Metadata {
 // All the information needed to render a post page.
 interface PostWithContext extends PostWithBody, Context {}
 
-// Generates files in the build directory that prepare for a full build.
-async function genBuildFiles(writer: Writer) {
-  const filenames = await readdir(srcPostDir);
-  // let extraDeps = "";
-  const posts: Post[] = await Promise.all(
-    filenames
-      .filter((n) => n.endsWith(".md"))
-      .map(async (name) => {
-        const srcPath = join(srcPostDir, name);
-        const dstPath = join(dstPostDir, removeExt(name), "index.html");
-        const { body, ...meta } = parsePost(await Bun.file(srcPath).text());
-        // extraDeps += depLine(dstPath, getLinkedAssets(body), "|");
-        return { path: dstPath, summary: getSummary(body), ...meta };
-      })
-  );
-  // Write posts sorted in reverse chronological order.
-  posts.sort((a, b) => b.date.localeCompare(a.date));
-  writer.writeIfChanged(postsFile, JSON.stringify(posts));
-  // Write context files for each post.
-  posts.forEach(({ path }, i) => {
-    const ctx: Context = {
-      newer: posts[i - 1]?.path,
-      older: posts[i + 1]?.path,
-    };
-    writer.writeIfChanged(ctxFile(path), JSON.stringify(ctx));
-  });
-  // Write extra discovered deps in the prep file.
-  // writer.write(prepFile, extraDeps);
-  writer.write(prepFile, "");
-}
-
 // Generates an HTML file in $DESTDIR.
-async function genHtmlFile(fullPath: string, writer: Writer) {
-  const destDir = process.env[destDirVar];
-  if (!destDir) throw Error(`$${destDirVar} is not set`);
-  const path = eat(fullPath, destDir + "/");
-  if (!path) throw Error(`invalid html file path: ${fullPath}`);
+async function generate(destDir: string, path: string, writer: Writer) {
+  const fullPath = join(destDir, path);
   const input = new InputReader();
   const template = new TemplateRenderer();
   const hlsvc = new HlsvcClient();
@@ -146,16 +103,19 @@ async function genHtmlFile(fullPath: string, writer: Writer) {
       const path = join(...parts.slice(1));
       const dest = join(destDir, path);
       mkdirSync(dirname(dest), { recursive: true });
-      rmSync(dest);
-      symlinkSync(resolve(srcPath), dest);
+      try {
+        symlinkSync(resolve(srcPath), dest);
+      } catch {
+        // Ignore.
+      }
       return link.to(path);
     }
   });
   const html = await renderHtml(path, input, { template, markdown, link });
   hlsvc.close();
   writer.write(fullPath, postprocess(html));
-  const deps = [input, template, markdown].flatMap((x) => x.deps());
-  writer.write(depFile(path), depLine(path, deps));
+  const deps = [input, template, markdown].flatMap((x) => x.deps()).join(" ");
+  writer.write(fullPath + ".d", `${fullPath}: ${deps}`);
 }
 
 // Tools used to render HTML pages.
@@ -174,12 +134,18 @@ async function renderHtml(path: string, input: InputReader, tools: Tools) {
     homeUrl: process.env["HOME_URL"] ?? false,
     blogUrl: link.to("index.html"),
     styleUrl: link.to("style.css"),
-    analytics: analytics ? Bun.file(analytics).text() : false,
+    analytics: analytics
+      ? Bun.file(analytics)
+          .text()
+          .then((s) => s.trim())
+      : false,
     year: new Date().getFullYear().toString(),
   });
   switch (path) {
     case "index.html":
       return renderIndex(await input.posts(), tools);
+    case "index.xml":
+      return renderRssFeed(await input.posts(), tools);
     case "post/index.html":
       return renderArchive(await input.posts(), tools);
     case "categories/index.html":
@@ -190,34 +156,55 @@ async function renderHtml(path: string, input: InputReader, tools: Tools) {
 }
 
 // Renders the blog homepage.
-function renderIndex(posts: Post[], { template, markdown }: Tools) {
+function renderIndex(posts: Post[], { template, markdown, link }: Tools) {
   const recentPosts = Promise.all(
     posts.slice(0, 10).map(async ({ path, summary, title, date }) => ({
-      date: dateFormat(date, "dddd, d mmmm yyyy"),
-      href: path,
-      title,
-      summary: await markdown.render(summary),
+      date: fmtDate(date, "dddd, d mmmm yyyy"),
+      href: link.to(path),
+      title: markdown.renderInline(title),
+      summary: await markdown.render(summary, srcPostDir),
     }))
   );
   return template.render("templates/index.html", {
     title: "Mitchell Kember",
     math: recentPosts.then(() => markdown.encounteredMath),
     posts: recentPosts,
+    archiveUrl: link.to("post/index.html"),
+    categoriesUrl: link.to("categories/index.html"),
+  });
+}
+
+// Renders the RSS feed XML file.
+function renderRssFeed(posts: Post[], { template, markdown, link }: Tools) {
+  const allPosts = Promise.all(
+    posts.map(async ({ path, title, date, summary }) => ({
+      title: markdown.renderInline(title),
+      url: link.to(path),
+      date: date === "DRAFT" ? false : new Date(date).toUTCString(),
+      description: await markdown.render(summary, srcPostDir),
+    }))
+  );
+  return template.render("templates/feed.xml", {
+    title: "Mitchell Kember",
+    feedUrl: link.to("index.xml"),
+    lastBuildDate: new Date().toUTCString(),
+    posts: allPosts,
   });
 }
 
 // Renders the blog post archive.
-function renderArchive(posts: Post[], { template, link }: Tools) {
+function renderArchive(posts: Post[], { template, markdown, link }: Tools) {
   return template.render("templates/listing.html", {
     title: "Post Archive",
     math: false,
-    groups: groupBy(posts, (post) => dateFormat(post.date, "yyyy")).map(
+    groups: groupBy(posts, (post) => fmtDate(post.date, "yyyy")).map(
       ([year, posts]) => ({
         name: year,
         pages: posts.map(({ path, title, date }) => ({
-          date: dateFormat(date, "d mmm yyyy"),
+          // TODO: Remove period after month.
+          date: fmtDate(date, "d mmm. yyyy"),
           href: link.to(path),
-          title,
+          title: markdown.renderInline(title),
         })),
       })
     ),
@@ -225,20 +212,21 @@ function renderArchive(posts: Post[], { template, link }: Tools) {
 }
 
 // Renders the blog post categories page.
-function renderCategories(posts: Post[], { template, link }: Tools) {
+function renderCategories(posts: Post[], { template, markdown, link }: Tools) {
   return template.render("templates/listing.html", {
     title: "Categories",
     math: false,
-    groups: groupBy(posts, (post) => post.category).map(
-      ([category, posts]) => ({
+    groups: groupBy(posts, (post) => post.category)
+      .sort(([c1], [c2]) => c1.localeCompare(c2))
+      .map(([category, posts]) => ({
         name: category,
         pages: posts.map(({ path, title, date }) => ({
-          date: dateFormat(date, "d mmm yyyy"),
+          // TODO: Remove period after month.
+          date: fmtDate(date, "d mmm. yyyy"),
           href: link.to(path),
-          title,
+          title: markdown.renderInline(title),
         })),
-      })
-    ),
+      })),
   });
 }
 
@@ -251,7 +239,7 @@ function renderPost(
   return template.render("templates/post.html", {
     title: markdown.renderInline(post.title),
     math: html.then(() => markdown.encounteredMath),
-    date: dateFormat(post.date, "dddd, d mmmm yyyy"),
+    date: fmtDate(post.date, "dddd, d mmmm yyyy"),
     description: markdown.renderInline(post.description),
     article: html,
     older: link.to(post.older ?? "post/index.html"),
@@ -273,12 +261,18 @@ class InputReader {
   }
 
   async post(path: string): Promise<PostWithContext> {
-    const [markdown, json] = await Promise.all([
+    const [markdown, postsJson] = await Promise.all([
       this.read(srcFile(path)),
-      this.read(ctxFile(path)),
+      this.read(postsFile),
     ]);
     const post = parsePost(markdown);
-    const ctx: Context = JSON.parse(json);
+    const posts: Post[] = JSON.parse(postsJson);
+    const i = posts.findIndex((p) => p.path === path);
+    if (i < 0) throw Error(`${path}: not found in ${postsFile}`);
+    const ctx = {
+      newer: posts[i - 1]?.path,
+      older: posts[i + 1]?.path,
+    };
     return { ...post, ...ctx };
   }
 
@@ -296,6 +290,12 @@ class LinkMaker {
   }
 
   to(path: string) {
+    const base = process.env["BASE_URL"];
+    if (base) {
+      if (basename(path) === "index.html")
+        return join(base, dirname(path)) + "/";
+      return join(base, path);
+    }
     return relative(this.dir, path);
   }
 }
@@ -310,17 +310,12 @@ function parsePost(content: string): PostWithBody {
   return { ...JSON.parse("{" + fields + "}"), body };
 }
 
-// Returns the first paragraph of a post body.
-function getSummary(body: string): string {
-  const match = body.match(/^\s*(.*)/);
-  if (!match) throw Error("post has no summary paragraph");
-  return match[1];
-}
-
-// Returns a line to write in a depfile.
-function depLine(path: string, deps: string[]) {
-  if (deps.length === 0) return "";
-  return `$(${destDirVar})/${path}: ${deps.join(" ")}\n`;
+// Formats a date using dateFormat.
+function fmtDate(date: Rfc3339Date | "DRAFT", format: string): string {
+  if (date === "DRAFT") {
+    return "DRAFT";
+  }
+  return dateFormat(date.slice(0, "YYYY-MM-DD".length), format, /*utc=*/ true);
 }
 
 // Postprocesses HTML output.
