@@ -9,8 +9,8 @@
     {{ range posts }}
     <item>
       <title>{{ title }}</title>
-      <guid>{{ guid }}</guid>
-      {{ if link }}
+      {{ if url }}
+      <guid>{{ . }}</guid>
       <link>{{ . }}</link>
       {{ end }}
       {{ if date }}

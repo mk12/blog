@@ -16,7 +16,7 @@ Variables:
 	DESTDIR    Destination directory (default: $(default_destdir))
 	FONT_URL   WOFF2 font directory URL (default: $(default_font_url))
 	PORT       Port to serve on (default: $(default_port))
-	BASE_URL   Use root-relative URLs with this base
+	BASE_URL   Base URL where the blog is hosted
 	HOME_URL   Homepage URL to link to when embedding in a larger site
 	ANALYTICS  HTML file to include for analytics
 endef

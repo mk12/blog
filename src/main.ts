@@ -180,15 +180,14 @@ function renderRssFeed(posts: Post[], { template, markdown, link }: Tools) {
     posts.map(async ({ path, title, date, summary }) => ({
       title: markdown.renderInline(title),
       // TODO: pass this in env var.
-      link: "https://mitchellkember.com" + link.to(path),
-      guid: link.to(path),
+      url: link.to(path, "absolute"),
       date: date === "DRAFT" ? false : new Date(date).toUTCString(),
       description: await markdown.render(summary, srcPostDir),
     }))
   );
   return template.render("templates/feed.xml", {
     title: "Mitchell Kember",
-    feedUrl: link.to("index.xml"),
+    feedUrl: link.to("index.xml", "absolute"),
     lastBuildDate: new Date().toUTCString(),
     posts: allPosts,
   });
@@ -289,12 +288,14 @@ class LinkMaker {
     this.dir = dirname(from);
   }
 
-  to(path: string) {
+  to(path: string, kind?: "absolute") {
     const base = process.env["BASE_URL"];
     if (base) {
-      if (basename(path) === "index.html")
-        return join(base, dirname(path)) + "/";
-      return join(base, path);
+      const baseUrl = new URL(base);
+      const prefix = kind === "absolute" ? baseUrl.href : baseUrl.pathname;
+      if (path === "index.html") return prefix + "/";
+      if (basename(path) === "index.html") return `${prefix}/${dirname(path)}/`;
+      return `${prefix}/${path}`;
     }
     return relative(this.dir, path);
   }
