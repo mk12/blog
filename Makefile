@@ -51,14 +51,14 @@ help:
 check: all fmt lint validate
 
 serve:
-	bun run src/serve.ts
+	bun run bun-src/serve.ts
 
 fmt:
-	bunx prettier -w src/*.ts
+	bunx prettier -w bun-src/*.ts
 	go fmt -C hlsvc
 
 lint:
-	bunx eslint --fix src/*.ts
+	bunx eslint --fix bun-src/*.ts
 	go mod tidy -C hlsvc
 	go vet -C hlsvc
 	go fix -C hlsvc
@@ -75,20 +75,12 @@ clobber: clean
 $(html): | $(css)
 $(post): | hlsvc.sock
 
-$(all): $(DESTDIR)/%: src/main.ts $(wildcard src/*.ts)
+$(all): $(DESTDIR)/%: bun-src/main.ts $(wildcard bun-src/*.ts)
 	bun run $< $(DESTDIR) $*
 
 $(css): $(src_css)
 	mkdir -p $(dir $@)
 	sed 's#$$FONT_URL#$(FONT_URL)#' $< > $@
-
-# CFLAGS := -std=c11 -W -Wall -O3
-
-# build/post.mk: build/list-posts
-# 	$< > $@
-
-# build/list-posts: list-posts.c
-# 	$(CC) $(CFLAGS) -o $@ $^
 
 build/hlsvc: hlsvc/main.go
 	cd $(dir $<) && go build -o ../$@
