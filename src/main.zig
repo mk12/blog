@@ -61,14 +61,14 @@ pub fn main() !void {
 }
 
 const Timer = struct {
-    timer: std.time.Timer,
+    inner: std.time.Timer,
 
     fn start() !Timer {
-        return .{ .timer = try std.time.Timer.start() };
+        return .{ .inner = try std.time.Timer.start() };
     }
 
-    fn log(self: *Timer, comptime format: []const u8, args: anytype) void {
-        const nanos = self.timer.lap();
+    fn log(timer: *Timer, comptime format: []const u8, args: anytype) void {
+        const nanos = timer.inner.lap();
         std.log.info(format ++ " in {} µs", args ++ .{nanos / 1000});
     }
 };
@@ -125,7 +125,7 @@ const source_post_dir = "posts";
 const template_dir = "templates";
 const max_file_size = 1024 * 1024;
 
-fn readPosts(allocator: Allocator) ![]Post {
+fn readPosts(allocator: Allocator) ![]const Post {
     var posts = std.ArrayList(Post).init(allocator);
     var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
     defer iterable.close();
@@ -135,6 +135,7 @@ fn readPosts(allocator: Allocator) ![]Post {
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
         try posts.append(try Post.parse(
+            allocator,
             try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name }),
             try file.readToEndAlloc(allocator, max_file_size),
         ));
@@ -149,11 +150,17 @@ fn compileTemplates(allocator: Allocator) !std.StringHashMap(Template) {
     while (try iter.next()) |entry| {
         if (entry.name[0] == '.') continue;
         const path = try fs.path.join(allocator, &[_][]const u8{ template_dir, entry.name });
+        _ = path;
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
         const content = try file.readToEndAlloc(allocator, max_file_size);
-        var scanner = Scanner{ .filename = path, .source = content };
-        _ = scanner;
+        _ = content;
+        // var scanner = Scanner{ .filename = path, .source = content };
+        // _ = scanner;
     }
     return std.StringHashMap(Template).init(allocator);
+}
+
+test {
+    _ = std.testing.refAllDecls(@This());
 }

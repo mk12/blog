@@ -5,6 +5,13 @@
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - fix heading levels https://marked.js.org/using_pro#walk-tokens
 - server that uses websocket so that it can force refresh after watch + make
++ Zig changes to scanner
+    x non fallable. user of scanner reports errors. Scanner's job is mainly keeping track of line/col
+        x no, it actually is useful for it to help with errors too
+        x and storing in buffer is simpler than parameterizing on the writer
+    x based on reader, not assuming bytes
+        x no, that's not the model I need
+    + be able to get position to use in error, or return it with token like Go scanner
 + drafts
 + link between posts, use .md filesystem path
 + ugly duplicate math in lindenmayer

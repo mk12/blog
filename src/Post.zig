@@ -1,12 +1,12 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const fmt = std.fmt;
 const testing = std.testing;
 const Scanner = @import("Scanner.zig");
 const Post = @This();
 
-filename: []const u8,
 source: []const u8,
 slug: []const u8,
 metadata: Metadata,
@@ -24,11 +24,10 @@ const Status = union(enum) {
     published: Date,
 };
 
-pub fn parse(filename: []const u8, source: []const u8) !Post {
-    var scanner = Scanner{ .filename = filename, .source = source };
+pub fn parse(allocator: Allocator, filename: []const u8, source: []const u8) !Post {
+    var scanner = Scanner.init(allocator, filename, source);
     const metadata = try parseMetadata(&scanner);
     return Post{
-        .filename = filename,
         .source = source,
         .slug = std.fs.path.stem(filename),
         .metadata = metadata,
@@ -47,8 +46,10 @@ fn parseMetadata(scanner: *Scanner) !Metadata {
     metadata.status = blk: {
         if (scanner.peek()) |c| if (c == '-') break :blk Status.draft;
         try scanner.expect("date: ");
+        const date_position = scanner.position;
         const date_str = try scanner.until('\n');
-        const date = parseDate(date_str) catch |err| return scanner.fail(
+        const date = parseDate(date_str) catch |err| return scanner.failAt(
+            date_position,
             "\"{}\": invalid date: {s}",
             .{ std.zig.fmtEscapes(date_str), @errorName(err) },
         );
@@ -67,7 +68,8 @@ test "parseMetadata draft" {
         \\---
         \\
     ;
-    var scanner = Scanner{ .filename = "test.md", .source = source };
+    var scanner = Scanner.init(std.testing.allocator, "test.md", source);
+    defer scanner.deinit();
     try testing.expectEqualDeep(
         Metadata{
             .title = "The title",
@@ -89,7 +91,8 @@ test "parseMetadata published" {
         \\---
         \\
     ;
-    var scanner = Scanner{ .filename = "test.md", .source = source };
+    var scanner = Scanner.init(std.testing.allocator, "test.md", source);
+    defer scanner.deinit();
     try testing.expectEqualDeep(
         Metadata{
             .title = "The title",
@@ -101,6 +104,39 @@ test "parseMetadata published" {
     );
 }
 
+test "parseMetadata missing fields" {
+    const source =
+        \\---
+        \\title: The title
+        \\---
+        \\
+    ;
+    var scanner = Scanner.init(std.testing.allocator, "test.md", source);
+    defer scanner.deinit();
+    try testing.expectError(error.ScanError, parseMetadata(&scanner));
+    try testing.expectEqualStrings(
+        \\test.md:3:1: expected "description: ", got "---\n"
+    , scanner.error_message.?);
+}
+
+// test "parseMetadata invalid date" {
+//     const source =
+//         \\---
+//         \\title: The title
+//         \\description: The description
+//         \\category: Category
+//         \\date: 2023-04-29?15:28:50-07:00
+//         \\---
+//         \\
+//     ;
+//     var scanner = Scanner.init(std.testing.allocator, "test.md", source);
+//     defer scanner.deinit();
+//     try testing.expectError(error.ScanError, parseMetadata(&scanner));
+//     try testing.expectEqualStrings(
+//         \\test.md:3:1: expected "description: ", got "---\n"
+//     , scanner.error_message.?);
+// }
+
 const Date = struct {
     year: u16,
     month: u8,
@@ -111,10 +147,15 @@ const Date = struct {
     tz_offset_h: i8,
 };
 
+// fn parseDate2(scanner: *Scanner) !Date {
+
+// }
+
 fn parseDate(str: []const u8) !Date {
     if (str.len != "0000-00-00T00:00:00-00:00".len) return error.DateWrongLength;
     inline for ([_]usize{ 4, 7 }) |i| if (str[i] != '-') return error.DateMissingHyphen;
     inline for ([_]usize{ 13, 16, 22 }) |i| if (str[i] != ':') return error.DateMissingColon;
+    if (str[10] != 'T') return error.DateExpectedT;
     if (!std.mem.eql(u8, str[23..], "00")) return error.DateInvalidTzMinute;
     return Date{
         .year = fmt.parseUnsigned(u16, str[0..4], 10) catch return error.DateInvalidYear,
