@@ -7,7 +7,7 @@ const process = std.process;
 const Allocator = mem.Allocator;
 const Post = @import("Post.zig");
 const Scanner = @import("Scanner.zig");
-const Template = @import("template.zig").Template;
+const Template = @import("Template.zig");
 
 pub const std_options = struct {
     pub const log_level = .info;
@@ -43,15 +43,15 @@ pub fn main() !void {
     const args = try parseArguments();
     const env = parseEnvironment();
     _ = env;
-    errdefer |err| if (err == error.LoggedScanError) process.exit(1);
+    errdefer |err| if (err == error.LoggedFatalError) process.exit(1);
 
     var timer = try Timer.start();
 
     var posts = try readPosts(allocator);
-    timer.log("read {} posts", .{posts.len});
+    timer.log("read {} posts", .{posts.items.len});
 
-    var templates = try compileTemplates(allocator);
-    timer.log("compiled {} templates", .{templates.count()});
+    var templates = try readTemplates(allocator);
+    timer.log("read {} templates", .{templates.count()});
 
     try fs.cwd().deleteTree(args.destdir);
     timer.log("deleted {s}", .{args.destdir});
@@ -125,7 +125,7 @@ const source_post_dir = "posts";
 const template_dir = "templates";
 const max_file_size = 1024 * 1024;
 
-fn readPosts(allocator: Allocator) ![]const Post {
+fn readPosts(allocator: Allocator) !std.ArrayList(Post) {
     var posts = std.ArrayList(Post).init(allocator);
     var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
     defer iterable.close();
@@ -134,16 +134,23 @@ fn readPosts(allocator: Allocator) ![]const Post {
         if (entry.name[0] == '.') continue;
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
-        try posts.append(try Post.parse(
-            allocator,
-            try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name }),
-            try file.readToEndAlloc(allocator, max_file_size),
-        ));
+        const source = try file.readToEndAlloc(allocator, max_file_size);
+        var scanner = Scanner.init(allocator, source);
+        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name });
+        const post = Post.parse(&scanner) catch |err| switch (err) {
+            error.ScanError => {
+                std.log.err("{s}", .{scanner.error_message.?});
+                return error.LoggedFatalError;
+            },
+            else => return err,
+        };
+        try posts.append(post);
     }
-    return posts.items;
+    return posts;
 }
 
-fn compileTemplates(allocator: Allocator) !std.StringHashMap(Template) {
+fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
+    var templates = std.StringHashMap(Template).init(allocator);
     var iterable = try fs.cwd().openIterableDir(template_dir, .{});
     defer iterable.close();
     var iter = iterable.iterate();
@@ -153,12 +160,20 @@ fn compileTemplates(allocator: Allocator) !std.StringHashMap(Template) {
         _ = path;
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
-        const content = try file.readToEndAlloc(allocator, max_file_size);
-        _ = content;
-        // var scanner = Scanner{ .filename = path, .source = content };
-        // _ = scanner;
+        const source = try file.readToEndAlloc(allocator, max_file_size);
+        var scanner = Scanner.init(allocator, source);
+        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name });
+        const template = Template.parse(&scanner) catch |err| switch (err) {
+            error.ScanError => {
+                std.log.err("{s}", .{scanner.error_message.?});
+                return error.LoggedFatalError;
+            },
+            else => return err,
+        };
+        const key = try allocator.dupe(u8, entry.name);
+        try templates.put(key, template);
     }
-    return std.StringHashMap(Template).init(allocator);
+    return templates;
 }
 
 test {
