@@ -163,7 +163,7 @@ fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
         const source = try file.readToEndAlloc(allocator, max_file_size);
         var scanner = Scanner.init(allocator, source);
         scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name });
-        const template = Template.parse(&scanner) catch |err| switch (err) {
+        const template = Template.parse(allocator, &scanner) catch |err| switch (err) {
             error.ScanError => {
                 std.log.err("{s}", .{scanner.error_message.?});
                 return error.LoggedFatalError;

@@ -14,31 +14,52 @@ minute: u8,
 second: u8,
 tz_offset_h: i8,
 
+/// Parses a date from a restricted subset of RFC-3339.
 pub fn parse(scanner: *Scanner) !Date {
     var date: Date = undefined;
-    date.year = try field(scanner, u16, "year", 4);
-    try scanner.expect("-");
-    date.month = try field(scanner, u8, "month", 2);
-    try scanner.expect("-");
-    date.day = try field(scanner, u8, "day", 2);
-    try scanner.expect("T");
-    date.hour = try field(scanner, u8, "hour", 2);
-    try scanner.expect(":");
-    date.minute = try field(scanner, u8, "minute", 2);
-    try scanner.expect(":");
-    date.second = try field(scanner, u8, "second", 2);
-    date.tz_offset_h = try field(scanner, i8, "timezone hour offset", 3);
-    try scanner.expect(":00");
+    try parseField(scanner, &date.year, 4, "year");
+    try scanner.consume("-");
+    try parseField(scanner, &date.month, 2, "month");
+    try scanner.consume("-");
+    try parseField(scanner, &date.day, 2, "day");
+    try scanner.consume("T");
+    try parseField(scanner, &date.hour, 2, "hour");
+    try scanner.consume(":");
+    try parseField(scanner, &date.minute, 2, "minute");
+    try scanner.consume(":");
+    try parseField(scanner, &date.second, 2, "second");
+    try parseField(scanner, &date.tz_offset_h, 3, "timezone hour offset");
+    try scanner.consume(":00");
     return date;
 }
 
-fn field(scanner: *Scanner, comptime T: type, name: []const u8, length: usize) !T {
-    const token = try scanner.consumeBytes(length);
+fn parseField(scanner: *Scanner, field_ptr: anytype, length: usize, name: []const u8) !void {
+    const T = @typeInfo(@TypeOf(field_ptr)).Pointer.child;
+    const span = try scanner.consumeFixed(length);
     const parseNumber = switch (@typeInfo(T).Int.signedness) {
         .signed => fmt.parseInt,
         .unsigned => fmt.parseUnsigned,
     };
-    return parseNumber(T, token.text, 10) catch scanner.failOn(token, "invalid {s}", .{name});
+    field_ptr.* = parseNumber(T, span.text, 10) catch
+        return scanner.failOn(span, "invalid {s}", .{name});
+}
+
+/// Parses a date at comptime.
+pub fn from(comptime string: []const u8) Date {
+    var scanner = Scanner.init(null, string);
+    return parse(&scanner) catch unreachable;
+}
+
+test "parse valid date" {
+    const source = "2023-04-29T10:06:12-07:00";
+    const expected = Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 };
+    var scanner = Scanner.init(testing.allocator, source);
+    defer scanner.deinit();
+    const actual = parse(&scanner) catch {
+        std.debug.print("{s}\n", .{scanner.error_message.?});
+        return error.TestParseFailed;
+    };
+    try testing.expectEqual(expected, actual);
 }
 
 test "parse empty date" {
@@ -52,22 +73,6 @@ test "parse empty date" {
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
 }
 
-test "parse valid date" {
-    const source = "2023-04-29T10:06:12-07:00";
-    const expected = Date{
-        .year = 2023,
-        .month = 4,
-        .day = 29,
-        .hour = 10,
-        .minute = 6,
-        .second = 12,
-        .tz_offset_h = -7,
-    };
-    var scanner = Scanner.init(testing.allocator, source);
-    defer scanner.deinit();
-    try testing.expectEqual(expected, try parse(&scanner));
-}
-
 test "parse invalid date" {
     const source = "2023-04-29T1z:06:12-07:00";
     const expected_error =
@@ -77,4 +82,11 @@ test "parse invalid date" {
     defer scanner.deinit();
     try testing.expectError(error.ScanError, parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+}
+
+test "comptime from" {
+    comptime {
+        const expected = Date{ .year = 1900, .month = 1, .day = 2, .hour = 3, .minute = 4, .second = 5, .tz_offset_h = 6 };
+        try testing.expectEqual(expected, from("1900-01-02T03:04:05+06:00"));
+    }
 }
