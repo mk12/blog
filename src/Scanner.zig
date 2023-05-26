@@ -1,16 +1,16 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 const std = @import("std");
-const assert = std.debug.assert;
-const Allocator = std.mem.Allocator;
-const fmtEscapes = std.zig.fmtEscapes;
 const testing = std.testing;
+const assert = std.debug.assert;
+const fmtEscapes = std.zig.fmtEscapes;
+const Allocator = std.mem.Allocator;
 const Scanner = @This();
 
-allocator: ?Allocator,
 source: []const u8,
 pos: Position = .{},
 filename: []const u8 = "<input>",
+allocator: ?Allocator,
 error_message: ?[]const u8 = null,
 
 pub const Error = error{ScanError} || std.fmt.AllocPrintError;
@@ -159,15 +159,14 @@ test "single character" {
 }
 
 test "peek" {
-    var scanner = init(testing.allocator, "abc");
+    var scanner = init(testing.allocator, "ab");
     defer scanner.deinit();
     try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(1));
-    try testing.expectEqual(@as(?u8, 'c'), scanner.peek(2));
-    try testing.expectEqual(@as(?u8, null), scanner.peek(3));
+    try testing.expectEqual(@as(?u8, null), scanner.peek(2));
     _ = scanner.eat();
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(0));
-    try testing.expectEqual(@as(?u8, 'c'), scanner.peek(1));
+    try testing.expectEqual(@as(?u8, null), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
 }
 
