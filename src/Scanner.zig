@@ -77,13 +77,16 @@ pub fn consumeFixed(self: *Scanner, byte_count: usize) Error!Span {
     const start = self.pos;
     for (0..byte_count) |_|
         _ = self.eat() orelse return self.fail("unexpected EOF", .{});
-    return self.makeSpan(start, self.pos.offset);
+    return self.makeSpan(start, self.pos);
 }
 
 pub fn consumeUntil(self: *Scanner, end: u8) Error!Span {
     const start = self.pos;
-    while (self.eat()) |char|
-        if (char == end) return self.makeSpan(start, self.pos.offset - 1);
+    var prev_pos = self.pos;
+    while (self.eat()) |char| {
+        if (char == end) return self.makeSpan(start, prev_pos);
+        prev_pos = self.pos;
+    }
     return self.fail("unexpected EOF looking for \"{}\"", .{fmtEscapes(&[_]u8{end})});
 }
 
@@ -143,8 +146,8 @@ pub fn failAt(self: *Scanner, pos: Position, comptime format: []const u8, args: 
     return error.ScanError;
 }
 
-fn makeSpan(self: *const Scanner, start: Position, end: usize) Span {
-    return Span{ .pos = start, .text = self.source[start.offset..end] };
+pub fn makeSpan(self: *const Scanner, start: Position, end: Position) Span {
+    return Span{ .pos = start, .text = self.source[start.offset..end.offset] };
 }
 
 fn nextSlice(self: *const Scanner, length: usize) []const u8 {

@@ -4,6 +4,7 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 const Allocator = mem.Allocator;
+const EnumSet = std.enums.EnumSet;
 const Scanner = @import("Scanner.zig");
 const Template = @This();
 
@@ -20,28 +21,27 @@ const TokenValue = union(enum) {
     start: Variable,
     @"else": void,
     end: void,
-    eof: void,
 };
 
 const Token = struct {
-    pos: Scanner.Position,
+    span: Scanner.Span,
     value: TokenValue,
 };
 
-fn scan(scanner: *Scanner) !Token {
+fn scan(scanner: *Scanner) !?Token {
     const pos = scanner.pos;
     const brace: u8 = '{';
     while (true) {
         if (scanner.eof() or (scanner.peek(0) == brace and scanner.peek(1) == brace)) {
-            if (scanner.pos.offset != pos.offset) return .{
-                .pos = pos,
-                .value = .{ .text = scanner.source[pos.offset..scanner.pos.offset] },
-            };
+            if (scanner.pos.offset != pos.offset) {
+                const span = scanner.makeSpan(pos, scanner.pos);
+                return .{ .span = span, .value = .{ .text = span.text } };
+            }
             break;
         }
         _ = scanner.eat();
     }
-    if (scanner.eof()) return .{ .pos = pos, .value = .eof };
+    if (scanner.eof()) return null;
     try scanner.consume("{{");
     scanner.skipWhitespace();
     const word = try scanIdentifier(scanner);
@@ -84,7 +84,7 @@ fn scan(scanner: *Scanner) !Token {
         .end => .end,
     };
     try scanner.consume("}}");
-    return .{ .pos = pos, .value = value };
+    return .{ .span = scanner.makeSpan(pos, scanner.pos), .value = value };
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
@@ -103,38 +103,31 @@ fn scanIdentifier(scanner: *Scanner) ![]const u8 {
 
 test "scan empty string" {
     const source = "";
-    const expected = Token{
-        .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
-        .value = .eof,
-    };
     var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
-    try testing.expectEqual(expected, try scan(&scanner));
+    try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
 
 test "scan text" {
     const source = "foo\n";
-    const expected1 = Token{
-        .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
+    const expected = Token{
+        .span = Scanner.Span{
+            .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
+            .text = "foo\n",
+        },
         .value = .{ .text = "foo\n" },
-    };
-    const expected2 = Token{
-        .pos = Scanner.Position{ .offset = 4, .line = 2, .column = 1 },
-        .value = .eof,
     };
     var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
-    try testing.expectEqualDeep(expected1, try scan(&scanner));
-    try testing.expectEqualDeep(expected2, try scan(&scanner));
+    try testing.expectEqualDeep(@as(?Token, expected), try scan(&scanner));
+    try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
 
 fn scanTokenValues(allocator: Allocator, scanner: *Scanner) !std.ArrayList(TokenValue) {
     var list = std.ArrayList(TokenValue).init(allocator);
     errdefer list.deinit();
-    while (true) {
-        const token = try scan(scanner);
+    while (try scan(scanner)) |token| {
         try list.append(token.value);
-        if (token.value == TokenValue.eof) break;
     }
     return list;
 }
@@ -145,7 +138,6 @@ test "scan text and variable" {
         .{ .text = "Hello " },
         .{ .variable = "name" },
         .{ .text = "!" },
-        .eof,
     };
     var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
@@ -194,7 +186,6 @@ test "scan all kinds of tokens" {
         .end,
         .{ .text = try find("\n", source, 4) },
         .end,
-        .eof,
     };
     var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
@@ -208,28 +199,87 @@ const Definition = struct {
     body: Template,
 };
 
-const Command = struct {
-    pos: Scanner.Position,
-    value: union(enum) {
-        text: []const u8,
-        include: union(enum) {
-            unresolved: []const u8,
-            resolved: *const Template,
-        },
+const CommandValue = union(enum) {
+    text: []const u8,
+    include: union(enum) {
+        unresolved: []const u8,
+        resolved: *const Template,
+    },
+    variable: Variable,
+    control: struct {
         variable: Variable,
-        control: struct {
-            variable: Variable,
-            body: Template,
-            elseBody: Template,
-        },
+        body: Template,
+        else_body: ?Template,
     },
 };
 
+const Command = struct {
+    pos: Scanner.Position,
+    value: CommandValue,
+};
+
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Template {
-    _ = scanner;
+    return parseUntil(allocator, scanner, .eof);
+}
+
+fn parseUntil(allocator: Allocator, scanner: *Scanner, terminator: Terminator) !Template {
+    const terminators = EnumSet(Terminator).initOne(terminator);
+    const result = try parseUntilAny(allocator, scanner, terminators);
+    return result.template;
+}
+
+const Terminator = enum { end, @"else", eof };
+const Result = struct { template: Template, terminator: Terminator };
+
+fn parseUntilAny(
+    allocator: Allocator,
+    scanner: *Scanner,
+    allowed_terminators: EnumSet(Terminator),
+) Scanner.Error!Result {
+    _ = allowed_terminators;
     var definitions = std.ArrayList(Definition).init(allocator);
     errdefer definitions.deinit();
     var commands = std.ArrayList(Command).init(allocator);
     errdefer commands.deinit();
-    return Template{ .definitions = definitions, .commands = commands };
+    var terminator: Terminator = .eof;
+    while (try scan(scanner)) |token| {
+        const command_value: CommandValue = switch (token.value) {
+            .define => |variable| {
+                try definitions.append(.{
+                    .variable = variable,
+                    .body = try parseUntil(allocator, scanner, .end),
+                });
+                continue;
+            },
+            .@"else", .end => {
+                terminator = std.meta.stringToEnum(Terminator, @tagName(token.value)).?;
+                break;
+            },
+            .text => |text| .{ .text = text },
+            .include => |path| .{ .include = .{ .unresolved = path } },
+            .variable => |variable| .{ .variable = variable },
+            .start => |variable| blk: {
+                const result = try parseUntilAny(
+                    allocator,
+                    scanner,
+                    EnumSet(Terminator).init(.{ .end = true, .@"else" = true }),
+                );
+                break :blk .{
+                    .control = .{
+                        .variable = variable,
+                        .body = result.template,
+                        .else_body = switch (result.terminator) {
+                            .@"else" => try parseUntil(allocator, scanner, .end),
+                            else => null,
+                        },
+                    },
+                };
+            },
+        };
+        try commands.append(.{ .pos = token.span.pos, .value = command_value });
+    }
+    return Result{
+        .template = Template{ .definitions = definitions, .commands = commands },
+        .terminator = terminator,
+    };
 }
