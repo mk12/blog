@@ -67,6 +67,8 @@ pub fn eat(self: *Scanner) ?u8 {
 }
 
 pub fn consume(self: *Scanner, comptime expected: []const u8) Error!void {
+    comptime assert(expected.len > 0);
+    if (self.eof()) return self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(expected)});
     if (self.maybeConsume(expected)) return;
     const actual = self.nextSlice(expected.len);
     return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(expected), fmtEscapes(actual) });

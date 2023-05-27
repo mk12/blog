@@ -10,7 +10,6 @@ const Template = @This();
 
 definitions: std.ArrayList(Definition),
 commands: std.ArrayList(Command),
-
 const Variable = []const u8;
 
 const TokenValue = union(enum) {
@@ -24,7 +23,7 @@ const TokenValue = union(enum) {
 };
 
 const Token = struct {
-    span: Scanner.Span,
+    pos: Scanner.Position,
     value: TokenValue,
 };
 
@@ -35,7 +34,7 @@ fn scan(scanner: *Scanner) !?Token {
         if (scanner.eof() or (scanner.peek(0) == brace and scanner.peek(1) == brace)) {
             if (scanner.pos.offset != pos.offset) {
                 const span = scanner.makeSpan(pos, scanner.pos);
-                return .{ .span = span, .value = .{ .text = span.text } };
+                return .{ .pos = span.pos, .value = .{ .text = span.text } };
             }
             break;
         }
@@ -84,7 +83,7 @@ fn scan(scanner: *Scanner) !?Token {
         .end => .end,
     };
     try scanner.consume("}}");
-    return .{ .span = scanner.makeSpan(pos, scanner.pos), .value = value };
+    return .{ .pos = pos, .value = value };
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
@@ -111,10 +110,7 @@ test "scan empty string" {
 test "scan text" {
     const source = "foo\n";
     const expected = Token{
-        .span = Scanner.Span{
-            .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
-            .text = "foo\n",
-        },
+        .pos = .{ .offset = 0, .line = 1, .column = 1 },
         .value = .{ .text = "foo\n" },
     };
     var scanner = Scanner.initForTest(source, .{ .log_error = true });
@@ -161,7 +157,7 @@ fn find(substring: []const u8, source: []const u8, occurrence: usize) ![]const u
     return in_source;
 }
 
-test "scan all kinds of tokens" {
+test "scan all kinds of stuff" {
     const source =
         \\{{ include "base.html" }}
         \\{{ define var }}
@@ -218,6 +214,23 @@ const Command = struct {
     value: CommandValue,
 };
 
+pub fn deinit(self: *Template) void {
+    for (self.definitions.items) |*definition| {
+        definition.body.deinit();
+    }
+    for (self.commands.items) |*command| {
+        switch (command.value) {
+            .control => |*control| {
+                control.body.deinit();
+                if (control.else_body) |*body| body.deinit();
+            },
+            else => {},
+        }
+    }
+    self.definitions.deinit();
+    self.commands.deinit();
+}
+
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Template {
     return parseUntil(allocator, scanner, .eof);
 }
@@ -236,16 +249,17 @@ fn parseUntilAny(
     scanner: *Scanner,
     allowed_terminators: EnumSet(Terminator),
 ) Scanner.Error!Result {
-    _ = allowed_terminators;
-    var definitions = std.ArrayList(Definition).init(allocator);
-    errdefer definitions.deinit();
-    var commands = std.ArrayList(Command).init(allocator);
-    errdefer commands.deinit();
+    var template = Template{
+        .definitions = std.ArrayList(Definition).init(allocator),
+        .commands = std.ArrayList(Command).init(allocator),
+    };
+    errdefer template.deinit();
     var terminator: Terminator = .eof;
+    var terminator_pos: ?Scanner.Position = null;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
-                try definitions.append(.{
+                try template.definitions.append(.{
                     .variable = variable,
                     .body = try parseUntil(allocator, scanner, .end),
                 });
@@ -253,6 +267,7 @@ fn parseUntilAny(
             },
             .@"else", .end => {
                 terminator = std.meta.stringToEnum(Terminator, @tagName(token.value)).?;
+                terminator_pos = token.pos;
                 break;
             },
             .text => |text| .{ .text = text },
@@ -276,10 +291,137 @@ fn parseUntilAny(
                 };
             },
         };
-        try commands.append(.{ .pos = token.span.pos, .value = command_value });
+        try template.commands.append(.{ .pos = token.pos, .value = command_value });
+    }
+    if (!allowed_terminators.contains(terminator)) {
+        const pos = terminator_pos orelse scanner.pos;
+        return scanner.failAt(pos, "unexpected {s}", .{
+            switch (terminator) {
+                .end => "{{ end }}",
+                .@"else" => "{{ else }}",
+                .eof => "EOF",
+            },
+        });
     }
     return Result{
-        .template = Template{ .definitions = definitions, .commands = commands },
+        .template = template,
         .terminator = terminator,
     };
+}
+
+test "parse text" {
+    const source = "foo\n";
+    const expected_definitions = [_]Definition{};
+    const expected_commands = [_]Command{
+        .{
+            .pos = .{ .offset = 0, .line = 1, .column = 1 },
+            .value = .{ .text = try find("foo\n", source, 0) },
+        },
+    };
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    var template = try parse(testing.allocator, &scanner);
+    defer template.deinit();
+    try testing.expectEqualSlices(Definition, &expected_definitions, template.definitions.items);
+    try testing.expectEqualSlices(Command, &expected_commands, template.commands.items);
+}
+
+test "parse all kinds of stuff" {
+    const source =
+        \\{{ include "base.html" }}
+        \\{{ define var }}
+        \\    {{ for thing }}
+        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\    {{ end }}
+        \\{{ end }}
+    ;
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    var template = try parse(testing.allocator, &scanner);
+    defer template.deinit();
+
+    const definitions = template.definitions.items;
+    try testing.expectEqual(@as(usize, 1), definitions.len);
+    const define_var = definitions[0];
+    try testing.expectEqualStrings("var", define_var.variable);
+    try testing.expectEqual(@as(usize, 0), define_var.body.definitions.items.len);
+    const var_body = define_var.body.commands.items;
+    try testing.expectEqual(@as(usize, 3), var_body.len);
+    try testing.expectEqualStrings("\n    ", var_body[0].value.text);
+    const for_thing = var_body[1].value.control;
+    try testing.expectEqualStrings("\n", var_body[2].value.text);
+    try testing.expectEqualStrings("thing", for_thing.variable);
+    try testing.expectEqual(@as(usize, 0), for_thing.body.definitions.items.len);
+    const for_body = for_thing.body.commands.items;
+    try testing.expectEqual(@as(usize, 3), for_body.len);
+    try testing.expectEqual(@as(?Template, null), for_thing.else_body);
+    try testing.expectEqualStrings("\n        Value: ", for_body[0].value.text);
+    const if_bar = for_body[1].value.control;
+    try testing.expectEqualStrings(",\n    ", for_body[2].value.text);
+    try testing.expectEqual(@as(usize, 0), if_bar.body.definitions.items.len);
+    try testing.expectEqual(@as(usize, 0), if_bar.else_body.?.definitions.items.len);
+    const if_body = if_bar.body.commands.items;
+    try testing.expectEqual(@as(usize, 1), if_body.len);
+    try testing.expectEqualStrings(".", if_body[0].value.variable);
+    const else_body = if_bar.else_body.?.commands.items;
+    try testing.expectEqual(@as(usize, 1), else_body.len);
+    try testing.expectEqualStrings("Fallback", else_body[0].value.text);
+
+    const commands = template.commands.items;
+    try testing.expectEqual(@as(usize, 2), commands.len);
+    try testing.expectEqualStrings("base.html", commands[0].value.include.unresolved);
+    try testing.expectEqualStrings("\n", commands[1].value.text);
+}
+
+test "invalid command" {
+    const source =
+        \\Too many words in {{ foo bar qux }}.
+    ;
+    const expected_error =
+        \\<input>:1:26: expected "}}", got "ba"
+    ;
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
+    defer scanner.deinit();
+    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner));
+    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+}
+
+test "unterminated command" {
+    const source =
+        \\Missing closing {{ braces.
+    ;
+    const expected_error =
+        \\<input>:1:27: unexpected EOF while looking for "}}"
+    ;
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
+    defer scanner.deinit();
+    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner));
+    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+}
+
+test "missing end" {
+    const source =
+        \\It's not terminated! {{ if foo }} oops.
+    ;
+    const expected_error =
+        \\<input>:1:40: unexpected EOF
+    ;
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
+    defer scanner.deinit();
+    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner));
+    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+}
+
+test "unexpected end" {
+    const source =
+        \\Hello {{ if logged_in }}{{ username}}{{ else }}Anonymous{{ end }}
+        \\{{ end }}
+    ;
+    const expected_error =
+        \\<input>:2:1: unexpected {{ end }}
+    ;
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
+    defer scanner.deinit();
+    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner));
+    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
 }
