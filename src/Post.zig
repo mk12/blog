@@ -53,7 +53,7 @@ test "parse" {
             .column = 1,
         },
     };
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
     scanner.filename = filename;
     try testing.expectEqualDeep(expected, try parse(&scanner));
@@ -108,13 +108,9 @@ test "parse metadata draft" {
         .category = "Category",
         .status = Status.draft,
     };
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
-    const actual = Metadata.parse(&scanner) catch {
-        std.debug.print("{s}\n", .{scanner.error_message.?});
-        return error.TestParseFailed;
-    };
-    try testing.expectEqualDeep(expected, actual);
+    try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
 test "parse metadata published" {
@@ -133,13 +129,9 @@ test "parse metadata published" {
         .category = "Category",
         .status = Status{ .published = Date.from("2023-04-29T15:28:50-07:00") },
     };
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
-    const actual = Metadata.parse(&scanner) catch {
-        std.debug.print("{s}\n", .{scanner.error_message.?});
-        return error.TestParseFailed;
-    };
-    try testing.expectEqualDeep(expected, actual);
+    try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
 test "parse metadata missing fields" {
@@ -152,7 +144,7 @@ test "parse metadata missing fields" {
     const expected_error =
         \\<input>:3:1: expected "description: ", got "---\n"
     ;
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
     defer scanner.deinit();
     try testing.expectError(error.ScanError, Metadata.parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
@@ -171,7 +163,7 @@ test "parse metadata invalid field" {
     const expected_error =
         \\<input>:5:1: expected one of: "date: ", "---\n"
     ;
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
     defer scanner.deinit();
     try testing.expectError(error.ScanError, Metadata.parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
@@ -190,7 +182,7 @@ test "parse metadata invalid date" {
     const expected_error =
         \\<input>:5:17: expected "T", got "?"
     ;
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
     defer scanner.deinit();
     try testing.expectError(error.ScanError, Metadata.parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);

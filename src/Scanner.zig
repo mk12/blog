@@ -1,5 +1,6 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+const builtin = @import("builtin");
 const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
@@ -12,6 +13,7 @@ pos: Position = .{},
 filename: []const u8 = "<input>",
 allocator: ?Allocator,
 error_message: ?[]const u8 = null,
+log_error: bool = false,
 
 pub const Error = error{ScanError} || std.fmt.AllocPrintError;
 
@@ -34,6 +36,12 @@ pub fn deinit(self: *Scanner) void {
     if (self.error_message) |message| {
         self.allocator.?.free(message);
     }
+}
+
+pub fn initForTest(source: []const u8, options: struct { log_error: bool }) Scanner {
+    var scanner = init(testing.allocator, source);
+    scanner.log_error = options.log_error;
+    return scanner;
 }
 
 pub fn eof(self: *const Scanner) bool {
@@ -131,6 +139,7 @@ pub fn failAt(self: *Scanner, pos: Position, comptime format: []const u8, args: 
     if (@inComptime())
         @compileError(std.fmt.comptimePrint(full_format, full_args));
     self.error_message = try std.fmt.allocPrint(self.allocator.?, full_format, full_args);
+    if (self.log_error) std.log.err("{s}", .{self.error_message.?});
     return error.ScanError;
 }
 

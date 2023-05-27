@@ -89,14 +89,12 @@ fn scan(scanner: *Scanner) !Token {
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const pos = scanner.pos;
-    while (true) {
-        switch (scanner.eat() orelse return scanner.fail("unexpected EOF", .{})) {
-            'A'...'Z' => {},
-            'a'...'z' => {},
-            '0'...'9' => {},
-            '_' => {},
+    while (scanner.peek(0)) |char| {
+        switch (char) {
+            'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => {},
             else => break,
         }
+        _ = scanner.eat();
     }
     if (scanner.pos.offset == pos.offset)
         return scanner.fail("expected an identifier", .{});
@@ -104,12 +102,105 @@ fn scanIdentifier(scanner: *Scanner) ![]const u8 {
 }
 
 test "scan empty string" {
-    var scanner = Scanner.init(testing.allocator, "");
-    defer scanner.deinit();
-    try testing.expectEqual(Token{
+    const source = "";
+    const expected = Token{
         .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
         .value = .eof,
-    }, try scan(&scanner));
+    };
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    try testing.expectEqual(expected, try scan(&scanner));
+}
+
+test "scan text" {
+    const source = "foo\n";
+    const expected1 = Token{
+        .pos = Scanner.Position{ .offset = 0, .line = 1, .column = 1 },
+        .value = .{ .text = "foo\n" },
+    };
+    const expected2 = Token{
+        .pos = Scanner.Position{ .offset = 4, .line = 2, .column = 1 },
+        .value = .eof,
+    };
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    try testing.expectEqualDeep(expected1, try scan(&scanner));
+    try testing.expectEqualDeep(expected2, try scan(&scanner));
+}
+
+fn scanTokenValues(allocator: Allocator, scanner: *Scanner) !std.ArrayList(TokenValue) {
+    var list = std.ArrayList(TokenValue).init(allocator);
+    errdefer list.deinit();
+    while (true) {
+        const token = try scan(scanner);
+        try list.append(token.value);
+        if (token.value == TokenValue.eof) break;
+    }
+    return list;
+}
+
+test "scan text and variable" {
+    const source = "Hello {{ name }}!";
+    const expected = [_]TokenValue{
+        .{ .text = "Hello " },
+        .{ .variable = "name" },
+        .{ .text = "!" },
+        .eof,
+    };
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    const actual = try scanTokenValues(testing.allocator, &scanner);
+    defer actual.deinit();
+    try testing.expectEqualDeep(@as([]const TokenValue, &expected), actual.items);
+}
+
+fn find(substring: []const u8, source: []const u8, occurrence: usize) ![]const u8 {
+    var count: usize = 0;
+    var offset: usize = 0;
+    while (true) {
+        offset = std.mem.indexOfPos(u8, source, offset, substring) orelse
+            return error.SubstringNotFound;
+        if (count == occurrence) break;
+        count += 1;
+        offset += 1;
+    }
+    const in_source = source[offset .. offset + substring.len];
+    try testing.expectEqualStrings(substring, in_source);
+    return in_source;
+}
+
+test "scan all kinds of tokens" {
+    const source =
+        \\{{ include "base.html" }}
+        \\{{ define var }}
+        \\    {{ for thing }}
+        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\    {{ end }}
+        \\{{ end }}
+    ;
+    const expected = [_]TokenValue{
+        .{ .include = try find("base.html", source, 0) },
+        .{ .text = try find("\n", source, 0) },
+        .{ .define = try find("var", source, 0) },
+        .{ .text = try find("\n    ", source, 0) },
+        .{ .start = try find("thing", source, 0) },
+        .{ .text = try find("\n        Value: ", source, 0) },
+        .{ .start = try find("bar", source, 0) },
+        .{ .variable = try find(".", source, 1) },
+        .@"else",
+        .{ .text = try find("Fallback", source, 0) },
+        .end,
+        .{ .text = try find(",\n    ", source, 0) },
+        .end,
+        .{ .text = try find("\n", source, 4) },
+        .end,
+        .eof,
+    };
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
+    defer scanner.deinit();
+    const actual = try scanTokenValues(testing.allocator, &scanner);
+    defer actual.deinit();
+    try testing.expectEqualSlices(TokenValue, &expected, actual.items);
 }
 
 const Definition = struct {
@@ -135,25 +226,10 @@ const Command = struct {
 };
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Template {
+    _ = scanner;
     var definitions = std.ArrayList(Definition).init(allocator);
     errdefer definitions.deinit();
     var commands = std.ArrayList(Command).init(allocator);
     errdefer commands.deinit();
-    while (true) {}
-    var text_start = scanner.pos;
-    _ = text_start;
-    var prev = null;
-    while (scanner.eat()) |char| {
-        if (prev == '{' and char == '{') break;
-        prev = char;
-    }
-    // const text_cmd = Command{
-    //     .pos = text_start,
-    //     .value = .{ .text = text },
-    // };
-    // if (scanner.eof()) {
-    //     text_cmd.value.text = mem.trimRight(u8, text, "\n");
-    //     try commands.append(text_cmd);
-    // }
     return Template{ .definitions = definitions, .commands = commands };
 }

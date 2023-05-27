@@ -33,6 +33,14 @@ pub fn parse(scanner: *Scanner) !Date {
     return date;
 }
 
+/// Parses a date at comptime.
+pub inline fn from(comptime string: []const u8) Date {
+    comptime {
+        var scanner = Scanner.init(null, string);
+        return parse(&scanner) catch unreachable;
+    }
+}
+
 fn parseField(scanner: *Scanner, field_ptr: anytype, length: usize, name: []const u8) !void {
     const T = @typeInfo(@TypeOf(field_ptr)).Pointer.child;
     const span = try scanner.consumeFixed(length);
@@ -44,22 +52,12 @@ fn parseField(scanner: *Scanner, field_ptr: anytype, length: usize, name: []cons
         return scanner.failOn(span, "invalid {s}", .{name});
 }
 
-/// Parses a date at comptime.
-pub fn from(comptime string: []const u8) Date {
-    var scanner = Scanner.init(null, string);
-    return parse(&scanner) catch unreachable;
-}
-
 test "parse valid date" {
     const source = "2023-04-29T10:06:12-07:00";
     const expected = Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 };
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = true });
     defer scanner.deinit();
-    const actual = parse(&scanner) catch {
-        std.debug.print("{s}\n", .{scanner.error_message.?});
-        return error.TestParseFailed;
-    };
-    try testing.expectEqual(expected, actual);
+    try testing.expectEqual(expected, try parse(&scanner));
 }
 
 test "parse empty date" {
@@ -67,7 +65,7 @@ test "parse empty date" {
     const expected_error =
         \\<input>:1:1: unexpected EOF
     ;
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
     defer scanner.deinit();
     try testing.expectError(error.ScanError, parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
@@ -78,7 +76,7 @@ test "parse invalid date" {
     const expected_error =
         \\<input>:1:12: "1z": invalid hour
     ;
-    var scanner = Scanner.init(testing.allocator, source);
+    var scanner = Scanner.initForTest(source, .{ .log_error = false });
     defer scanner.deinit();
     try testing.expectError(error.ScanError, parse(&scanner));
     try testing.expectEqualStrings(expected_error, scanner.error_message.?);
