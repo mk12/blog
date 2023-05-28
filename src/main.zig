@@ -153,25 +153,29 @@ fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
     var templates = std.StringHashMap(Template).init(allocator);
     var iterable = try fs.cwd().openIterableDir(template_dir, .{});
     defer iterable.close();
-    var iter = iterable.iterate();
-    while (try iter.next()) |entry| {
-        if (entry.name[0] == '.') continue;
-        const path = try fs.path.join(allocator, &[_][]const u8{ template_dir, entry.name });
-        _ = path;
-        var file = try iterable.dir.openFile(entry.name, .{});
+    {
+        var iter = iterable.iterate();
+        while (try iter.next()) |entry| {
+            if (entry.name[0] == '.') continue;
+            const key = try allocator.dupe(u8, entry.name);
+            try templates.put(key, undefined);
+        }
+    }
+    var iter = templates.iterator();
+    while (iter.next()) |entry| {
+        const name = entry.key_ptr.*;
+        var file = try iterable.dir.openFile(name, .{});
         defer file.close();
         const source = try file.readToEndAlloc(allocator, max_file_size);
         var scanner = Scanner.init(allocator, source);
-        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name });
-        const template = Template.parse(allocator, &scanner) catch |err| switch (err) {
+        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, name });
+        entry.value_ptr.* = Template.parse(allocator, &scanner, &templates) catch |err| switch (err) {
             error.ScanError => {
                 std.log.err("{s}", .{scanner.error_message.?});
                 return error.LoggedFatalError;
             },
             else => return err,
         };
-        const key = try allocator.dupe(u8, entry.name);
-        try templates.put(key, template);
     }
     return templates;
 }
