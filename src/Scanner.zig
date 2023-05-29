@@ -1,98 +1,98 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
-const builtin = @import("builtin");
 const std = @import("std");
+const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
 const fmtEscapes = std.zig.fmtEscapes;
-const Allocator = std.mem.Allocator;
+const Reporter = @import("Reporter.zig");
+const Error = Reporter.Error;
+const Location = Reporter.Location;
 const Scanner = @This();
 
 source: []const u8,
-pos: Position = .{},
-filename: []const u8 = "<input>",
-allocator: ?Allocator,
-error_message: ?[]const u8 = null,
-log_error: bool = false,
-
-pub const Error = error{ScanError} || std.fmt.AllocPrintError;
-
-pub const Position = struct {
-    offset: u32 = 0,
-    line: u16 = 1,
-    column: u16 = 1,
-};
+reporter: Reporter = .{},
+offset: usize = 0,
+location: Location = .{},
 
 pub const Span = struct {
-    pos: Position,
     text: []const u8,
+    location: Location,
 };
 
-pub fn init(allocator: ?Allocator, source: []const u8) Scanner {
-    return Scanner{ .allocator = allocator, .source = source };
+pub fn eof(self: Scanner) bool {
+    return self.offset == self.source.len;
 }
 
-pub fn deinit(self: *Scanner) void {
-    if (self.error_message) |message| {
-        self.allocator.?.free(message);
-    }
-}
-
-pub fn initForTest(source: []const u8, options: struct { log_error: bool }) Scanner {
-    var scanner = init(testing.allocator, source);
-    scanner.log_error = options.log_error;
-    return scanner;
-}
-
-pub fn eof(self: *const Scanner) bool {
-    return self.pos.offset == self.source.len;
-}
-
-pub fn peek(self: *const Scanner, bytes_ahead: usize) ?u8 {
-    const offset = self.pos.offset + bytes_ahead;
+pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
+    const offset = self.offset + bytes_ahead;
     return if (offset >= self.source.len) null else self.source[offset];
 }
 
-pub fn eat(self: *Scanner) ?u8 {
+pub fn peekSlice(self: Scanner, length: usize) []const u8 {
+    const offset = self.offset;
+    return self.source[offset..std.math.min(offset + length, self.source.len)];
+}
+
+pub fn next(self: *Scanner) ?u8 {
     if (self.eof()) return null;
-    const char = self.source[self.pos.offset];
-    self.pos.offset += 1;
-    if (char == '\n') {
-        self.pos.line += 1;
-        self.pos.column = 1;
-    } else {
-        self.pos.column += 1;
-    }
+    const char = self.source[self.offset];
+    self.eat(char);
     return char;
 }
 
-pub fn consume(self: *Scanner, comptime expected: []const u8) Error!void {
-    comptime assert(expected.len > 0);
-    if (self.eof()) return self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(expected)});
-    if (self.maybeConsume(expected)) return;
-    const actual = self.nextSlice(expected.len);
+pub fn eat(self: *Scanner, char: u8) void {
+    self.offset += 1;
+    if (char == '\n') {
+        self.location.line += 1;
+        self.location.column = 1;
+    } else {
+        self.location.column += 1;
+    }
+}
+
+pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
+    assert(byte_count > 0);
+    const location = self.location;
+    const start = self.offset;
+    for (0..byte_count) |_|
+        _ = self.next() orelse return self.fail("unexpected EOF", .{});
+    const text = self.source[start..self.offset];
+    return Span{ .text = text, .location = location };
+}
+
+pub fn attempt(self: *Scanner, comptime string: []const u8) bool {
+    comptime assert(string.len > 0);
+    if (!mem.eql(u8, self.peekSlice(string.len), string)) return false;
+    self.offset += @intCast(u32, string.len);
+    self.location.line += @intCast(u16, comptime mem.count(u8, string, "\n"));
+    self.location.column = if (comptime mem.lastIndexOfScalar(u8, string, '\n')) |idx|
+        string.len - idx
+    else
+        self.location.column + @intCast(u16, string.len);
+    return true;
+}
+
+pub fn expect(self: *Scanner, comptime expected: []const u8) Error!void {
+    if (self.eof()) return self.fail("unexpected EOF, expected \"{}\"", .{fmtEscapes(expected)});
+    if (self.attempt(expected)) return;
+    const actual = self.peekSlice(expected.len);
     return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(expected), fmtEscapes(actual) });
 }
 
-pub fn consumeFixed(self: *Scanner, byte_count: usize) Error!Span {
-    assert(byte_count > 0);
-    const start = self.pos;
-    for (0..byte_count) |_|
-        _ = self.eat() orelse return self.fail("unexpected EOF", .{});
-    return self.makeSpan(start, self.pos);
-}
-
-pub fn consumeUntil(self: *Scanner, end: u8) Error!Span {
-    const start = self.pos;
-    var prev_pos = self.pos;
-    while (self.eat()) |char| {
-        if (char == end) return self.makeSpan(start, prev_pos);
-        prev_pos = self.pos;
+pub fn until(self: *Scanner, end: u8) Error!Span {
+    const location = self.location;
+    const start = self.offset;
+    while (self.next()) |char| {
+        if (char == end) {
+            const text = self.source[start .. self.offset - 1];
+            return Span{ .text = text, .location = location };
+        }
     }
-    return self.fail("unexpected EOF looking for \"{}\"", .{fmtEscapes(&[_]u8{end})});
+    return self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(&.{end})});
 }
 
-pub fn consumeOneOf(
+pub fn choice(
     self: *Scanner,
     comptime alternatives: anytype,
 ) Error!std.meta.FieldEnum(@TypeOf(alternatives)) {
@@ -103,171 +103,154 @@ pub fn consumeOneOf(
             "{s}\"{}\"",
             .{ if (i == 0) "" else ", ", comptime fmtEscapes(value) },
         );
-        if (self.maybeConsume(value))
+        if (self.attempt(value))
             return @intToEnum(std.meta.FieldEnum(@TypeOf(alternatives)), i);
     }
     return self.fail("{s}", .{message});
 }
 
-pub fn maybeConsume(self: *Scanner, comptime expected: []const u8) bool {
-    if (!std.mem.eql(u8, self.nextSlice(expected.len), expected)) return false;
-    self.pos.offset += @intCast(u32, expected.len);
-    self.pos.line += @intCast(u16, comptime std.mem.count(u8, expected, "\n"));
-    self.pos.column = if (comptime std.mem.lastIndexOfScalar(u8, expected, '\n')) |idx|
-        expected.len - idx
-    else
-        self.pos.column + @intCast(u16, expected.len);
-    return true;
-}
-
 pub fn skipWhitespace(self: *Scanner) void {
     while (self.peek(0)) |char| {
         switch (char) {
-            ' ', '\t', '\n' => {},
+            ' ', '\t', '\n' => _ = self.next(),
             else => break,
         }
-        _ = self.eat();
     }
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
-    return self.failAt(self.pos, format, args);
+    return self.reporter.fail(self.location, format, args);
 }
 
 pub fn failOn(self: *Scanner, span: Span, comptime format: []const u8, args: anytype) Error {
-    return self.failAt(span.pos, "\"{s}\": " ++ format, .{span.text} ++ args);
-}
-
-pub fn failAt(self: *Scanner, pos: Position, comptime format: []const u8, args: anytype) Error {
-    const full_format = "{s}:{}:{}: " ++ format;
-    const full_args = .{ self.filename, pos.line, pos.column } ++ args;
-    if (@inComptime())
-        @compileError(std.fmt.comptimePrint(full_format, full_args));
-    self.error_message = try std.fmt.allocPrint(self.allocator.?, full_format, full_args);
-    if (self.log_error) std.log.err("{s}", .{self.error_message.?});
-    return error.ScanError;
-}
-
-pub fn makeSpan(self: *const Scanner, start: Position, end: Position) Span {
-    return Span{ .pos = start, .text = self.source[start.offset..end.offset] };
-}
-
-fn nextSlice(self: *const Scanner, length: usize) []const u8 {
-    const offset = self.pos.offset;
-    return self.source[offset..std.math.min(offset + length, self.source.len)];
+    return self.reporter.fail(span.location, "\"{s}\": " ++ format, .{span.text} ++ args);
 }
 
 test "empty input" {
-    var scanner = init(testing.allocator, "");
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = "" };
     try testing.expect(scanner.eof());
-    try testing.expectEqual(@as(?u8, null), scanner.eat());
+    try testing.expectEqual(@as(?u8, null), scanner.next());
 }
 
 test "single character" {
-    var scanner = init(testing.allocator, "x");
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = "x" };
     try testing.expect(!scanner.eof());
-    try testing.expectEqual(@as(?u8, 'x'), scanner.eat());
+    try testing.expectEqual(@as(?u8, 'x'), scanner.next());
     try testing.expect(scanner.eof());
+    try testing.expectEqual(@as(?u8, null), scanner.next());
 }
 
 test "peek" {
-    var scanner = init(testing.allocator, "ab");
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = "ab" };
     try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
-    _ = scanner.eat();
+    _ = scanner.next();
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, null), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
 }
 
 test "consume" {
-    var scanner = init(testing.allocator, "abc");
-    defer scanner.deinit();
-    try testing.expectError(@as(Error, error.ScanError), scanner.consume("xyz"));
-    try scanner.consume("abc");
-    try testing.expect(scanner.eof());
-}
-
-test "consumeFixed" {
-    var scanner = init(testing.allocator, "abc");
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = "abc" };
     try testing.expectEqualDeep(Span{
-        .pos = Position{ .offset = 0, .line = 1, .column = 1 },
+        .location = Location{ .line = 1, .column = 1 },
         .text = "ab",
-    }, try scanner.consumeFixed(2));
+    }, try scanner.consume(2));
     try testing.expectEqualDeep(Span{
-        .pos = Position{ .offset = 2, .line = 1, .column = 3 },
+        .location = Location{ .line = 1, .column = 3 },
         .text = "c",
-    }, try scanner.consumeFixed(1));
+    }, try scanner.consume(1));
     try testing.expect(scanner.eof());
 }
 
-test "consumeUntil" {
-    var scanner = init(testing.allocator, "one\ntwo\n");
-    defer scanner.deinit();
+test "attempt" {
+    var scanner = Scanner{ .source = "abc" };
+    try testing.expect(!scanner.attempt("x"));
+    try testing.expect(scanner.attempt("a"));
+    try testing.expect(!scanner.attempt("a"));
+    try testing.expect(scanner.attempt("bc"));
+    try testing.expect(scanner.eof());
+}
+
+test "expect" {
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = "abc", .reporter = .{ .out = &log } };
+    try testing.expectError(error.ErrorWasReported, scanner.expect("xyz"));
+    try testing.expectEqualStrings(
+        \\<input>:1:1: expected "xyz", got "abc"
+    , log.items);
+    try scanner.expect("abc");
+    try testing.expect(scanner.eof());
+}
+
+test "until" {
+    var scanner = Scanner{ .source = "one\ntwo\n" };
     try testing.expectEqualDeep(Span{
-        .pos = Position{ .offset = 0, .line = 1, .column = 1 },
+        .location = Location{ .line = 1, .column = 1 },
         .text = "one",
-    }, try scanner.consumeUntil('\n'));
+    }, try scanner.until('\n'));
     try testing.expectEqualDeep(Span{
-        .pos = Position{ .offset = 4, .line = 2, .column = 1 },
+        .location = Location{ .line = 2, .column = 1 },
         .text = "two",
-    }, try scanner.consumeUntil('\n'));
+    }, try scanner.until('\n'));
     try testing.expect(scanner.eof());
 }
 
-test "consumeOneOf" {
-    var scanner = init(testing.allocator, "abcxyz123");
-    defer scanner.deinit();
+test "choice" {
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = "abcxyz123", .reporter = .{ .out = &log } };
     const alternatives = .{ .abc = "abc", .xyz = "xyz" };
     const Alternative = std.meta.FieldEnum(@TypeOf(alternatives));
-    try testing.expectEqual(Alternative.abc, try scanner.consumeOneOf(alternatives));
-    try testing.expectEqual(Alternative.xyz, try scanner.consumeOneOf(alternatives));
-    try testing.expectError(@as(Error, error.ScanError), scanner.consumeOneOf(alternatives));
-    try testing.expectEqualStrings("<input>:1:7: expected one of: \"abc\", \"xyz\"", scanner.error_message.?);
-}
-
-test "maybeConsume" {
-    var scanner = init(testing.allocator, "abc");
-    defer scanner.deinit();
-    try testing.expect(!scanner.maybeConsume("x"));
-    try testing.expect(scanner.maybeConsume("a"));
-    try testing.expect(!scanner.maybeConsume("a"));
-    try testing.expect(scanner.maybeConsume("bc"));
-    try testing.expect(scanner.eof());
+    try testing.expectEqual(Alternative.abc, try scanner.choice(alternatives));
+    try testing.expectEqual(Alternative.xyz, try scanner.choice(alternatives));
+    try testing.expectError(error.ErrorWasReported, scanner.choice(alternatives));
+    try testing.expectEqualStrings(
+        \\<input>:1:7: expected one of: "abc", "xyz"
+    , log.items);
 }
 
 test "skipWhitespace" {
-    var scanner = init(testing.allocator, " a\n\t b");
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = " a\n\t b" };
     scanner.skipWhitespace();
-    try testing.expectEqual(@as(?u8, 'a'), scanner.eat());
+    try testing.expectEqual(@as(?u8, 'a'), scanner.next());
     scanner.skipWhitespace();
-    try testing.expectEqual(@as(?u8, 'b'), scanner.eat());
+    try testing.expectEqual(@as(?u8, 'b'), scanner.next());
     try testing.expect(scanner.eof());
     scanner.skipWhitespace();
     try testing.expect(scanner.eof());
 }
 
 test "fail" {
-    var scanner = init(testing.allocator, "foo\nbar.\n");
-    defer scanner.deinit();
-    scanner.filename = "test.txt";
-    _ = try scanner.consumeUntil('.');
-    try testing.expectEqual(@as(Error, error.ScanError), scanner.fail("oops: {}", .{123}));
-    try testing.expectEqualStrings("test.txt:2:5: oops: 123", scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    const reporter = Reporter{ .filename = "test.txt", .out = &log };
+    var scanner = Scanner{ .source = "foo\nbar.\n", .reporter = reporter };
+    // Advance a bit so the error location is more interesting.
+    _ = try scanner.until('.');
+    try testing.expectEqual(
+        Error.ErrorWasReported,
+        scanner.fail("oops: {}", .{123}),
+    );
+    try testing.expectEqualStrings(
+        \\test.txt:2:5: oops: 123
+    , log.items);
 }
 
 test "failOn" {
-    var scanner = init(testing.allocator, "foo\nbar.\n");
-    defer scanner.deinit();
-    scanner.filename = "test.txt";
-    _ = try scanner.consumeUntil('\n');
-    const span = try scanner.consumeUntil('.');
-    try testing.expectEqual(@as(Error, error.ScanError), scanner.failOn(span, "oops: {}", .{123}));
-    try testing.expectEqualStrings("test.txt:2:1: \"bar\": oops: 123", scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    const reporter = Reporter{ .filename = "test.txt", .out = &log };
+    var scanner = Scanner{ .source = "foo\nbar.\n", .reporter = reporter };
+    _ = try scanner.until('\n');
+    const span = try scanner.until('.');
+    try testing.expectEqual(
+        Error.ErrorWasReported,
+        scanner.failOn(span, "oops: {}", .{123}),
+    );
+    try testing.expectEqualStrings(
+        \\test.txt:2:1: "bar": oops: 123
+    , log.items);
 }

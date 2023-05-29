@@ -5,58 +5,64 @@ const mem = std.mem;
 const testing = std.testing;
 const Allocator = mem.Allocator;
 const EnumSet = std.enums.EnumSet;
+const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Template = @This();
 
-definitions: std.ArrayList(Definition),
-commands: std.ArrayList(Command),
+filename: []const u8,
+definitions: std.ArrayListUnmanaged(Definition) = .{},
+commands: std.ArrayListUnmanaged(Command) = .{},
+
 const Variable = []const u8;
 
 const TokenValue = union(enum) {
     text: []const u8,
-    define: Variable,
-    include: []const u8,
+    include: []const u8, // template path
     variable: Variable,
-    start: Variable,
-    @"else": void,
-    end: void,
+    define: Variable,
+    start: Variable, // "if" or "range"
+    @"else",
+    end,
 };
 
 const Token = struct {
-    pos: Scanner.Position,
     value: TokenValue,
+    location: Reporter.Location,
 };
 
 fn scan(scanner: *Scanner) !?Token {
-    const pos = scanner.pos;
+    const location = scanner.location;
+    const start = scanner.offset;
     const brace: u8 = '{';
     while (true) {
-        if (scanner.eof() or (scanner.peek(0) == brace and scanner.peek(1) == brace)) {
-            if (scanner.pos.offset != pos.offset) {
-                const span = scanner.makeSpan(pos, scanner.pos);
-                return .{ .pos = span.pos, .value = .{ .text = span.text } };
+        const char1 = scanner.peek(0);
+        const char2 = scanner.peek(1);
+        if (char1 == null or (char1 == brace and char2 == brace)) {
+            if (scanner.offset != start) {
+                const text = scanner.source[start..scanner.offset];
+                return .{ .value = .{ .text = text }, .location = location };
             }
             break;
         }
-        _ = scanner.eat();
+        _ = scanner.next();
     }
     if (scanner.eof()) return null;
-    try scanner.consume("{{");
+    try scanner.expect("{{");
     scanner.skipWhitespace();
     const word = try scanIdentifier(scanner);
     scanner.skipWhitespace();
-    const Kind = enum { define, include, start, @"else", end, variable };
-    const map = std.ComptimeStringMap(Kind, .{
-        .{ "define", .define },
-        .{ "include", .include },
-        .{ "if", .start },
-        .{ "range", .start },
-        .{ "else", .@"else" },
-        .{ "end", .end },
-    });
-    const kind = map.get(word) orelse .variable;
+    const Kind = enum { variable, include, define, @"if", range, @"else", end };
+    const kind = std.meta.stringToEnum(Kind, word) orelse .variable;
     const value: TokenValue = switch (kind) {
         .variable => .{ .variable = word },
+        .include => .{
+            .include = blk: {
+                try scanner.expect("\"");
+                const path = try scanner.until('"');
+                scanner.skipWhitespace();
+                break :blk path.text;
+            },
+        },
         .define => .{
             .define = blk: {
                 const variable = try scanIdentifier(scanner);
@@ -64,15 +70,7 @@ fn scan(scanner: *Scanner) !?Token {
                 break :blk variable;
             },
         },
-        .include => .{
-            .include = blk: {
-                try scanner.consume("\"");
-                const path = try scanner.consumeUntil('"');
-                scanner.skipWhitespace();
-                break :blk path.text;
-            },
-        },
-        .start => .{
+        .@"if", .range => .{
             .start = blk: {
                 const variable = try scanIdentifier(scanner);
                 scanner.skipWhitespace();
@@ -82,39 +80,36 @@ fn scan(scanner: *Scanner) !?Token {
         .@"else" => .@"else",
         .end => .end,
     };
-    try scanner.consume("}}");
-    return .{ .pos = pos, .value = value };
+    try scanner.expect("}}");
+    return .{ .location = location, .value = value };
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
-    const pos = scanner.pos;
+    const start = scanner.offset;
     while (scanner.peek(0)) |char| {
         switch (char) {
-            'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => {},
+            'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(char),
             else => break,
         }
-        _ = scanner.eat();
     }
-    if (scanner.pos.offset == pos.offset)
+    if (scanner.offset == start)
         return scanner.fail("expected an identifier", .{});
-    return scanner.source[pos.offset..scanner.pos.offset];
+    return scanner.source[start..scanner.offset];
 }
 
 test "scan empty string" {
     const source = "";
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
 
 test "scan text" {
     const source = "foo\n";
     const expected = Token{
-        .pos = .{ .offset = 0, .line = 1, .column = 1 },
+        .location = .{ .line = 1, .column = 1 },
         .value = .{ .text = "foo\n" },
     };
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     try testing.expectEqualDeep(@as(?Token, expected), try scan(&scanner));
     try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
@@ -135,8 +130,7 @@ test "scan text and variable" {
         .{ .variable = "name" },
         .{ .text = "!" },
     };
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     const actual = try scanTokenValues(testing.allocator, &scanner);
     defer actual.deinit();
     try testing.expectEqualDeep(@as([]const TokenValue, &expected), actual.items);
@@ -183,8 +177,7 @@ test "scan all kinds of stuff" {
         .{ .text = try find("\n", source, 4) },
         .end,
     };
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     const actual = try scanTokenValues(testing.allocator, &scanner);
     defer actual.deinit();
     try testing.expectEqualSlices(TokenValue, &expected, actual.items);
@@ -197,8 +190,8 @@ const Definition = struct {
 
 const CommandValue = union(enum) {
     text: []const u8,
-    include: *const Template,
     variable: Variable,
+    include: *const Template,
     control: struct {
         variable: Variable,
         body: Template,
@@ -207,43 +200,43 @@ const CommandValue = union(enum) {
 };
 
 const Command = struct {
-    pos: Scanner.Position,
+    location: Reporter.Location,
     value: CommandValue,
 };
 
-pub fn deinit(self: *Template) void {
+pub fn deinit(self: *Template, allocator: Allocator) void {
     for (self.definitions.items) |*definition| {
-        definition.body.deinit();
+        definition.body.deinit(allocator);
     }
     for (self.commands.items) |*command| {
         switch (command.value) {
             .control => |*control| {
-                control.body.deinit();
-                if (control.else_body) |*body| body.deinit();
+                control.body.deinit(allocator);
+                if (control.else_body) |*body| body.deinit(allocator);
             },
             else => {},
         }
     }
-    self.definitions.deinit();
-    self.commands.deinit();
+    self.definitions.deinit(allocator);
+    self.commands.deinit(allocator);
 }
 
 pub fn parse(
     allocator: Allocator,
     scanner: *Scanner,
-    include_map: ?*const std.StringHashMap(Template),
+    include_map: ?std.StringHashMap(Template),
 ) !Template {
-    const ctx = Context{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
+    const ctx = ParseContext{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
     return parseUntil(ctx, .eof);
 }
 
-pub const Context = struct {
+const ParseContext = struct {
     allocator: Allocator,
     scanner: *Scanner,
-    include_map: ?*const std.StringHashMap(Template),
+    include_map: ?std.StringHashMap(Template),
 };
 
-fn parseUntil(ctx: Context, terminator: Terminator) !Template {
+fn parseUntil(ctx: ParseContext, terminator: Terminator) !Template {
     const terminators = EnumSet(Terminator).initOne(terminator);
     const result = try parseUntilAny(ctx, terminators);
     return result.template;
@@ -252,35 +245,37 @@ fn parseUntil(ctx: Context, terminator: Terminator) !Template {
 const Terminator = enum { end, @"else", eof };
 const Result = struct { template: Template, terminator: Terminator };
 
-fn parseUntilAny(ctx: Context, allowed_terminators: EnumSet(Terminator)) Scanner.Error!Result {
-    var template = Template{
-        .definitions = std.ArrayList(Definition).init(ctx.allocator),
-        .commands = std.ArrayList(Command).init(ctx.allocator),
-    };
-    errdefer template.deinit();
+fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Reporter.Error!Result {
+    var template = Template{ .filename = ctx.scanner.reporter.filename };
+    errdefer template.deinit(ctx.allocator);
     var terminator: Terminator = .eof;
-    var terminator_pos: ?Scanner.Position = null;
+    var terminator_pos: ?Reporter.Location = null;
     const scanner = ctx.scanner;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
-                try template.definitions.append(.{
+                try template.definitions.append(ctx.allocator, .{
                     .variable = variable,
                     .body = try parseUntil(ctx, .end),
                 });
                 continue;
             },
-            .@"else", .end => {
-                terminator = std.meta.stringToEnum(Terminator, @tagName(token.value)).?;
-                terminator_pos = token.pos;
+            .end => {
+                terminator = .end;
+                terminator_pos = token.location;
+                break;
+            },
+            .@"else" => {
+                terminator = .@"else";
+                terminator_pos = token.location;
                 break;
             },
             .text => |text| .{ .text = text },
+            .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.?.getPtr(path) orelse
-                    return scanner.failAt(token.pos, "{s}: template not found", .{path}),
+                    return scanner.reporter.fail(token.location, "{s}: template not found", .{path}),
             },
-            .variable => |variable| .{ .variable = variable },
             .start => |variable| blk: {
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
                 const result = try parseUntilAny(ctx, end_or_else);
@@ -296,11 +291,14 @@ fn parseUntilAny(ctx: Context, allowed_terminators: EnumSet(Terminator)) Scanner
                 };
             },
         };
-        try template.commands.append(.{ .pos = token.pos, .value = command_value });
+        try template.commands.append(ctx.allocator, .{
+            .location = token.location,
+            .value = command_value,
+        });
     }
     if (!allowed_terminators.contains(terminator)) {
-        const pos = terminator_pos orelse scanner.pos;
-        return scanner.failAt(pos, "unexpected {s}", .{
+        const location = terminator_pos orelse scanner.location;
+        return scanner.reporter.fail(location, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
@@ -308,10 +306,7 @@ fn parseUntilAny(ctx: Context, allowed_terminators: EnumSet(Terminator)) Scanner
             },
         });
     }
-    return Result{
-        .template = template,
-        .terminator = terminator,
-    };
+    return Result{ .template = template, .terminator = terminator };
 }
 
 test "parse text" {
@@ -319,14 +314,13 @@ test "parse text" {
     const expected_definitions = [_]Definition{};
     const expected_commands = [_]Command{
         .{
-            .pos = .{ .offset = 0, .line = 1, .column = 1 },
+            .location = .{ .line = 1, .column = 1 },
             .value = .{ .text = try find("foo\n", source, 0) },
         },
     };
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     var template = try parse(testing.allocator, &scanner, null);
-    defer template.deinit();
+    defer template.deinit(testing.allocator);
     try testing.expectEqualSlices(Definition, &expected_definitions, template.definitions.items);
     try testing.expectEqualSlices(Command, &expected_commands, template.commands.items);
 }
@@ -340,15 +334,14 @@ test "parse all kinds of stuff" {
         \\    {{ end }}
         \\{{ end }}
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = true });
-    defer scanner.deinit();
+    var scanner = Scanner{ .source = source };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
     try include_map.put("base.html", undefined);
     const base_template: *const Template = include_map.getPtr("base.html").?;
 
-    var template = try parse(testing.allocator, &scanner, &include_map);
-    defer template.deinit();
+    var template = try parse(testing.allocator, &scanner, include_map);
+    defer template.deinit(testing.allocator);
 
     const definitions = template.definitions.items;
     try testing.expectEqual(@as(usize, 1), definitions.len);
@@ -390,10 +383,11 @@ test "invalid command" {
     const expected_error =
         \\<input>:1:26: expected "}}", got "ba"
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = false });
-    defer scanner.deinit();
-    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
+    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
+    try testing.expectEqualStrings(expected_error, log.items);
 }
 
 test "unterminated command" {
@@ -401,12 +395,13 @@ test "unterminated command" {
         \\Missing closing {{ braces.
     ;
     const expected_error =
-        \\<input>:1:27: unexpected EOF while looking for "}}"
+        \\<input>:1:27: unexpected EOF, expected "}}"
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = false });
-    defer scanner.deinit();
-    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
+    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
+    try testing.expectEqualStrings(expected_error, log.items);
 }
 
 test "missing end" {
@@ -416,10 +411,11 @@ test "missing end" {
     const expected_error =
         \\<input>:1:40: unexpected EOF
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = false });
-    defer scanner.deinit();
-    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
+    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
+    try testing.expectEqualStrings(expected_error, log.items);
 }
 
 test "unexpected end" {
@@ -430,10 +426,11 @@ test "unexpected end" {
     const expected_error =
         \\<input>:2:1: unexpected {{ end }}
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = false });
-    defer scanner.deinit();
-    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
+    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
+    try testing.expectEqualStrings(expected_error, log.items);
 }
 
 test "invalid include" {
@@ -444,10 +441,95 @@ test "invalid include" {
     const expected_error =
         \\<input>:2:1: does_not_exist: template not found
     ;
-    var scanner = Scanner.initForTest(source, .{ .log_error = false });
-    defer scanner.deinit();
+    var log = std.ArrayList(u8).init(testing.allocator);
+    defer log.deinit();
+    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
-    try testing.expectError(error.ScanError, parse(testing.allocator, &scanner, &include_map));
-    try testing.expectEqualStrings(expected_error, scanner.error_message.?);
+    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, include_map));
+    try testing.expectEqualStrings(expected_error, log.items);
 }
+
+pub const Value = union(enum) {
+    string: []const u8,
+    bool: bool,
+    template: *const Template,
+    array: std.ArrayListUnmanaged(Value),
+    dictionary: std.StringHashMapUnmanaged(Value),
+
+    fn deinit(self: *Value, allocator: Allocator) void {
+        switch (self.*) {
+            .string, .bool, .template => {},
+            .array => |*array| {
+                for (array.items) |*value| value.deinit(allocator);
+                array.deinit(allocator);
+            },
+            .dictionary => |*dictionary| {
+                var iter = dictionary.valueIterator();
+                while (iter.next()) |value| value.deinit(allocator);
+                dictionary.deinit(allocator);
+            },
+        }
+    }
+};
+
+// const Scope = std.SinglyLinkedList(Dictionary);
+
+// const ExecuteContext = struct {
+//     allocator: Allocator,
+//     variables: Value,
+//     scratch: std.SegmentedList(u8, 256),
+// };
+
+pub fn execute(self: Template, allocator: Allocator, variables: Value, writer: anytype) !void {
+    // var buffer = std.SegmentedList(u8, 128){};
+    // for (self.definitions.items) |definition| {
+    //     const start = buffer.items.len;
+    //     _ = start;
+    //     try definition.body.execute(allocator, variables, buffer.writer());
+    //     const end = buffer.items.len;
+    //     _ = end;
+    //     // TODO: Scope type which is a linked list of dictionaries.
+    //     // try variables.put(definition.variable,
+    // }
+    for (self.commands.items) |command| {
+        // have command.location but no scanner for calling fail (and filename...)
+        // and if I add Scanner.fail(filename, location, ...)
+        // then there's nowhere to store the error.
+        // Maybe have "error storage" that I pass into scanner, and to template execution?
+        // Or have a union(enum) { log, store_for_test: *[]const u8 }
+        // but then where does that config live if not in scanner...
+        switch (command.value) {
+            .text => |text| try writer.writeAll(text),
+            .include => |template| try template.execute(allocator, variables, writer),
+            .variable => |variable| blk: {
+                _ = variable;
+                const value = Value{ .string = "hi" };
+                switch (value) {
+                    .string => {},
+                    .bool => {},
+                    .template => {},
+                    .array => {},
+                    .dictionary => {},
+                }
+                break :blk {};
+            },
+            .control => |control| {
+                _ = control;
+            },
+        }
+    }
+}
+
+// test "execute text" {
+//     const source =
+//         \\Hello world!
+//     ;
+//     var scanner = { .source = source };
+//     var template = try parse(testing.allocator, &scanner, null);
+//     defer template.deinit(testing.allocator);
+//     var buffer = std.ArrayList(u8).init(testing.allocator);
+//     var dict = Value{ .dictionary = .{} };
+//     defer dict.deinit(testing.allocator);
+//     try template.execute(testing.allocator, dict, buffer.writer());
+// }

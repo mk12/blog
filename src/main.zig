@@ -43,7 +43,7 @@ pub fn main() !void {
     const args = try parseArguments();
     const env = parseEnvironment();
     _ = env;
-    errdefer |err| if (err == error.LoggedFatalError) process.exit(1);
+    errdefer |err| if (err == error.ErrorWasReported) process.exit(1);
 
     var timer = try Timer.start();
 
@@ -135,15 +135,13 @@ fn readPosts(allocator: Allocator) !std.ArrayList(Post) {
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
         const source = try file.readToEndAlloc(allocator, max_file_size);
-        var scanner = Scanner.init(allocator, source);
-        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, entry.name });
-        const post = Post.parse(&scanner) catch |err| switch (err) {
-            error.ScanError => {
-                std.log.err("{s}", .{scanner.error_message.?});
-                return error.LoggedFatalError;
+        var scanner = Scanner{
+            .source = source,
+            .reporter = .{
+                .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
             },
-            else => return err,
         };
+        const post = try Post.parse(scanner);
         try posts.append(post);
     }
     return posts;
@@ -167,15 +165,13 @@ fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
         var file = try iterable.dir.openFile(name, .{});
         defer file.close();
         const source = try file.readToEndAlloc(allocator, max_file_size);
-        var scanner = Scanner.init(allocator, source);
-        scanner.filename = try fs.path.join(allocator, &[_][]const u8{ source_post_dir, name });
-        entry.value_ptr.* = Template.parse(allocator, &scanner, &templates) catch |err| switch (err) {
-            error.ScanError => {
-                std.log.err("{s}", .{scanner.error_message.?});
-                return error.LoggedFatalError;
+        var scanner = Scanner{
+            .source = source,
+            .reporter = .{
+                .filename = try fs.path.join(allocator, &.{ source_post_dir, name }),
             },
-            else => return err,
         };
+        entry.value_ptr.* = try Template.parse(allocator, &scanner, templates);
     }
     return templates;
 }
