@@ -3,20 +3,26 @@
 const std = @import("std");
 const testing = std.testing;
 const Date = @import("Date.zig");
+const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Post = @This();
 
+source: []const u8,
+filename: []const u8,
 slug: []const u8,
 metadata: Metadata,
-markdown_scanner: Scanner,
+markdown_offset: usize,
+markdown_location: Reporter.Location,
 
-pub fn parse(scanner: Scanner) !Post {
-    var mut_scanner = scanner;
-    const metadata = try Metadata.parse(&mut_scanner);
+pub fn parse(scanner: *Scanner) !Post {
+    const metadata = try Metadata.parse(scanner);
     return Post{
+        .source = scanner.source,
+        .filename = scanner.reporter.filename,
         .slug = std.fs.path.stem(scanner.reporter.filename),
         .metadata = metadata,
-        .markdown_scanner = mut_scanner,
+        .markdown_offset = scanner.offset,
+        .markdown_location = scanner.location,
     };
 }
 
@@ -33,6 +39,8 @@ test "parse" {
         \\Hello world!
     ;
     const expected = Post{
+        .source = source,
+        .filename = filename,
         .slug = "foo",
         .metadata = Metadata{
             .title = "The title",
@@ -40,15 +48,11 @@ test "parse" {
             .category = "Category",
             .status = Status{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .markdown_scanner = Scanner{
-            .source = source,
-            .reporter = .{ .filename = filename },
-            .offset = 105,
-            .location = .{ .line = 7, .column = 1 },
-        },
+        .markdown_offset = 105,
+        .markdown_location = .{ .line = 7, .column = 1 },
     };
     var scanner = Scanner{ .source = source, .reporter = .{ .filename = filename } };
-    try testing.expectEqualDeep(expected, try parse(scanner));
+    try testing.expectEqualDeep(expected, try parse(&scanner));
 }
 
 const Status = union(enum) {
@@ -66,8 +70,7 @@ const Metadata = struct {
         var metadata: Metadata = undefined;
         const separator = "---\n";
         try scanner.expect(separator);
-        const required = .{ "title", "description", "category" };
-        inline for (required) |key| {
+        inline for (.{ "title", "description", "category" }) |key| {
             try scanner.expect(key ++ ": ");
             const span = try scanner.until('\n');
             @field(metadata, key) = span.text;

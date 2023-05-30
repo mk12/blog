@@ -6,6 +6,7 @@ const mem = std.mem;
 const process = std.process;
 const Allocator = mem.Allocator;
 const Post = @import("Post.zig");
+const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Template = @import("Template.zig");
 
@@ -135,14 +136,11 @@ fn readPosts(allocator: Allocator) !std.ArrayList(Post) {
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
         const source = try file.readToEndAlloc(allocator, max_file_size);
-        var scanner = Scanner{
-            .source = source,
-            .reporter = .{
-                .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
-            },
+        const reporter = Reporter{
+            .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
         };
-        const post = try Post.parse(scanner);
-        try posts.append(post);
+        var scanner = Scanner{ .source = source, .reporter = reporter };
+        try posts.append(try Post.parse(&scanner));
     }
     return posts;
 }
@@ -165,12 +163,10 @@ fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
         var file = try iterable.dir.openFile(name, .{});
         defer file.close();
         const source = try file.readToEndAlloc(allocator, max_file_size);
-        var scanner = Scanner{
-            .source = source,
-            .reporter = .{
-                .filename = try fs.path.join(allocator, &.{ source_post_dir, name }),
-            },
+        const reporter = Reporter{
+            .filename = try fs.path.join(allocator, &.{ source_post_dir, name }),
         };
+        var scanner = Scanner{ .source = source, .reporter = reporter };
         entry.value_ptr.* = try Template.parse(allocator, &scanner, templates);
     }
     return templates;

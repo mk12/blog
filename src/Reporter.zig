@@ -1,5 +1,6 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+const builtin = @import("builtin");
 const std = @import("std");
 const testing = std.testing;
 const Reporter = @This();
