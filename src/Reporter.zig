@@ -1,6 +1,5 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
-const builtin = @import("builtin");
 const std = @import("std");
 const testing = std.testing;
 const Reporter = @This();
@@ -30,6 +29,7 @@ pub fn fail(
         self.length = result.len;
     } else |err| switch (err) {
         error.NoSpaceLeft => {
+            self.length = self.buffer.len;
             const truncated = " (truncated)";
             @memcpy(self.buffer[self.buffer.len - truncated.len ..], truncated);
         },
@@ -44,6 +44,13 @@ pub fn message(self: *const Reporter) []const u8 {
 pub fn expectFailure(self: *const Reporter, expected: []const u8, result: anytype) !void {
     try testing.expectEqualStrings(expected, self.message());
     try testing.expectError(error.ErrorWasReported, result);
+}
+
+pub fn print(self: *const Reporter, err: anyerror) void {
+    if (err != error.ErrorWasReported) return;
+    std.debug.print("\n====== an error was reported: ========\n", .{});
+    std.debug.print("{s}", .{self.message()});
+    std.debug.print("\n======================================\n", .{});
 }
 
 test "no failure" {
