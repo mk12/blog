@@ -38,21 +38,21 @@ pub fn parse(scanner: *Scanner) !Metadata {
     return metadata;
 }
 
-fn expectValid(expected: Metadata, source: []const u8) !void {
+fn expectSuccess(expected: Metadata, source: []const u8) !void {
     var reporter = Reporter{};
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
-fn expectInvalid(expected_error: []const u8, source: []const u8) !void {
+fn expectFailure(expected_message: []const u8, source: []const u8) !void {
     var reporter = Reporter{};
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_error, Metadata.parse(&scanner));
+    try reporter.expectFailure(expected_message, Metadata.parse(&scanner));
 }
 
 test "draft" {
-    try expectValid(Metadata{
+    try expectSuccess(Metadata{
         .title = "The title",
         .description = "The description",
         .category = "Category",
@@ -68,7 +68,7 @@ test "draft" {
 }
 
 test "published" {
-    try expectValid(Metadata{
+    try expectSuccess(Metadata{
         .title = "The title",
         .description = "The description",
         .category = "Category",
@@ -85,7 +85,7 @@ test "published" {
 }
 
 test "missing fields" {
-    try expectInvalid(
+    try expectFailure(
         \\<input>:3:1: expected "description: ", got "---\n"
     ,
         \\---
@@ -96,7 +96,7 @@ test "missing fields" {
 }
 
 test "invalid field" {
-    try expectInvalid(
+    try expectFailure(
         \\<input>:5:1: expected "date: " or "---\n", got "invali"
     ,
         \\---
@@ -110,7 +110,7 @@ test "invalid field" {
 }
 
 test "invalid date" {
-    try expectInvalid(
+    try expectFailure(
         \\<input>:5:17: expected "T", got "?"
     ,
         \\---
