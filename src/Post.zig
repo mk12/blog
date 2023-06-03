@@ -18,8 +18,8 @@ pub fn parse(scanner: *Scanner) !Post {
     const metadata = try Metadata.parse(scanner);
     return Post{
         .source = scanner.source,
-        .filename = scanner.reporter.filename,
-        .slug = std.fs.path.stem(scanner.reporter.filename),
+        .filename = scanner.filename,
+        .slug = std.fs.path.stem(scanner.filename),
         .metadata = metadata,
         .markdown_offset = scanner.offset,
         .markdown_location = scanner.location,
@@ -51,7 +51,9 @@ test "parse" {
         .markdown_offset = 105,
         .markdown_location = .{ .line = 7, .column = 1 },
     };
-    var scanner = Scanner{ .source = source, .reporter = .{ .filename = filename } };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try parse(&scanner));
 }
 
@@ -103,7 +105,9 @@ test "parse metadata draft" {
         .category = "Category",
         .status = Status.draft,
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
@@ -123,7 +127,9 @@ test "parse metadata published" {
         .category = "Category",
         .status = Status{ .published = Date.from("2023-04-29T15:28:50-07:00") },
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
@@ -137,11 +143,10 @@ test "parse metadata missing fields" {
     const expected_error =
         \\<input>:3:1: expected "description: ", got "---\n"
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, Metadata.parse(&scanner));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, Metadata.parse(&scanner));
 }
 
 test "parse metadata invalid field" {
@@ -155,13 +160,12 @@ test "parse metadata invalid field" {
         \\
     ;
     const expected_error =
-        \\<input>:5:1: expected one of: "date: ", "---\n"
+        \\<input>:5:1: expected "date: " or "---\n", got "invali"
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, Metadata.parse(&scanner));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, Metadata.parse(&scanner));
 }
 
 test "parse metadata invalid date" {
@@ -177,9 +181,8 @@ test "parse metadata invalid date" {
     const expected_error =
         \\<input>:5:17: expected "T", got "?"
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, Metadata.parse(&scanner));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, Metadata.parse(&scanner));
 }

@@ -46,14 +46,14 @@ pub fn expectFailure(self: *const Reporter, expected: []const u8, result: anytyp
     try testing.expectError(error.ErrorWasReported, result);
 }
 
-pub fn print(self: *const Reporter, err: anyerror) void {
+pub fn showMessage(self: *const Reporter, err: anyerror) void {
     if (err != error.ErrorWasReported) return;
     std.debug.print("\n====== an error was reported: ========\n", .{});
     std.debug.print("{s}", .{self.message()});
     std.debug.print("\n======================================\n", .{});
 }
 
-test "no failure" {
+test "empty message" {
     const reporter = Reporter{};
     try testing.expectEqualStrings("", reporter.message());
 }

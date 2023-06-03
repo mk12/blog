@@ -44,14 +44,19 @@ pub fn main() !void {
     const args = try parseArguments();
     const env = parseEnvironment();
     _ = env;
-    errdefer |err| if (err == error.ErrorWasReported) process.exit(1);
+
+    var reporter = Reporter{};
+    errdefer |err| if (err == error.ErrorWasReported) {
+        std.log.err("{s}", .{reporter.message()});
+        process.exit(1);
+    };
 
     var timer = try Timer.start();
 
-    var posts = try readPosts(allocator);
+    var posts = try readPosts(allocator, &reporter);
     timer.log("read {} posts", .{posts.items.len});
 
-    var templates = try readTemplates(allocator);
+    var templates = try readTemplates(allocator, &reporter);
     timer.log("read {} templates", .{templates.count()});
 
     try fs.cwd().deleteTree(args.destdir);
@@ -126,7 +131,7 @@ const source_post_dir = "posts";
 const template_dir = "templates";
 const max_file_size = 1024 * 1024;
 
-fn readPosts(allocator: Allocator) !std.ArrayList(Post) {
+fn readPosts(allocator: Allocator, reporter: *Reporter) !std.ArrayList(Post) {
     var posts = std.ArrayList(Post).init(allocator);
     var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
     defer iterable.close();
@@ -135,17 +140,17 @@ fn readPosts(allocator: Allocator) !std.ArrayList(Post) {
         if (entry.name[0] == '.') continue;
         var file = try iterable.dir.openFile(entry.name, .{});
         defer file.close();
-        const source = try file.readToEndAlloc(allocator, max_file_size);
-        const reporter = Reporter{
+        var scanner = Scanner{
+            .source = try file.readToEndAlloc(allocator, max_file_size),
             .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
+            .reporter = reporter,
         };
-        var scanner = Scanner{ .source = source, .reporter = reporter };
         try posts.append(try Post.parse(&scanner));
     }
     return posts;
 }
 
-fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
+fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(Template) {
     var templates = std.StringHashMap(Template).init(allocator);
     var iterable = try fs.cwd().openIterableDir(template_dir, .{});
     defer iterable.close();
@@ -162,11 +167,11 @@ fn readTemplates(allocator: Allocator) !std.StringHashMap(Template) {
         const name = entry.key_ptr.*;
         var file = try iterable.dir.openFile(name, .{});
         defer file.close();
-        const source = try file.readToEndAlloc(allocator, max_file_size);
-        const reporter = Reporter{
+        var scanner = Scanner{
+            .source = try file.readToEndAlloc(allocator, max_file_size),
             .filename = try fs.path.join(allocator, &.{ source_post_dir, name }),
+            .reporter = reporter,
         };
-        var scanner = Scanner{ .source = source, .reporter = reporter };
         entry.value_ptr.* = try Template.parse(allocator, &scanner, templates);
     }
     return templates;

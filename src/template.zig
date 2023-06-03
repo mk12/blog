@@ -99,7 +99,9 @@ fn scanIdentifier(scanner: *Scanner) ![]const u8 {
 
 test "scan empty string" {
     const source = "";
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
 
@@ -109,7 +111,9 @@ test "scan text" {
         .location = .{ .line = 1, .column = 1 },
         .value = .{ .text = "foo\n" },
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqualDeep(@as(?Token, expected), try scan(&scanner));
     try testing.expectEqual(@as(?Token, null), try scan(&scanner));
 }
@@ -130,7 +134,9 @@ test "scan text and variable" {
         .{ .variable = "name" },
         .{ .text = "!" },
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     const actual = try scanTokenValues(testing.allocator, &scanner);
     defer actual.deinit();
     try testing.expectEqualDeep(@as([]const TokenValue, &expected), actual.items);
@@ -177,7 +183,9 @@ test "scan all kinds of stuff" {
         .{ .text = try find("\n", source, 4) },
         .end,
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     const actual = try scanTokenValues(testing.allocator, &scanner);
     defer actual.deinit();
     try testing.expectEqualSlices(TokenValue, &expected, actual.items);
@@ -245,12 +253,14 @@ fn parseUntil(ctx: ParseContext, terminator: Terminator) !Template {
 const Terminator = enum { end, @"else", eof };
 const Result = struct { template: Template, terminator: Terminator };
 
-fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Reporter.Error!Result {
-    var template = Template{ .filename = ctx.scanner.reporter.filename };
+const Error = Reporter.Error || Allocator.Error;
+
+fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Error!Result {
+    const scanner = ctx.scanner;
+    var template = Template{ .filename = scanner.filename };
     errdefer template.deinit(ctx.allocator);
     var terminator: Terminator = .eof;
     var terminator_pos: ?Reporter.Location = null;
-    const scanner = ctx.scanner;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
@@ -274,7 +284,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Re
             .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.?.getPtr(path) orelse
-                    return scanner.reporter.fail(token.location, "{s}: template not found", .{path}),
+                    return scanner.reporter.fail(scanner.filename, token.location, "{s}: template not found", .{path}),
             },
             .start => |variable| blk: {
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
@@ -298,7 +308,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Re
     }
     if (!allowed_terminators.contains(terminator)) {
         const location = terminator_pos orelse scanner.location;
-        return scanner.reporter.fail(location, "unexpected {s}", .{
+        return scanner.reporter.fail(scanner.filename, location, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
@@ -318,7 +328,9 @@ test "parse text" {
             .value = .{ .text = try find("foo\n", source, 0) },
         },
     };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var template = try parse(testing.allocator, &scanner, null);
     defer template.deinit(testing.allocator);
     try testing.expectEqualSlices(Definition, &expected_definitions, template.definitions.items);
@@ -334,7 +346,9 @@ test "parse all kinds of stuff" {
         \\    {{ end }}
         \\{{ end }}
     ;
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
     try include_map.put("base.html", undefined);
@@ -383,11 +397,10 @@ test "invalid command" {
     const expected_error =
         \\<input>:1:26: expected "}}", got "ba"
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(testing.allocator, &scanner, null));
 }
 
 test "unterminated command" {
@@ -397,11 +410,10 @@ test "unterminated command" {
     const expected_error =
         \\<input>:1:27: unexpected EOF, expected "}}"
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(testing.allocator, &scanner, null));
 }
 
 test "missing end" {
@@ -411,11 +423,10 @@ test "missing end" {
     const expected_error =
         \\<input>:1:40: unexpected EOF
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(testing.allocator, &scanner, null));
 }
 
 test "unexpected end" {
@@ -426,11 +437,10 @@ test "unexpected end" {
     const expected_error =
         \\<input>:2:1: unexpected {{ end }}
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, null));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(testing.allocator, &scanner, null));
 }
 
 test "invalid include" {
@@ -441,13 +451,12 @@ test "invalid include" {
     const expected_error =
         \\<input>:2:1: does_not_exist: template not found
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
-    try testing.expectError(error.ErrorWasReported, parse(testing.allocator, &scanner, include_map));
-    try testing.expectEqualStrings(expected_error, log.items);
+    try reporter.expectFailure(expected_error, parse(testing.allocator, &scanner, include_map));
 }
 
 pub const Value = union(enum) {

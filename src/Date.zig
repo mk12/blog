@@ -3,6 +3,7 @@
 const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
+const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Date = @This();
 
@@ -36,7 +37,8 @@ pub fn parse(scanner: *Scanner) !Date {
 /// Parses a date at comptime.
 pub inline fn from(comptime string: []const u8) Date {
     comptime {
-        var scanner = Scanner{ .source = string };
+        var reporter = Reporter{};
+        var scanner = Scanner{ .source = string, .reporter = &reporter };
         return parse(&scanner) catch unreachable;
     }
 }
@@ -55,7 +57,9 @@ fn parseField(scanner: *Scanner, date: *Date, comptime name: []const u8, length:
 test "parse valid date" {
     const source = "2023-04-29T10:06:12-07:00";
     const expected = Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 };
-    var scanner = Scanner{ .source = source };
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqual(expected, try parse(&scanner));
 }
 
@@ -64,11 +68,10 @@ test "parse empty date" {
     const expected_error =
         \\<input>:1:1: unexpected EOF
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(&scanner));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(&scanner));
 }
 
 test "parse invalid date" {
@@ -76,11 +79,10 @@ test "parse invalid date" {
     const expected_error =
         \\<input>:1:12: "1z": invalid hour
     ;
-    var log = std.ArrayList(u8).init(testing.allocator);
-    defer log.deinit();
-    var scanner = Scanner{ .source = source, .reporter = .{ .out = &log } };
-    try testing.expectError(error.ErrorWasReported, parse(&scanner));
-    try testing.expectEqualStrings(expected_error, log.items);
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    try reporter.expectFailure(expected_error, parse(&scanner));
 }
 
 test "comptime from" {
