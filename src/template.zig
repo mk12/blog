@@ -44,7 +44,7 @@ fn scan(scanner: *Scanner) !?Token {
             }
             break;
         }
-        _ = scanner.next();
+        scanner.eat(char1.?);
     }
     if (scanner.eof()) return null;
     try scanner.expect("{{");
@@ -81,19 +81,16 @@ fn scan(scanner: *Scanner) !?Token {
         .end => .end,
     };
     try scanner.expect("}}");
-    return .{ .location = location, .value = value };
+    return Token{ .location = location, .value = value };
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
-    while (scanner.peek(0)) |char| {
-        switch (char) {
-            'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(char),
-            else => break,
-        }
-    }
-    if (scanner.offset == start)
-        return scanner.fail("expected an identifier", .{});
+    while (scanner.peek(0)) |char| switch (char) {
+        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(char),
+        else => break,
+    };
+    if (scanner.offset == start) return scanner.fail("expected an identifier", .{});
     return scanner.source[start..scanner.offset];
 }
 
@@ -142,6 +139,7 @@ test "scan text and variable" {
     try testing.expectEqualDeep(@as([]const TokenValue, &expected), actual.items);
 }
 
+// TODO custom assertion instead of doing all this "find" stuff
 fn find(substring: []const u8, source: []const u8, occurrence: usize) ![]const u8 {
     var count: usize = 0;
     var offset: usize = 0;
@@ -196,6 +194,11 @@ const Definition = struct {
     body: Template,
 };
 
+const Command = struct {
+    location: Reporter.Location,
+    value: CommandValue,
+};
+
 const CommandValue = union(enum) {
     text: []const u8,
     variable: Variable,
@@ -205,11 +208,6 @@ const CommandValue = union(enum) {
         body: Template,
         else_body: ?Template,
     },
-};
-
-const Command = struct {
-    location: Reporter.Location,
-    value: CommandValue,
 };
 
 pub fn deinit(self: *Template, allocator: Allocator) void {
@@ -251,20 +249,19 @@ fn parseUntil(ctx: ParseContext, terminator: Terminator) !Template {
 }
 
 const Terminator = enum { end, @"else", eof };
-const Result = struct { template: Template, terminator: Terminator };
+const ParseError = Reporter.Error || Allocator.Error;
+const ParseResult = ParseError!struct { template: Template, terminator: Terminator };
 
-const Error = Reporter.Error || Allocator.Error;
-
-fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Error!Result {
+fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .filename = scanner.filename };
     errdefer template.deinit(ctx.allocator);
-    var terminator: Terminator = .eof;
+    var terminator = Terminator.eof;
     var terminator_pos: ?Reporter.Location = null;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
-                try template.definitions.append(ctx.allocator, .{
+                try template.definitions.append(ctx.allocator, Definition{
                     .variable = variable,
                     .body = try parseUntil(ctx, .end),
                 });
@@ -284,7 +281,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Er
             .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.?.getPtr(path) orelse
-                    return scanner.reporter.fail(scanner.filename, token.location, "{s}: template not found", .{path}),
+                    return scanner.failAt(token.location, "{s}: template not found", .{path}),
             },
             .start => |variable| blk: {
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
@@ -301,14 +298,14 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Er
                 };
             },
         };
-        try template.commands.append(ctx.allocator, .{
+        try template.commands.append(ctx.allocator, Command{
             .location = token.location,
             .value = command_value,
         });
     }
     if (!allowed_terminators.contains(terminator)) {
         const location = terminator_pos orelse scanner.location;
-        return scanner.reporter.fail(scanner.filename, location, "unexpected {s}", .{
+        return scanner.failAt(location, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
@@ -316,7 +313,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Er
             },
         });
     }
-    return Result{ .template = template, .terminator = terminator };
+    return .{ .template = template, .terminator = terminator };
 }
 
 test "parse text" {
@@ -480,6 +477,12 @@ pub const Value = union(enum) {
             },
         }
     }
+
+    fn lookup(self: Value, name: []const u8) Value {
+        _ = name;
+        _ = self;
+        unreachable;
+    }
 };
 
 // const Scope = std.SinglyLinkedList(Dictionary);
@@ -487,10 +490,19 @@ pub const Value = union(enum) {
 // const ExecuteContext = struct {
 //     allocator: Allocator,
 //     variables: Value,
-//     scratch: std.SegmentedList(u8, 256),
+//     // scratch: std.SegmentedList(u8, 256),
+//     reporter: *Reporter,
 // };
 
-pub fn execute(self: Template, allocator: Allocator, variables: Value, writer: anytype) !void {
+const Scope = struct {
+    parent: ?*const Scope,
+    value: Value,
+};
+
+// TODO 2 things:
+// - pass scratch buffer for definitions?
+// - scope chaining. can use call stack somehow?
+pub fn execute(self: Template, allocator: Allocator, scope: Scope, writer: anytype, reporter: *Reporter) !void {
     // var buffer = std.SegmentedList(u8, 128){};
     // for (self.definitions.items) |definition| {
     //     const start = buffer.items.len;
@@ -502,29 +514,43 @@ pub fn execute(self: Template, allocator: Allocator, variables: Value, writer: a
     //     // try variables.put(definition.variable,
     // }
     for (self.commands.items) |command| {
-        // have command.location but no scanner for calling fail (and filename...)
-        // and if I add Scanner.fail(filename, location, ...)
-        // then there's nowhere to store the error.
-        // Maybe have "error storage" that I pass into scanner, and to template execution?
-        // Or have a union(enum) { log, store_for_test: *[]const u8 }
-        // but then where does that config live if not in scanner...
         switch (command.value) {
             .text => |text| try writer.writeAll(text),
-            .include => |template| try template.execute(allocator, variables, writer),
-            .variable => |variable| blk: {
-                _ = variable;
+            .include => |template| try template.execute(allocator, scope, writer),
+            .variable => |variable| {
+                // TODO lookup. Handle "." too
                 const value = Value{ .string = "hi" };
                 switch (value) {
-                    .string => {},
-                    .bool => {},
-                    .template => {},
-                    .array => {},
-                    .dictionary => {},
+                    .string => |string| try writer.writeAll(string),
+                    .template => |template| try template.execute(allocator, scope, writer, reporter),
+                    else => return reporter.fail(
+                        self.filename,
+                        command.location,
+                        "{s}: expected string variable, got {s}",
+                        .{ variable.name, @tagName(value) },
+                    ),
                 }
-                break :blk {};
             },
             .control => |control| {
-                _ = control;
+                // TODO lookup.
+                const value = Value{ .dictionary = .{} };
+                switch (value) {
+                    .bool => |val| if (val)
+                        control.body.execute(allocator, scope, writer, reporter)
+                    else if (control.else_body) |else_body|
+                        else_body.execute(allocator, scope, writer, reporter),
+                    .array => |array| if (array.len == 0) {
+                        if (control.else_body) |else_body|
+                            else_body.execute(allocator, scope, writer, reporter);
+                    } else for (array.items) |item| {
+                        const new_scope = Scope{ .parent = scope, .value = item };
+                        control.body.execute(allocator, new_scope, writer, reporter);
+                    },
+                    else => {
+                        const new_scope = Scope{ .parent = scope, .value = value };
+                        control.body.execute(allocator, new_scope, writer, reporter);
+                    },
+                }
             },
         }
     }

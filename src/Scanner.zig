@@ -128,6 +128,10 @@ pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
     return self.reporter.fail(self.filename, self.location, format, args);
 }
 
+pub fn failAt(self: *Scanner, location: Location, comptime format: []const u8, args: anytype) Error {
+    return self.reporter.fail(self.filename, location, format, args);
+}
+
 pub fn failOn(self: *Scanner, span: Span, comptime format: []const u8, args: anytype) Error {
     return self.reporter.fail(self.filename, span.location, "\"{s}\": " ++ format, .{span.text} ++ args);
 }
@@ -157,7 +161,7 @@ test "peek" {
     try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
-    _ = scanner.next();
+    scanner.eat('a');
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, null), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
@@ -243,25 +247,4 @@ test "skipWhitespace" {
     try testing.expect(scanner.eof());
     scanner.skipWhitespace();
     try testing.expect(scanner.eof());
-}
-
-test "fail" {
-    var reporter = Reporter{};
-    errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = "foo\nbar.\n", .filename = "test.txt", .reporter = &reporter };
-    _ = try scanner.until('.');
-    try reporter.expectFailure(
-        \\test.txt:2:5: oops: 123
-    , @as(Error!void, scanner.fail("oops: {}", .{123})));
-}
-
-test "failOn" {
-    var reporter = Reporter{};
-    errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = "foo\nbar.\n", .filename = "test.txt", .reporter = &reporter };
-    _ = try scanner.until('\n');
-    const span = try scanner.until('.');
-    try reporter.expectFailure(
-        \\test.txt:2:1: "bar": oops: 123
-    , @as(Error!void, scanner.failOn(span, "oops: {}", .{123})));
 }

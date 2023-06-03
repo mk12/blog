@@ -34,7 +34,6 @@ pub fn parse(scanner: *Scanner) !Date {
     return date;
 }
 
-/// Parses a date at comptime.
 pub inline fn from(comptime string: []const u8) Date {
     comptime {
         var reporter = Reporter{};
@@ -54,35 +53,35 @@ fn parseField(scanner: *Scanner, date: *Date, comptime name: []const u8, length:
         return scanner.failOn(span, "invalid {s}", .{name});
 }
 
-test "parse valid date" {
-    const source = "2023-04-29T10:06:12-07:00";
-    const expected = Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 };
+fn expectValid(expected: Date, source: []const u8) !void {
     var reporter = Reporter{};
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqual(expected, try parse(&scanner));
 }
 
-test "parse empty date" {
-    const source = "";
-    const expected_error =
-        \\<input>:1:1: unexpected EOF
-    ;
+fn expectInvalid(expected_error: []const u8, source: []const u8) !void {
     var reporter = Reporter{};
-    errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try reporter.expectFailure(expected_error, parse(&scanner));
 }
 
-test "parse invalid date" {
-    const source = "2023-04-29T1z:06:12-07:00";
-    const expected_error =
-        \\<input>:1:12: "1z": invalid hour
-    ;
-    var reporter = Reporter{};
-    errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_error, parse(&scanner));
+test "parse valid" {
+    try expectValid(
+        Date{ .year = 1903, .month = 12, .day = 31, .hour = 14, .minute = 59, .second = 1, .tz_offset_h = 0 },
+        "1903-12-31T14:59:01+00:00",
+    );
+    try expectValid(
+        Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 },
+        "2023-04-29T10:06:12-07:00",
+    );
+}
+
+test "parse invalid" {
+    try expectInvalid("<input>:1:1: unexpected EOF", "");
+    try expectInvalid("<input>:1:1: \"asdf\": invalid year", "asdf");
+    try expectInvalid("<input>:1:5: expected \"-\", got \".\"", "2000.");
+    try expectInvalid("<input>:1:12: \"1z\": invalid hour", "2023-04-29T1z:06:12-07:00");
 }
 
 test "comptime from" {

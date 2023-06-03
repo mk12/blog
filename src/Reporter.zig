@@ -53,16 +53,13 @@ pub fn showMessage(self: *const Reporter, err: anyerror) void {
     std.debug.print("\n======================================\n", .{});
 }
 
-test "empty message" {
+test "no failure" {
     const reporter = Reporter{};
     try testing.expectEqualStrings("", reporter.message());
 }
 
-test "fail" {
+test "failure" {
     var reporter = Reporter{};
-    try testing.expectEqual(
-        error.ErrorWasReported,
-        reporter.fail("test.txt", .{ .line = 42, .column = 5 }, "foo: {s}", .{"bar"}),
-    );
-    try testing.expectEqualStrings("test.txt:42:5: foo: bar", reporter.message());
+    const result = reporter.fail("test.txt", .{ .line = 42, .column = 5 }, "foo: {s}", .{"bar"});
+    try reporter.expectFailure("test.txt:42:5: foo: bar", @as(Error!void, result));
 }
