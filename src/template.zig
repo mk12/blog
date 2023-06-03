@@ -521,50 +521,44 @@ fn lookup(self: Template, ctx: anytype, scope: *const Scope, command: Command, v
 fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
     for (self.definitions.items) |definition|
         try scope.definitions.put(ctx.allocator, definition.variable, &definition.body);
-    for (self.commands.items) |command| {
-        switch (command.value) {
-            .text => |text| try ctx.writer.writeAll(text),
-            .include => |template| try template.exec(ctx, scope),
-            .variable => |variable| {
-                switch (try self.lookup(ctx, scope, command, variable)) {
-                    .string => |string| try ctx.writer.writeAll(string),
-                    .template => |template| try template.exec(ctx, scope),
-                    else => |value| return ctx.reporter.fail(
-                        self.filename,
-                        command.location,
-                        "{s}: expected string variable, got {s}",
-                        .{ variable, @tagName(value) },
-                    ),
-                }
+    for (self.commands.items) |command| switch (command.value) {
+        .text => |text| try ctx.writer.writeAll(text),
+        .include => |template| try template.exec(ctx, scope),
+        .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
+            .string => |string| try ctx.writer.writeAll(string),
+            .template => |template| try template.exec(ctx, scope),
+            else => |value| return ctx.reporter.fail(
+                self.filename,
+                command.location,
+                "{s}: expected string variable, got {s}",
+                .{ variable, @tagName(value) },
+            ),
+        },
+        .control => |control| switch (try self.lookup(ctx, scope, command, control.variable)) {
+            .bool => |value| if (value)
+                try control.body.exec(ctx, scope)
+            else if (control.else_body) |else_body|
+                try else_body.exec(ctx, scope),
+            .array => |array| if (array.items.len == 0) {
+                if (control.else_body) |else_body| try else_body.exec(ctx, scope);
+            } else for (array.items) |item| {
+                var new_scope = Scope{ .parent = scope, .value = item };
+                defer new_scope.deinit(ctx.allocator);
+                try control.body.exec(ctx, &new_scope);
             },
-            .control => |control| {
-                switch (try self.lookup(ctx, scope, command, control.variable)) {
-                    .bool => |value| if (value)
-                        try control.body.exec(ctx, scope)
-                    else if (control.else_body) |else_body|
-                        try else_body.exec(ctx, scope),
-                    .array => |array| if (array.items.len == 0) {
-                        if (control.else_body) |else_body| try else_body.exec(ctx, scope);
-                    } else for (array.items) |item| {
-                        var new_scope = Scope{ .parent = scope, .value = item };
-                        defer new_scope.deinit(ctx.allocator);
-                        try control.body.exec(ctx, &new_scope);
-                    },
-                    else => |value| {
-                        if (control.else_body) |_| return ctx.reporter.fail(
-                            self.filename,
-                            command.location,
-                            "else branch expects bool or array, got {s}",
-                            .{@tagName(value)},
-                        );
-                        var new_scope = Scope{ .parent = scope, .value = value };
-                        defer new_scope.deinit(ctx.allocator);
-                        try control.body.exec(ctx, &new_scope);
-                    },
-                }
+            else => |value| {
+                if (control.else_body) |_| return ctx.reporter.fail(
+                    self.filename,
+                    command.location,
+                    "else branch expects bool or array, got {s}",
+                    .{@tagName(value)},
+                );
+                var new_scope = Scope{ .parent = scope, .value = value };
+                defer new_scope.deinit(ctx.allocator);
+                try control.body.exec(ctx, &new_scope);
             },
-        }
-    }
+        },
+    };
 }
 
 fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytype) !void {
