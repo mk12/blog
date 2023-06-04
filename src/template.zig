@@ -31,7 +31,7 @@ const TokenValue = union(enum) {
     end,
 };
 
-fn scan(scanner: *Scanner) !?Token {
+fn scan(scanner: *Scanner) Reporter.Error!?Token {
     const location = scanner.location;
     const start = scanner.offset;
     const brace: u8 = '{';
@@ -169,6 +169,39 @@ test "scan everything" {
     );
 }
 
+const Peeker = struct {
+    scanner: *Scanner,
+    peeked: Reporter.Error!?Token,
+
+    fn init(scanner: *Scanner) Peeker {
+        return Peeker{ .scanner = scanner, .peeked = scan(scanner) };
+    }
+
+    fn next(self: *Peeker) !?Token {
+        const token = self.peeked;
+        self.peeked = scan(self.scanner);
+        return token;
+    }
+
+    fn peek(self: *const Peeker) ?Token {
+        return self.peeked catch null;
+    }
+};
+
+test "peeker" {
+    var reporter = Reporter{};
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = "abc{{x}}", .reporter = &reporter };
+    var peeker = Peeker.init(&scanner);
+    try testing.expectEqualStrings("abc", peeker.peek().?.value.text);
+    try testing.expectEqualStrings("abc", peeker.peek().?.value.text);
+    try testing.expectEqualStrings("abc", (try peeker.next()).?.value.text);
+    try testing.expectEqualStrings("x", peeker.peek().?.value.variable);
+    try testing.expectEqualStrings("x", (try peeker.next()).?.value.variable);
+    try testing.expectEqual(@as(?Token, null), peeker.peek());
+    try testing.expectEqual(@as(?Token, null), try peeker.next());
+}
+
 const Definition = struct {
     variable: Variable,
     body: Template,
@@ -238,7 +271,8 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
     errdefer template.deinit(ctx.allocator);
     var terminator = Terminator.eof;
     var terminator_pos: ?Reporter.Location = null;
-    while (try scan(scanner)) |token| {
+    var peeker = Peeker.init(scanner);
+    while (try peeker.next()) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
                 try template.definitions.append(ctx.allocator, Definition{
@@ -284,6 +318,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
         });
     }
     if (!allowed_terminators.contains(terminator)) {
+        // TODO peeker
         const location = terminator_pos orelse scanner.location;
         return scanner.failAt(location, "unexpected {s}", .{
             switch (terminator) {
@@ -326,7 +361,7 @@ test "parse text" {
     }, template.commands.items);
 }
 
-test "parse all kinds of stuff" {
+test "parse everything" {
     const source =
         \\{{ include "base.html" }}
         \\{{ define var }}
@@ -471,6 +506,7 @@ test "value" {
         .true = true,
         .false = false,
         .string = "hello",
+        .empty = .{},
         .array = .{ true, "hello" },
         .nested = .{ .true = true, .string = "hello" },
     });
@@ -503,12 +539,18 @@ const Scope = struct {
         self.definitions.deinit(allocator);
     }
 
+    fn reset(self: *Scope, value: Value) *Scope {
+        self.definitions.clearRetainingCapacity();
+        self.value = value;
+        return self;
+    }
+
     fn lookup(self: *const Scope, variable: Variable) ?Value {
         if (mem.eql(u8, variable, ".")) return self.value;
         if (self.definitions.get(variable)) |template| return Value{ .template = template };
         return switch (self.value) {
             .dict => |dict| dict.get(variable),
-            else => null,
+            else => if (self.parent) |parent| parent.lookup(variable) else null,
         };
     }
 };
@@ -541,32 +583,36 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                 try else_body.exec(ctx, scope),
             .array => |array| if (array.items.len == 0) {
                 if (control.else_body) |else_body| try else_body.exec(ctx, scope);
-            } else for (array.items) |item| {
-                var new_scope = Scope{ .parent = scope, .value = item };
-                defer new_scope.deinit(ctx.allocator);
-                try control.body.exec(ctx, &new_scope);
+            } else {
+                var nested = Scope{ .parent = scope, .value = undefined };
+                defer nested.deinit(ctx.allocator);
+                for (array.items) |item| try control.body.exec(ctx, nested.reset(item));
             },
             else => |value| {
-                if (control.else_body) |_| return ctx.reporter.fail(
-                    self.filename,
-                    command.location,
-                    "else branch expects bool or array, got {s}",
-                    .{@tagName(value)},
-                );
-                var new_scope = Scope{ .parent = scope, .value = value };
-                defer new_scope.deinit(ctx.allocator);
-                try control.body.exec(ctx, &new_scope);
+                var nested = Scope{ .parent = scope, .value = value };
+                defer nested.deinit(ctx.allocator);
+                try control.body.exec(ctx, &nested);
             },
         },
     };
 }
 
-fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytype) !void {
+fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytype, includes: anytype) !void {
     var reporter = Reporter{};
     errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
+    const fields = @typeInfo(@TypeOf(includes)).Struct.fields;
+    inline for (fields) |field| try include_map.put(field.name, undefined);
+    defer {
+        var iter = include_map.valueIterator();
+        while (iter.next()) |template| template.deinit(testing.allocator);
+    }
+    inline for (fields) |field| {
+        var scanner = Scanner{ .source = @field(includes, field.name), .reporter = &reporter };
+        include_map.getPtr(field.name).?.* = try parse(testing.allocator, &scanner, include_map);
+    }
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var template = try parse(testing.allocator, &scanner, include_map);
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
@@ -580,9 +626,9 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
 fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object: anytype) !void {
     var reporter = Reporter{};
     errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
     var template = try parse(testing.allocator, &scanner, include_map);
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
@@ -596,32 +642,40 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
 }
 
 test "execute text" {
-    try expectExecuteSuccess("", "", .{});
-    try expectExecuteSuccess("Hello world!", "Hello world!", .{});
+    try expectExecuteSuccess("", "", .{}, .{});
+    try expectExecuteSuccess("Hello world!", "Hello world!", .{}, .{});
 }
 
 test "execute variable" {
-    try expectExecuteSuccess("foo", "{{ . }}", "foo");
-    try expectExecuteSuccess("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" });
+    try expectExecuteSuccess("foo", "{{ . }}", "foo", .{});
+    try expectExecuteSuccess("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" }, .{});
+}
+
+test "execute shadowing" {
+    try expectExecuteSuccess("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } }, .{});
 }
 
 test "execute definition" {
-    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{});
-    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" });
+    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{}, .{});
+    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" }, .{});
 }
 
 test "execute if" {
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ end }}", .{ .val = true });
-    try expectExecuteSuccess("", "{{ if val }}yes{{ end }}", .{ .val = false });
+    try expectExecuteSuccess("yes", "{{ if val }}yes{{ end }}", .{ .val = true }, .{});
+    try expectExecuteSuccess("", "{{ if val }}yes{{ end }}", .{ .val = false }, .{});
 }
 
 test "execute if-else" {
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true });
-    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false });
+    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true }, .{});
+    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false }, .{});
 }
 
 test "execute range" {
-    try expectExecuteSuccess("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" });
+    try expectExecuteSuccess("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" }, .{});
+}
+
+test "execute range-else" {
+    try expectExecuteSuccess("empty!", "{{ range . }}{{ . }},{{ else }}empty!{{ end }}", .{}, .{});
 }
 
 test "execute not a string" {
@@ -632,4 +686,20 @@ test "execute variable not found" {
     try expectExecuteFailure("<input>:1:7: foo: variable not found", "Hello {{ foo }}!", .{});
 }
 
-// TODO: test execute with include
+// test "execute everything" {
+//     try expectExecuteSuccess(
+//         \\From base:
+//         \\        Value: inner bar,
+//         \\        Value: foo,
+//     ,
+//         \\{{ include "base.html" }}
+//         \\{{ define var }}
+//         \\    {{ range thing }}
+//         \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+//         \\    {{ end }}
+//         \\{{ end }}
+//     ,
+//         .{ .bar = true, .thing = .{ .{ .bar = "inner bar" }, "foo" } },
+//         .{ .@"base.html" = "From base:{{ var }}" },
+//     );
+// }
