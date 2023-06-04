@@ -110,7 +110,7 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
         switch (copy) {
             .@"else", .end => {},
             inline else => |*substring| {
-                const start = std.mem.indexOfPos(u8, source, offset, substring.*) orelse {
+                const start = mem.indexOfPos(u8, source, offset, substring.*) orelse {
                     std.debug.print("could not find expected[{}]: \"{}\"\n", .{ index, fmtEscapes(substring.*) });
                     return error.SubstringNotFound;
                 };
@@ -167,39 +167,6 @@ test "scan everything" {
         \\    {{ end }}
         \\{{ end }}
     );
-}
-
-const Peeker = struct {
-    scanner: *Scanner,
-    peeked: Reporter.Error!?Token,
-
-    fn init(scanner: *Scanner) Peeker {
-        return Peeker{ .scanner = scanner, .peeked = scan(scanner) };
-    }
-
-    fn next(self: *Peeker) !?Token {
-        const token = self.peeked;
-        self.peeked = scan(self.scanner);
-        return token;
-    }
-
-    fn peek(self: *const Peeker) ?Token {
-        return self.peeked catch null;
-    }
-};
-
-test "peeker" {
-    var reporter = Reporter{};
-    errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = "abc{{x}}", .reporter = &reporter };
-    var peeker = Peeker.init(&scanner);
-    try testing.expectEqualStrings("abc", peeker.peek().?.value.text);
-    try testing.expectEqualStrings("abc", peeker.peek().?.value.text);
-    try testing.expectEqualStrings("abc", (try peeker.next()).?.value.text);
-    try testing.expectEqualStrings("x", peeker.peek().?.value.variable);
-    try testing.expectEqualStrings("x", (try peeker.next()).?.value.variable);
-    try testing.expectEqual(@as(?Token, null), peeker.peek());
-    try testing.expectEqual(@as(?Token, null), try peeker.next());
 }
 
 const Definition = struct {
@@ -269,10 +236,19 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
     const scanner = ctx.scanner;
     var template = Template{ .filename = scanner.filename };
     errdefer template.deinit(ctx.allocator);
+    var prev_was_text = false;
     var terminator = Terminator.eof;
     var terminator_pos: ?Reporter.Location = null;
-    var peeker = Peeker.init(scanner);
-    while (try peeker.next()) |token| {
+    while (try scan(scanner)) |token| {
+        if (prev_was_text) switch (token.value) {
+            .define, .end, .@"else", .start => {
+                const text = &template.commands.items[template.commands.items.len - 1].value.text;
+                const trimmed = trimWhitespace(text.*);
+                if (trimmed.len == 0) _ = template.commands.pop() else text.* = trimmed;
+            },
+            else => {},
+        };
+        prev_was_text = token.value == .text;
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
                 try template.definitions.append(ctx.allocator, Definition{
@@ -318,7 +294,6 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
         });
     }
     if (!allowed_terminators.contains(terminator)) {
-        // TODO peeker
         const location = terminator_pos orelse scanner.location;
         return scanner.failAt(location, "unexpected {s}", .{
             switch (terminator) {
@@ -329,6 +304,13 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
         });
     }
     return .{ .template = template, .terminator = terminator };
+}
+
+fn trimWhitespace(text: []const u8) []const u8 {
+    const index = mem.lastIndexOfScalar(u8, text, '\n') orelse return text;
+    const whitespace = " \t\n";
+    if (mem.indexOfNonePos(u8, text, index + 1, whitespace)) |_| return text;
+    return mem.trimRight(u8, text[0..index], whitespace);
 }
 
 fn expectParseSuccess(source: []const u8, include_map: std.StringHashMap(Template)) !Template {
@@ -384,10 +366,8 @@ test "parse everything" {
     try testing.expectEqualStrings("var", define_var.variable);
     try testing.expectEqual(@as(usize, 0), define_var.body.definitions.items.len);
     const var_body = define_var.body.commands.items;
-    try testing.expectEqual(@as(usize, 3), var_body.len);
-    try testing.expectEqualStrings("\n    ", var_body[0].value.text);
-    const range_thing = var_body[1].value.control;
-    try testing.expectEqualStrings("\n", var_body[2].value.text);
+    try testing.expectEqual(@as(usize, 1), var_body.len);
+    const range_thing = var_body[0].value.control;
     try testing.expectEqualStrings("thing", range_thing.variable);
     try testing.expectEqual(@as(usize, 0), range_thing.body.definitions.items.len);
     const range_body = range_thing.body.commands.items;
@@ -395,7 +375,7 @@ test "parse everything" {
     try testing.expectEqual(@as(?Template, null), range_thing.else_body);
     try testing.expectEqualStrings("\n        Value: ", range_body[0].value.text);
     const if_bar = range_body[1].value.control;
-    try testing.expectEqualStrings(",\n    ", range_body[2].value.text);
+    try testing.expectEqualStrings(",", range_body[2].value.text);
     try testing.expectEqual(@as(usize, 0), if_bar.body.definitions.items.len);
     try testing.expectEqual(@as(usize, 0), if_bar.else_body.?.definitions.items.len);
     const if_body = if_bar.body.commands.items;
@@ -406,9 +386,8 @@ test "parse everything" {
     try testing.expectEqualStrings("Fallback", else_body[0].value.text);
 
     const commands = template.commands.items;
-    try testing.expectEqual(@as(usize, 2), commands.len);
+    try testing.expectEqual(@as(usize, 1), commands.len);
     try testing.expectEqual(base_template, commands[0].value.include);
-    try testing.expectEqualStrings("\n", commands[1].value.text);
 }
 
 test "invalid command" {
@@ -686,20 +665,20 @@ test "execute variable not found" {
     try expectExecuteFailure("<input>:1:7: foo: variable not found", "Hello {{ foo }}!", .{});
 }
 
-// test "execute everything" {
-//     try expectExecuteSuccess(
-//         \\From base:
-//         \\        Value: inner bar,
-//         \\        Value: foo,
-//     ,
-//         \\{{ include "base.html" }}
-//         \\{{ define var }}
-//         \\    {{ range thing }}
-//         \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
-//         \\    {{ end }}
-//         \\{{ end }}
-//     ,
-//         .{ .bar = true, .thing = .{ .{ .bar = "inner bar" }, "foo" } },
-//         .{ .@"base.html" = "From base:{{ var }}" },
-//     );
-// }
+test "execute everything" {
+    try expectExecuteSuccess(
+        \\From base:
+        \\        Value: inner bar,
+        \\        Value: foo,
+    ,
+        \\{{ include "base.html" }}
+        \\{{ define var }}
+        \\    {{ range thing }}
+        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\    {{ end }}
+        \\{{ end }}
+    ,
+        .{ .bar = true, .thing = .{ .{ .bar = "inner bar" }, "foo" } },
+        .{ .@"base.html" = "From base:{{ var }}" },
+    );
+}

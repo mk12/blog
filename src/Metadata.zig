@@ -17,7 +17,7 @@ const Status = union(enum) {
     published: Date,
 };
 
-pub fn parse(scanner: *Scanner) !Metadata {
+pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var metadata: Metadata = undefined;
     const separator = "---\n";
     try scanner.expect(separator);

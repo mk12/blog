@@ -15,7 +15,7 @@ metadata: Metadata,
 markdown_offset: usize,
 markdown_location: Reporter.Location,
 
-pub fn parse(scanner: *Scanner) !Post {
+pub fn parse(scanner: *Scanner) Reporter.Error!Post {
     const metadata = try Metadata.parse(scanner);
     return Post{
         .source = scanner.source,

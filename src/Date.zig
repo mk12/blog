@@ -16,7 +16,7 @@ second: u8,
 tz_offset_h: i8,
 
 /// Parses a date from a restricted subset of RFC-3339.
-pub fn parse(scanner: *Scanner) !Date {
+pub fn parse(scanner: *Scanner) Reporter.Error!Date {
     var date: Date = undefined;
     try parseField(scanner, &date, "year", 4);
     try scanner.expect("-");
