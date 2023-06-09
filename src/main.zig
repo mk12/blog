@@ -4,8 +4,8 @@ const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;
 const process = std.process;
+const generate = @import("generate.zig").generate;
 const Allocator = mem.Allocator;
-const Generator = @import("Generator.zig");
 const Post = @import("Post.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
@@ -18,12 +18,12 @@ pub const std_options = struct {
 fn printUsage(writer: anytype) !void {
     const program_name = fs.path.basename(mem.span(std.os.argv[0]));
     try writer.print(
-        \\Usage: {s} [-hd] DEST_DIR
+        \\Usage: {s} [-hd] OUT_DIR
         \\
         \\Generate static files for the blog
         \\
         \\Arguments:
-        \\    DEST_DIR      Destination directory
+        \\    OUT_DIR      Output directory
         \\
         \\Options:
         \\    -h, --help   Show this help message
@@ -44,7 +44,6 @@ pub fn main() !void {
     const allocator = arena.allocator();
     const args = try parseArguments();
     const env = parseEnvironment();
-    _ = env;
 
     var reporter = Reporter{};
     errdefer |err| if (err == error.ErrorWasReported) {
@@ -54,21 +53,30 @@ pub fn main() !void {
 
     var timer = try Timer.start();
 
-    var posts = try readPosts(allocator, &reporter);
+    var posts = try readPosts(allocator, &reporter, args.draft);
     timer.log("read {} posts", .{posts.items.len});
 
     var templates = try readTemplates(allocator, &reporter);
     timer.log("read {} templates", .{templates.count()});
 
-    try fs.cwd().deleteTree(args.dest_dir);
-    timer.log("deleted {s}", .{args.dest_dir});
+    try fs.cwd().deleteTree(args.out_dir);
+    timer.log("deleted {s}", .{args.out_dir});
 
-    var dest_dir = try fs.cwd().makeOpenPath(args.dest_dir, .{});
-    defer dest_dir.close();
+    var out_dir = try fs.cwd().makeOpenPath(args.out_dir, .{});
+    defer out_dir.close();
 
-    const generator = Generator{ .allocator = allocator, .reporter = &reporter, .posts = posts.items, .templates = templates };
-    const num_files = try generator.generateFiles(dest_dir);
-    timer.log("wrote {} files", .{num_files});
+    const num_written = try generate(.{
+        .allocator = allocator,
+        .reporter = &reporter,
+        .out_dir = out_dir,
+        .templates = templates,
+        .posts = posts.items,
+        .base_url = env.base_url,
+        .home_url = env.home_url,
+        .font_url = env.font_url,
+        .analytics = env.analytics,
+    });
+    timer.log("wrote {} files", .{num_written});
 }
 
 const Timer = struct {
@@ -85,13 +93,13 @@ const Timer = struct {
 };
 
 const Arguments = struct {
-    dest_dir: []const u8,
+    out_dir: []const u8,
     draft: bool = false,
 };
 
 fn parseArguments() !Arguments {
-    var args = Arguments{ .dest_dir = undefined };
-    var dest_dir: ?[]const u8 = null;
+    var args = Arguments{ .out_dir = undefined };
+    var out_dir: ?[]const u8 = null;
     for (std.os.argv[1..]) |ptr| {
         const arg = mem.span(ptr);
         if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
@@ -102,14 +110,14 @@ fn parseArguments() !Arguments {
         } else if (mem.startsWith(u8, arg, "-")) {
             std.log.err("{s}: invalid argument", .{arg});
             process.exit(1);
-        } else if (dest_dir != null) {
+        } else if (out_dir != null) {
             try printUsage(std.io.getStdErr().writer());
             process.exit(1);
         } else {
-            dest_dir = arg;
+            out_dir = arg;
         }
     }
-    args.dest_dir = dest_dir orelse {
+    args.out_dir = out_dir orelse {
         try printUsage(std.io.getStdErr().writer());
         process.exit(1);
     };
@@ -136,7 +144,7 @@ const source_post_dir = "posts";
 const template_dir = "templates";
 const max_file_size = 1024 * 1024;
 
-fn readPosts(allocator: Allocator, reporter: *Reporter) !std.ArrayList(Post) {
+fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) !std.ArrayList(Post) {
     var posts = std.ArrayList(Post).init(allocator);
     var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
     defer iterable.close();
@@ -150,7 +158,9 @@ fn readPosts(allocator: Allocator, reporter: *Reporter) !std.ArrayList(Post) {
             .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
             .reporter = reporter,
         };
-        try posts.append(try Post.parse(&scanner));
+        const post = try Post.parse(&scanner);
+        if (!include_drafts and post.metadata.status == .draft) continue;
+        try posts.append(post);
     }
     return posts;
 }

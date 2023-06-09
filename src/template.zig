@@ -449,17 +449,19 @@ test "invalid include" {
 }
 
 pub const Value = union(enum) {
-    string: []const u8,
+    string: ?[]const u8,
     bool: bool,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
 
-    // TODO revisit pub
     pub fn init(allocator: Allocator, object: anytype) !Value {
-        const Type = @TypeOf(object);
-        const info = @typeInfo(Type);
-        if (info == .Bool) return .{ .bool = object };
+        comptime var Type = @TypeOf(object);
+        switch (@typeInfo(Type)) {
+            .Bool => return .{ .bool = object },
+            .Optional => |Optional| Type = Optional.child,
+            else => {},
+        }
         if (comptime std.meta.trait.isZigString(Type))
             return .{ .string = object };
         if (comptime std.meta.trait.isTuple(Type)) {
@@ -468,7 +470,7 @@ pub const Value = union(enum) {
                 try array.append(allocator, try init(allocator, item));
             return .{ .array = array };
         }
-        switch (info) {
+        switch (@typeInfo(Type)) {
             .Struct => |the_struct| {
                 var dict = std.StringHashMapUnmanaged(Value){};
                 inline for (the_struct.fields) |field| {
@@ -481,17 +483,16 @@ pub const Value = union(enum) {
         }
     }
 
-    // TODO revisit pub
-    pub fn deinit(self: *Value, allocator: Allocator) void {
+    pub fn deinitRecursive(self: *Value, allocator: Allocator) void {
         switch (self.*) {
             .string, .bool, .template => {},
             .array => |*array| {
-                for (array.items) |*value| value.deinit(allocator);
+                for (array.items) |*value| value.deinitRecursive(allocator);
                 array.deinit(allocator);
             },
             .dict => |*dict| {
                 var iter = dict.valueIterator();
-                while (iter.next()) |value| value.deinit(allocator);
+                while (iter.next()) |value| value.deinitRecursive(allocator);
                 dict.deinit(allocator);
             },
         }
@@ -507,15 +508,15 @@ test "value" {
         .array = .{ true, "hello" },
         .nested = .{ .true = true, .string = "hello" },
     });
-    defer value.deinit(testing.allocator);
+    defer value.deinitRecursive(testing.allocator);
 }
 
 pub fn execute(
     self: Template,
     allocator: Allocator,
-    scope: *Scope,
     reporter: *Reporter,
     writer: anytype,
+    scope: *Scope,
 ) !void {
     const ctx = ExecuteContext(@TypeOf(writer)){ .allocator = allocator, .reporter = reporter, .writer = writer };
     return self.exec(ctx, scope);
@@ -545,10 +546,12 @@ pub const Scope = struct {
     fn lookup(self: *const Scope, variable: Variable) ?Value {
         if (mem.eql(u8, variable, ".")) return self.value;
         if (self.definitions.get(variable)) |template| return Value{ .template = template };
-        return switch (self.value) {
-            .dict => |dict| dict.get(variable),
-            else => if (self.parent) |parent| parent.lookup(variable) else null,
-        };
+        switch (self.value) {
+            .dict => |dict| if (dict.get(variable)) |value| return value,
+            else => {},
+        }
+        if (self.parent) |parent| return parent.lookup(variable);
+        return null;
     }
 };
 
@@ -564,7 +567,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .text => |text| try ctx.writer.writeAll(text),
         .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
-            .string => |string| try ctx.writer.writeAll(string),
+            .string => |string| if (string) |s| try ctx.writer.writeAll(s),
             .template => |template| try template.exec(ctx, scope),
             else => |value| return ctx.reporter.fail(
                 self.filename,
@@ -613,12 +616,12 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     var template = try parse(testing.allocator, &scanner, include_map);
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
-    defer value.deinit(testing.allocator);
+    defer value.deinitRecursive(testing.allocator);
     var scope = Scope{ .parent = null, .value = value };
     defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
-    try template.execute(testing.allocator, &scope, &reporter, buffer.writer());
+    try template.execute(testing.allocator, &reporter, buffer.writer(), &scope);
     try testing.expectEqualStrings(expected, buffer.items);
 }
 
@@ -631,14 +634,14 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     var template = try parse(testing.allocator, &scanner, include_map);
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
-    defer value.deinit(testing.allocator);
+    defer value.deinitRecursive(testing.allocator);
     var scope = Scope{ .parent = null, .value = value };
     defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
     try reporter.expectFailure(
         expected_message,
-        template.execute(testing.allocator, &scope, &reporter, buffer.writer()),
+        template.execute(testing.allocator, &reporter, buffer.writer(), &scope),
     );
 }
 
@@ -654,6 +657,7 @@ test "execute variable" {
 
 test "execute shadowing" {
     try expectExecuteSuccess("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } }, .{});
+    try expectExecuteSuccess("aaa", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .z = "b" } }, .{});
 }
 
 test "execute definition" {
