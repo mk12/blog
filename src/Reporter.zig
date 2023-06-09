@@ -21,11 +21,16 @@ pub fn fail(
     comptime format: []const u8,
     args: anytype,
 ) Error {
-    const full_format = "{s}:{}:{}: " ++ format;
-    const full_args = .{ filename, location.line, location.column } ++ args;
+    return self.failRaw(
+        "{s}:{}:{}: " ++ format,
+        .{ filename, location.line, location.column } ++ args,
+    );
+}
+
+pub fn failRaw(self: *Reporter, comptime format: []const u8, args: anytype) Error {
     if (@inComptime())
-        @compileError(std.fmt.comptimePrint(full_format, full_args));
-    if (std.fmt.bufPrint(&self.buffer, full_format, full_args)) |result| {
+        @compileError(std.fmt.comptimePrint(format, args));
+    if (std.fmt.bufPrint(&self.buffer, format, args)) |result| {
         self.length = result.len;
     } else |err| switch (err) {
         error.NoSpaceLeft => {

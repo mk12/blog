@@ -5,6 +5,7 @@ const fs = std.fs;
 const mem = std.mem;
 const process = std.process;
 const Allocator = mem.Allocator;
+const Generator = @import("Generator.zig");
 const Post = @import("Post.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
@@ -17,12 +18,12 @@ pub const std_options = struct {
 fn printUsage(writer: anytype) !void {
     const program_name = fs.path.basename(mem.span(std.os.argv[0]));
     try writer.print(
-        \\Usage: {s} [-hd] DESTDIR
+        \\Usage: {s} [-hd] DEST_DIR
         \\
         \\Generate static files for the blog
         \\
         \\Arguments:
-        \\    DESTDIR      Destination directory
+        \\    DEST_DIR      Destination directory
         \\
         \\Options:
         \\    -h, --help   Show this help message
@@ -59,11 +60,15 @@ pub fn main() !void {
     var templates = try readTemplates(allocator, &reporter);
     timer.log("read {} templates", .{templates.count()});
 
-    try fs.cwd().deleteTree(args.destdir);
-    timer.log("deleted {s}", .{args.destdir});
+    try fs.cwd().deleteTree(args.dest_dir);
+    timer.log("deleted {s}", .{args.dest_dir});
 
-    const destdir = try fs.cwd().makeOpenPath(args.destdir, .{});
-    _ = destdir;
+    var dest_dir = try fs.cwd().makeOpenPath(args.dest_dir, .{});
+    defer dest_dir.close();
+
+    const generator = Generator{ .allocator = allocator, .reporter = &reporter, .posts = posts.items, .templates = templates };
+    const num_files = try generator.generateFiles(dest_dir);
+    timer.log("wrote {} files", .{num_files});
 }
 
 const Timer = struct {
@@ -80,13 +85,13 @@ const Timer = struct {
 };
 
 const Arguments = struct {
-    destdir: []const u8,
+    dest_dir: []const u8,
     draft: bool = false,
 };
 
 fn parseArguments() !Arguments {
-    var args = Arguments{ .destdir = undefined };
-    var destdir: ?[]const u8 = null;
+    var args = Arguments{ .dest_dir = undefined };
+    var dest_dir: ?[]const u8 = null;
     for (std.os.argv[1..]) |ptr| {
         const arg = mem.span(ptr);
         if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
@@ -97,14 +102,14 @@ fn parseArguments() !Arguments {
         } else if (mem.startsWith(u8, arg, "-")) {
             std.log.err("{s}: invalid argument", .{arg});
             process.exit(1);
-        } else if (destdir != null) {
+        } else if (dest_dir != null) {
             try printUsage(std.io.getStdErr().writer());
             process.exit(1);
         } else {
-            destdir = arg;
+            dest_dir = arg;
         }
     }
-    args.destdir = destdir orelse {
+    args.dest_dir = dest_dir orelse {
         try printUsage(std.io.getStdErr().writer());
         process.exit(1);
     };
@@ -169,7 +174,7 @@ fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(T
         defer file.close();
         var scanner = Scanner{
             .source = try file.readToEndAlloc(allocator, max_file_size),
-            .filename = try fs.path.join(allocator, &.{ source_post_dir, name }),
+            .filename = try fs.path.join(allocator, &.{ template_dir, name }),
             .reporter = reporter,
         };
         entry.value_ptr.* = try Template.parse(allocator, &scanner, templates);

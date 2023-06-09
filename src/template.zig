@@ -213,7 +213,7 @@ pub fn parse(
     include_map: std.StringHashMap(Template),
 ) !Template {
     const ctx = ParseContext{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
-    return parseUntil(ctx, .eof);
+    return parseUntil(ctx, .eof, true);
 }
 
 const ParseContext = struct {
@@ -222,9 +222,9 @@ const ParseContext = struct {
     include_map: std.StringHashMap(Template),
 };
 
-fn parseUntil(ctx: ParseContext, terminator: Terminator) !Template {
+fn parseUntil(ctx: ParseContext, terminator: Terminator, trim_start: bool) !Template {
     const terminators = EnumSet(Terminator).initOne(terminator);
-    const result = try parseUntilAny(ctx, terminators);
+    const result = try parseUntilAny(ctx, terminators, trim_start);
     return result.template;
 }
 
@@ -232,28 +232,19 @@ const Terminator = enum { end, @"else", eof };
 const ParseError = Reporter.Error || Allocator.Error;
 const ParseResult = ParseError!struct { template: Template, terminator: Terminator };
 
-fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) ParseResult {
+fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim_start: bool) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .filename = scanner.filename };
     errdefer template.deinit(ctx.allocator);
-    var prev_was_text = false;
     var terminator = Terminator.eof;
     var terminator_pos: ?Reporter.Location = null;
     while (try scan(scanner)) |token| {
-        if (prev_was_text) switch (token.value) {
-            .define, .end, .@"else", .start => {
-                const text = &template.commands.items[template.commands.items.len - 1].value.text;
-                const trimmed = trimWhitespace(text.*);
-                if (trimmed.len == 0) _ = template.commands.pop() else text.* = trimmed;
-            },
-            else => {},
-        };
-        prev_was_text = token.value == .text;
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
+                template.trimLastIfText();
                 try template.definitions.append(ctx.allocator, Definition{
                     .variable = variable,
-                    .body = try parseUntil(ctx, .end),
+                    .body = try parseUntil(ctx, .end, true),
                 });
                 continue;
             },
@@ -267,21 +258,29 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
                 terminator_pos = token.location;
                 break;
             },
-            .text => |text| .{ .text = text },
+            .text => |text| blk: {
+                if (trim_start and template.commands.items.len == 0) {
+                    const trimmed = trimStart(text);
+                    if (trimmed.len == 0) continue;
+                    break :blk .{ .text = trimmed };
+                }
+                break :blk .{ .text = text };
+            },
             .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.getPtr(path) orelse
                     return scanner.failAt(token.location, "{s}: template not found", .{path}),
             },
             .start => |variable| blk: {
+                template.trimLastIfText();
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
-                const result = try parseUntilAny(ctx, end_or_else);
+                const result = try parseUntilAny(ctx, end_or_else, false);
                 break :blk .{
                     .control = .{
                         .variable = variable,
                         .body = result.template,
                         .else_body = switch (result.terminator) {
-                            .@"else" => try parseUntil(ctx, .end),
+                            .@"else" => try parseUntil(ctx, .end, false),
                             else => null,
                         },
                     },
@@ -293,6 +292,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
             .value = command_value,
         });
     }
+    template.trimLastIfText();
     if (!allowed_terminators.contains(terminator)) {
         const location = terminator_pos orelse scanner.location;
         return scanner.failAt(location, "unexpected {s}", .{
@@ -306,11 +306,27 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator)) Pa
     return .{ .template = template, .terminator = terminator };
 }
 
-fn trimWhitespace(text: []const u8) []const u8 {
+fn trimLastIfText(template: *Template) void {
+    if (template.commands.items.len == 0) return;
+    switch (template.commands.items[template.commands.items.len - 1].value) {
+        .text => |*text| {
+            const trimmed = trimEnd(text.*);
+            if (trimmed.len > 0) text.* = trimmed else _ = template.commands.pop();
+        },
+        else => {},
+    }
+}
+
+const whitespace_chars = " \t\n";
+
+fn trimStart(text: []const u8) []const u8 {
+    return mem.trimLeft(u8, text, whitespace_chars);
+}
+
+fn trimEnd(text: []const u8) []const u8 {
     const index = mem.lastIndexOfScalar(u8, text, '\n') orelse return text;
-    const whitespace = " \t\n";
-    if (mem.indexOfNonePos(u8, text, index + 1, whitespace)) |_| return text;
-    return mem.trimRight(u8, text[0..index], whitespace);
+    if (mem.indexOfNonePos(u8, text, index + 1, whitespace_chars)) |_| return text;
+    return mem.trimRight(u8, text[0..index], whitespace_chars);
 }
 
 fn expectParseSuccess(source: []const u8, include_map: std.StringHashMap(Template)) !Template {
@@ -329,7 +345,7 @@ fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
 }
 
 test "parse text" {
-    const source = "foo\n";
+    const source = "foo";
     var include_map = std.StringHashMap(Template).init(testing.allocator);
     defer include_map.deinit();
     var template = try expectParseSuccess(source, include_map);
@@ -439,7 +455,8 @@ pub const Value = union(enum) {
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
 
-    fn init(allocator: Allocator, object: anytype) !Value {
+    // TODO revisit pub
+    pub fn init(allocator: Allocator, object: anytype) !Value {
         const Type = @TypeOf(object);
         const info = @typeInfo(Type);
         if (info == .Bool) return .{ .bool = object };
@@ -464,7 +481,8 @@ pub const Value = union(enum) {
         }
     }
 
-    fn deinit(self: *Value, allocator: Allocator) void {
+    // TODO revisit pub
+    pub fn deinit(self: *Value, allocator: Allocator) void {
         switch (self.*) {
             .string, .bool, .template => {},
             .array => |*array| {
@@ -495,26 +513,26 @@ test "value" {
 pub fn execute(
     self: Template,
     allocator: Allocator,
-    value: Value,
+    scope: *Scope,
     reporter: *Reporter,
     writer: anytype,
 ) !void {
     const ctx = ExecuteContext(@TypeOf(writer)){ .allocator = allocator, .reporter = reporter, .writer = writer };
-    var scope = Scope{ .parent = null, .value = value };
-    defer scope.deinit(allocator);
-    return self.exec(ctx, &scope);
+    return self.exec(ctx, scope);
 }
 
 fn ExecuteContext(comptime Writer: type) type {
     return struct { allocator: Allocator, reporter: *Reporter, writer: Writer };
 }
 
-const Scope = struct {
+// TODO revisit pub
+pub const Scope = struct {
     parent: ?*const Scope,
     value: Value,
     definitions: std.StringHashMapUnmanaged(*const Template) = .{},
 
-    fn deinit(self: *Scope, allocator: Allocator) void {
+    // TODO revisit pub
+    pub fn deinit(self: *Scope, allocator: Allocator) void {
         self.definitions.deinit(allocator);
     }
 
@@ -596,9 +614,11 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
     defer value.deinit(testing.allocator);
+    var scope = Scope{ .parent = null, .value = value };
+    defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
-    try template.execute(testing.allocator, value, &reporter, buffer.writer());
+    try template.execute(testing.allocator, &scope, &reporter, buffer.writer());
     try testing.expectEqualStrings(expected, buffer.items);
 }
 
@@ -612,11 +632,13 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
     defer value.deinit(testing.allocator);
+    var scope = Scope{ .parent = null, .value = value };
+    defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
     try reporter.expectFailure(
         expected_message,
-        template.execute(testing.allocator, value, &reporter, buffer.writer()),
+        template.execute(testing.allocator, &scope, &reporter, buffer.writer()),
     );
 }
 
