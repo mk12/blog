@@ -139,11 +139,15 @@ fn generatePost(
     defer dir.close();
     var file = try dir.createFile("index.html", .{});
     defer file.close();
+    var date_buf: [32]u8 = undefined;
+    const date = switch (post.metadata.status) {
+        .draft => "DRAFT",
+        .published => |date| try std.fmt.bufPrint(&date_buf, "{long}", .{date.fmt()}),
+    };
     var value = try Value.init(allocator, .{
         .title = post.metadata.title,
         .description = post.metadata.description,
-        // TODO render date
-        .date = "The date",
+        .date = date,
         // TODO render markdown
         .article = post.source[post.markdown_offset..],
         .math = false,
