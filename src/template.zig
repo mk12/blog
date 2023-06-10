@@ -454,6 +454,7 @@ pub const Value = union(enum) {
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
+    // TODO markdown render closure?
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
@@ -526,13 +527,19 @@ fn ExecuteContext(comptime Writer: type) type {
     return struct { allocator: Allocator, reporter: *Reporter, writer: Writer };
 }
 
-// TODO revisit pub
 pub const Scope = struct {
     parent: ?*const Scope,
     value: Value,
-    definitions: std.StringHashMapUnmanaged(*const Template) = .{},
+    definitions: std.StringHashMapUnmanaged(*const Template),
 
-    // TODO revisit pub
+    pub fn init(value: Value) Scope {
+        return Scope{ .parent = null, .value = value, .definitions = .{} };
+    }
+
+    pub fn initChild(self: *const Scope, value: Value) Scope {
+        return Scope{ .parent = self, .value = value, .definitions = .{} };
+    }
+
     pub fn deinit(self: *Scope, allocator: Allocator) void {
         self.definitions.deinit(allocator);
     }
@@ -584,14 +591,14 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .array => |array| if (array.items.len == 0) {
                 if (control.else_body) |else_body| try else_body.exec(ctx, scope);
             } else {
-                var nested = Scope{ .parent = scope, .value = undefined };
-                defer nested.deinit(ctx.allocator);
-                for (array.items) |item| try control.body.exec(ctx, nested.reset(item));
+                var child = scope.initChild(undefined);
+                defer child.deinit(ctx.allocator);
+                for (array.items) |item| try control.body.exec(ctx, child.reset(item));
             },
             else => |value| {
-                var nested = Scope{ .parent = scope, .value = value };
-                defer nested.deinit(ctx.allocator);
-                try control.body.exec(ctx, &nested);
+                var child = scope.initChild(value);
+                defer child.deinit(ctx.allocator);
+                try control.body.exec(ctx, &child);
             },
         },
     };
@@ -617,7 +624,7 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
     defer value.deinitRecursive(testing.allocator);
-    var scope = Scope{ .parent = null, .value = value };
+    var scope = Scope.init(value);
     defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();
@@ -635,7 +642,7 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     defer template.deinit(testing.allocator);
     var value = try Value.init(testing.allocator, object);
     defer value.deinitRecursive(testing.allocator);
-    var scope = Scope{ .parent = null, .value = value };
+    var scope = Scope.init(value);
     defer scope.deinit(testing.allocator);
     var buffer = std.ArrayList(u8).init(testing.allocator);
     defer buffer.deinit();

@@ -29,7 +29,7 @@ pub fn generate(args: struct {
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
-    var globals = try Value.init(allocator, .{
+    var variables = try Value.init(allocator, .{
         .author = "Mitchell Kember",
         .style_url = "style.css", // link.to
         .blog_url = "index.html", // link to
@@ -37,9 +37,8 @@ pub fn generate(args: struct {
         .analytics = args.analytics,
         .year = "2023", // TODO
     });
-    defer globals.deinitRecursive(allocator);
-    // TODO make scopes more ergonomic
-    var scope = Scope{ .parent = null, .value = globals };
+    defer variables.deinitRecursive(allocator);
+    var scope = Scope.init(variables);
     defer scope.deinit(allocator);
 
     for (pages) |page| try generatePage(allocator, reporter, dirs, templates, &scope, posts, page);
@@ -132,8 +131,9 @@ fn generatePost(
     reporter: *Reporter,
     dirs: Dirs,
     templates: Templates,
-    global_scope: *const Scope,
+    parent: *const Scope,
     post: Post,
+    // TODO neighbors
 ) !void {
     var dir = try dirs.@"/post".makeOpenPath(post.slug, .{});
     defer dir.close();
@@ -144,20 +144,21 @@ fn generatePost(
         .draft => "DRAFT",
         .published => |date| try std.fmt.bufPrint(&date_buf, "{long}", .{date.fmt()}),
     };
-    var value = try Value.init(allocator, .{
+    var variables = try Value.init(allocator, .{
         .title = post.metadata.title,
         .description = post.metadata.description,
         .date = date,
         // TODO render markdown
         .article = post.source[post.markdown_offset..],
+        // TODO render and detect math
         .math = false,
         .older = "#",
         .newer = "#",
         // TODO style_url is fixed only if absolute URLs
         .style_url = "../../style.css",
     });
-    defer value.deinitRecursive(allocator);
-    var scope = Template.Scope{ .parent = global_scope, .value = value };
+    defer variables.deinitRecursive(allocator);
+    var scope = parent.initChild(variables);
     defer scope.deinit(allocator);
     try templates.@"post.html".execute(allocator, reporter, file.writer(), &scope);
 }
