@@ -6,6 +6,7 @@ const testing = std.testing;
 const fmtEscapes = std.zig.fmtEscapes;
 const Allocator = mem.Allocator;
 const EnumSet = std.enums.EnumSet;
+const Markdown = @import("Markdown.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Template = @This();
@@ -453,11 +454,12 @@ pub const Value = union(enum) {
     bool: bool,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
+    markdown: Markdown,
     template: *const Template,
-    // TODO markdown render closure?
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
+        if (Type == Markdown) return .{ .markdown = object };
         switch (@typeInfo(Type)) {
             .Bool => return .{ .bool = object },
             .Optional => |Optional| Type = Optional.child,
@@ -486,7 +488,7 @@ pub const Value = union(enum) {
 
     pub fn deinitRecursive(self: *Value, allocator: Allocator) void {
         switch (self.*) {
-            .string, .bool, .template => {},
+            .string, .bool, .markdown, .template => {},
             .array => |*array| {
                 for (array.items) |*value| value.deinitRecursive(allocator);
                 array.deinit(allocator);
@@ -574,7 +576,8 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .text => |text| try ctx.writer.writeAll(text),
         .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
-            .string => |string| if (string) |s| try ctx.writer.writeAll(s),
+            .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
+            .markdown => |markdown| try markdown.render(ctx.reporter, ctx.writer),
             .template => |template| try template.exec(ctx, scope),
             else => |value| return ctx.reporter.fail(
                 self.filename,
@@ -584,10 +587,11 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             ),
         },
         .control => |control| switch (try self.lookup(ctx, scope, command, control.variable)) {
-            .bool => |value| if (value)
-                try control.body.exec(ctx, scope)
-            else if (control.else_body) |else_body|
-                try else_body.exec(ctx, scope),
+            .bool => |value| if (value) {
+                try control.body.exec(ctx, scope);
+            } else if (control.else_body) |else_body| {
+                try else_body.exec(ctx, scope);
+            },
             .array => |array| if (array.items.len == 0) {
                 if (control.else_body) |else_body| try else_body.exec(ctx, scope);
             } else {
@@ -595,7 +599,14 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                 defer child.deinit(ctx.allocator);
                 for (array.items) |item| try control.body.exec(ctx, child.reset(item));
             },
-            else => |value| {
+            else => |value| blk: {
+                switch (value) {
+                    .string => |optional| if (optional == null) {
+                        if (control.else_body) |else_body| try else_body.exec(ctx, scope);
+                        break :blk;
+                    },
+                    else => {},
+                }
                 var child = scope.initChild(value);
                 defer child.deinit(ctx.allocator);
                 try control.body.exec(ctx, &child);
@@ -677,9 +688,15 @@ test "execute if" {
     try expectExecuteSuccess("", "{{ if val }}yes{{ end }}", .{ .val = false }, .{});
 }
 
-test "execute if-else" {
+test "execute if-else bool" {
     try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true }, .{});
     try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false }, .{});
+}
+
+test "execute if-else string" {
+    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
+    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
+    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) }, .{});
 }
 
 test "execute range" {
