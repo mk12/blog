@@ -52,7 +52,9 @@ test "parse" {
         .markdown_offset = 105,
         .markdown_location = .{ .line = 7, .column = 1 },
     };
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try parse(&scanner));

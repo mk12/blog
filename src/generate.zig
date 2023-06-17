@@ -38,9 +38,7 @@ pub fn generate(args: struct {
         .analytics = args.analytics,
         .year = "2023", // TODO
     });
-    defer variables.deinitRecursive(allocator);
     var scope = Scope.init(variables);
-    defer scope.deinit(allocator);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -92,7 +90,7 @@ const Templates = struct {
         var result: Templates = undefined;
         inline for (@typeInfo(Templates).Struct.fields) |field|
             @field(result, field.name) = map.get(field.name) orelse
-                return reporter.failRaw("{s}: template not found", .{field.name});
+                return reporter.fail("{s}: template not found", .{field.name});
         return result;
     }
 };

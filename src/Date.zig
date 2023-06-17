@@ -15,16 +15,6 @@ minute: u8,
 second: u8,
 tz_offset_h: i8,
 
-const days_in_month_non_leap = [12]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-
-fn isLeapYear(year: u16) bool {
-    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0);
-}
-
-fn daysInMonth(month: u8, year: u16) u8 {
-    return if (month == 2 and isLeapYear(year)) 29 else days_in_month_non_leap[month - 1];
-}
-
 /// Parses a date from a restricted subset of RFC-3339.
 pub fn parse(scanner: *Scanner) Reporter.Error!Date {
     var date: Date = undefined;
@@ -46,7 +36,9 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Date {
 
 pub inline fn from(comptime string: []const u8) Date {
     comptime {
-        var reporter = Reporter{};
+        var buf = [0]u8{};
+        var fba = std.heap.FixedBufferAllocator.init(&buf);
+        var reporter = Reporter.init(fba.allocator());
         var scanner = Scanner{ .source = string, .reporter = &reporter };
         return parse(&scanner) catch unreachable;
     }
@@ -74,14 +66,18 @@ fn parseField(
 }
 
 fn expectSuccess(expected: Date, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqual(expected, try parse(&scanner));
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try reporter.expectFailure(expected_message, parse(&scanner));
 }
@@ -106,10 +102,20 @@ test "parse invalid" {
 }
 
 test "comptime from" {
-    comptime {
-        const expected = Date{ .year = 2001, .month = 1, .day = 2, .hour = 3, .minute = 4, .second = 5, .tz_offset_h = 6 };
-        try testing.expectEqual(expected, from("2001-01-02T03:04:05+06:00"));
-    }
+    comptime try testing.expectEqual(
+        Date{ .year = 2001, .month = 1, .day = 2, .hour = 3, .minute = 4, .second = 5, .tz_offset_h = 6 },
+        from("2001-01-02T03:04:05+06:00"),
+    );
+}
+
+fn isLeapYear(year: u16) bool {
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0);
+}
+
+const days_in_month_non_leap = [12]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+fn daysInMonth(month: u8, year: u16) u8 {
+    return if (month == 2 and isLeapYear(year)) 29 else days_in_month_non_leap[month - 1];
 }
 
 const month_names = [12][]const u8{
@@ -127,6 +133,10 @@ const month_names = [12][]const u8{
     "December",
 };
 
+fn monthName(date: Date) []const u8 {
+    return month_names[date.month - 1];
+}
+
 const weekday_names = [7][]const u8{
     "Monday",
     "Tuesday",
@@ -136,10 +146,6 @@ const weekday_names = [7][]const u8{
     "Saturday",
     "Sunday",
 };
-
-fn monthName(date: Date) []const u8 {
-    return month_names[date.month - 1];
-}
 
 fn weekdayName(date: Date) []const u8 {
     assert(date.year >= 2000 and date.year <= 2099);

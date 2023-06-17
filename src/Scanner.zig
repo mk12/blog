@@ -125,19 +125,21 @@ pub fn skipWhitespace(self: *Scanner) void {
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.fail(self.filename, self.location, format, args);
+    return self.reporter.failAt(self.filename, self.location, format, args);
 }
 
 pub fn failAt(self: *Scanner, location: Location, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.fail(self.filename, location, format, args);
+    return self.reporter.failAt(self.filename, location, format, args);
 }
 
 pub fn failOn(self: *Scanner, span: Span, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.fail(self.filename, span.location, "\"{s}\": " ++ format, .{span.text} ++ args);
+    return self.reporter.failAt(self.filename, span.location, "\"{s}\": " ++ format, .{span.text} ++ args);
 }
 
 test "empty input" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "", .reporter = &reporter };
     try testing.expect(scanner.eof());
@@ -145,7 +147,9 @@ test "empty input" {
 }
 
 test "single character" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "x", .reporter = &reporter };
     try testing.expect(!scanner.eof());
@@ -155,7 +159,9 @@ test "single character" {
 }
 
 test "peek" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "ab", .reporter = &reporter };
     try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
@@ -168,7 +174,9 @@ test "peek" {
 }
 
 test "consume" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "a\nbc", .reporter = &reporter };
     {
@@ -185,7 +193,9 @@ test "consume" {
 }
 
 test "attempt" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "abc", .reporter = &reporter };
     try testing.expect(!scanner.attempt("x"));
@@ -196,7 +206,9 @@ test "attempt" {
 }
 
 test "expect" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "abc", .reporter = &reporter };
     try reporter.expectFailure(
@@ -207,7 +219,9 @@ test "expect" {
 }
 
 test "until" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "one\ntwo\n", .reporter = &reporter };
     {
@@ -224,7 +238,9 @@ test "until" {
 }
 
 test "choice" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "abcxyz123", .reporter = &reporter };
     const alternatives = .{ .abc = "abc", .xyz = "xyz" };
@@ -237,7 +253,9 @@ test "choice" {
 }
 
 test "skipWhitespace" {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = " a\n\t b", .reporter = &reporter };
     scanner.skipWhitespace();

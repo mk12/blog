@@ -45,9 +45,9 @@ pub fn main() !void {
     const args = try parseArguments();
     const env = parseEnvironment();
 
-    var reporter = Reporter{};
+    var reporter = Reporter.init(allocator);
     errdefer |err| if (err == error.ErrorWasReported) {
-        std.log.err("{s}", .{reporter.message()});
+        std.log.err("{s}", .{reporter.message.?});
         process.exit(1);
     };
 

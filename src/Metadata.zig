@@ -39,14 +39,18 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
 }
 
 fn expectSuccess(expected: Metadata, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var reporter = Reporter.init(arena.allocator());
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     try reporter.expectFailure(expected_message, Metadata.parse(&scanner));
 }

@@ -97,14 +97,15 @@ fn scanIdentifier(scanner: *Scanner) ![]const u8 {
 }
 
 fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var actual = std.ArrayList(TokenValue).init(testing.allocator);
-    defer actual.deinit();
+    var actual = std.ArrayList(TokenValue).init(allocator);
     while (try scan(&scanner)) |token| try actual.append(token.value);
-    var expected_adjusted = std.ArrayList(TokenValue).init(testing.allocator);
-    defer expected_adjusted.deinit();
+    var expected_adjusted = std.ArrayList(TokenValue).init(allocator);
     var offset: usize = 0;
     for (expected, 0..) |value, index| {
         var copy = value;
@@ -191,23 +192,6 @@ const CommandValue = union(enum) {
     },
 };
 
-pub fn deinit(self: *Template, allocator: Allocator) void {
-    for (self.definitions.items) |*definition| {
-        definition.body.deinit(allocator);
-    }
-    for (self.commands.items) |*command| {
-        switch (command.value) {
-            .control => |*control| {
-                control.body.deinit(allocator);
-                if (control.else_body) |*body| body.deinit(allocator);
-            },
-            else => {},
-        }
-    }
-    self.definitions.deinit(allocator);
-    self.commands.deinit(allocator);
-}
-
 pub fn parse(
     allocator: Allocator,
     scanner: *Scanner,
@@ -236,7 +220,6 @@ const ParseResult = ParseError!struct { template: Template, terminator: Terminat
 fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim_start: bool) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .filename = scanner.filename };
-    errdefer template.deinit(ctx.allocator);
     var terminator = Terminator.eof;
     var terminator_pos: ?Reporter.Location = null;
     while (try scan(scanner)) |token| {
@@ -330,27 +313,30 @@ fn trimEnd(text: []const u8) []const u8 {
     return mem.trimRight(u8, text[0..index], whitespace_chars);
 }
 
-fn expectParseSuccess(source: []const u8, include_map: std.StringHashMap(Template)) !Template {
-    var reporter = Reporter{};
+fn expectParseSuccess(allocator: Allocator, source: []const u8, include_map: std.StringHashMap(Template)) !Template {
+    var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    return parse(testing.allocator, &scanner, include_map);
+    return parse(allocator, &scanner, include_map);
 }
 
 fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var include_map = std.StringHashMap(Template).init(testing.allocator);
-    defer include_map.deinit();
-    try reporter.expectFailure(expected_message, parse(testing.allocator, &scanner, include_map));
+    var include_map = std.StringHashMap(Template).init(allocator);
+    try reporter.expectFailure(expected_message, parse(allocator, &scanner, include_map));
 }
 
 test "parse text" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
     const source = "foo";
-    var include_map = std.StringHashMap(Template).init(testing.allocator);
-    defer include_map.deinit();
-    var template = try expectParseSuccess(source, include_map);
-    defer template.deinit(testing.allocator);
+    var include_map = std.StringHashMap(Template).init(allocator);
+    var template = try expectParseSuccess(allocator, source, include_map);
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
     try testing.expectEqualSlices(Command, &[_]Command{
         .{
@@ -370,12 +356,14 @@ test "parse everything" {
         \\{{ end }}
     ;
 
-    var include_map = std.StringHashMap(Template).init(testing.allocator);
-    defer include_map.deinit();
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var include_map = std.StringHashMap(Template).init(allocator);
     try include_map.put("base.html", undefined);
     const base_template: *const Template = include_map.getPtr("base.html").?;
-    var template = try expectParseSuccess(source, include_map);
-    defer template.deinit(testing.allocator);
+    var template = try expectParseSuccess(allocator, source, include_map);
 
     const definitions = template.definitions.items;
     try testing.expectEqual(@as(usize, 1), definitions.len);
@@ -485,25 +473,12 @@ pub const Value = union(enum) {
             else => @compileError("invalid type: " ++ @typeName(Type)),
         }
     }
-
-    pub fn deinitRecursive(self: *Value, allocator: Allocator) void {
-        switch (self.*) {
-            .string, .bool, .markdown, .template => {},
-            .array => |*array| {
-                for (array.items) |*value| value.deinitRecursive(allocator);
-                array.deinit(allocator);
-            },
-            .dict => |*dict| {
-                var iter = dict.valueIterator();
-                while (iter.next()) |value| value.deinitRecursive(allocator);
-                dict.deinit(allocator);
-            },
-        }
-    }
 };
 
 test "value" {
-    var value = try Value.init(testing.allocator, .{
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = try Value.init(arena.allocator(), .{
         .true = true,
         .false = false,
         .string = "hello",
@@ -511,7 +486,6 @@ test "value" {
         .array = .{ true, "hello" },
         .nested = .{ .true = true, .string = "hello" },
     });
-    defer value.deinitRecursive(testing.allocator);
 }
 
 pub fn execute(
@@ -542,10 +516,6 @@ pub const Scope = struct {
         return Scope{ .parent = self, .value = value, .definitions = .{} };
     }
 
-    pub fn deinit(self: *Scope, allocator: Allocator) void {
-        self.definitions.deinit(allocator);
-    }
-
     fn reset(self: *Scope, value: Value) *Scope {
         self.definitions.clearRetainingCapacity();
         self.value = value;
@@ -566,7 +536,7 @@ pub const Scope = struct {
 
 fn lookup(self: Template, ctx: anytype, scope: *const Scope, command: Command, variable: Variable) !Value {
     return scope.lookup(variable) orelse
-        ctx.reporter.fail(self.filename, command.location, "{s}: variable not found", .{variable});
+        ctx.reporter.failAt(self.filename, command.location, "{s}: variable not found", .{variable});
 }
 
 fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
@@ -579,7 +549,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
             .markdown => |markdown| try markdown.render(ctx.reporter, ctx.writer),
             .template => |template| try template.exec(ctx, scope),
-            else => |value| return ctx.reporter.fail(
+            else => |value| return ctx.reporter.failAt(
                 self.filename,
                 command.location,
                 "{s}: expected string variable, got {s}",
@@ -596,7 +566,6 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                 if (control.else_body) |else_body| try else_body.exec(ctx, scope);
             } else {
                 var child = scope.initChild(undefined);
-                defer child.deinit(ctx.allocator);
                 for (array.items) |item| try control.body.exec(ctx, child.reset(item));
             },
             else => |value| blk: {
@@ -608,7 +577,6 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                     else => {},
                 }
                 var child = scope.initChild(value);
-                defer child.deinit(ctx.allocator);
                 try control.body.exec(ctx, &child);
             },
         },
@@ -616,50 +584,44 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
 }
 
 fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytype, includes: anytype) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    var include_map = std.StringHashMap(Template).init(testing.allocator);
-    defer include_map.deinit();
+    var include_map = std.StringHashMap(Template).init(allocator);
     const fields = @typeInfo(@TypeOf(includes)).Struct.fields;
-    inline for (fields) |field| try include_map.put(field.name, undefined);
-    defer {
-        var iter = include_map.valueIterator();
-        while (iter.next()) |template| template.deinit(testing.allocator);
+    inline for (fields) |field| {
+        try include_map.put(field.name, undefined);
     }
     inline for (fields) |field| {
         var scanner = Scanner{ .source = @field(includes, field.name), .reporter = &reporter };
-        include_map.getPtr(field.name).?.* = try parse(testing.allocator, &scanner, include_map);
+        include_map.getPtr(field.name).?.* = try parse(allocator, &scanner, include_map);
     }
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var template = try parse(testing.allocator, &scanner, include_map);
-    defer template.deinit(testing.allocator);
-    var value = try Value.init(testing.allocator, object);
-    defer value.deinitRecursive(testing.allocator);
+    var template = try parse(allocator, &scanner, include_map);
+    var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
-    defer scope.deinit(testing.allocator);
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try template.execute(testing.allocator, &reporter, buffer.writer(), &scope);
+    var buffer = std.ArrayList(u8).init(allocator);
+    try template.execute(allocator, &reporter, buffer.writer(), &scope);
     try testing.expectEqualStrings(expected, buffer.items);
 }
 
 fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object: anytype) !void {
-    var reporter = Reporter{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    var include_map = std.StringHashMap(Template).init(testing.allocator);
-    defer include_map.deinit();
+    var include_map = std.StringHashMap(Template).init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var template = try parse(testing.allocator, &scanner, include_map);
-    defer template.deinit(testing.allocator);
-    var value = try Value.init(testing.allocator, object);
-    defer value.deinitRecursive(testing.allocator);
+    var template = try parse(allocator, &scanner, include_map);
+    var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
-    defer scope.deinit(testing.allocator);
-    var buffer = std.ArrayList(u8).init(testing.allocator);
-    defer buffer.deinit();
+    var buffer = std.ArrayList(u8).init(allocator);
     try reporter.expectFailure(
         expected_message,
-        template.execute(testing.allocator, &reporter, buffer.writer(), &scope),
+        template.execute(allocator, &reporter, buffer.writer(), &scope),
     );
 }
 
