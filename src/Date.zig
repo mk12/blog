@@ -36,8 +36,7 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Date {
 
 pub inline fn from(comptime string: []const u8) Date {
     comptime {
-        var buf = [0]u8{};
-        var fba = std.heap.FixedBufferAllocator.init(&buf);
+        var fba = std.heap.FixedBufferAllocator.init(&[0]u8{});
         var reporter = Reporter.init(fba.allocator());
         var scanner = Scanner{ .source = string, .reporter = &reporter };
         return parse(&scanner) catch unreachable;

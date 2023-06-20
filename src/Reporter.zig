@@ -38,16 +38,16 @@ pub fn failAt(
     );
 }
 
-pub fn expectFailure(self: *const Reporter, expected_message: []const u8, result: anytype) !void {
-    try testing.expectEqualStrings(expected_message, self.message.?);
-    try testing.expectError(error.ErrorWasReported, result);
-}
-
 pub fn showMessage(self: *const Reporter, err: anyerror) void {
     if (err != error.ErrorWasReported) return;
     std.debug.print("\n====== an error was reported: ========\n", .{});
     std.debug.print("{s}", .{self.message.?});
     std.debug.print("\n======================\n", .{});
+}
+
+pub fn expectFailure(self: *const Reporter, expected_message: []const u8, result: anytype) !void {
+    try testing.expectEqualStrings(expected_message, self.message.?);
+    try testing.expectError(error.ErrorWasReported, result);
 }
 
 test "fail" {

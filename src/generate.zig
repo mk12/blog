@@ -3,6 +3,7 @@
 const std = @import("std");
 const fs = std.fs;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const Markdown = @import("Markdown.zig");
 const Post = @import("Post.zig");
 const Scanner = @import("Scanner.zig");
@@ -12,7 +13,7 @@ const Scope = Template.Scope;
 const Value = Template.Value;
 
 pub fn generate(args: struct {
-    allocator: Allocator,
+    arena: *ArenaAllocator,
     reporter: *Reporter,
     out_dir: fs.Dir,
     templates: std.StringHashMap(Template),
@@ -22,7 +23,6 @@ pub fn generate(args: struct {
     font_url: ?[]const u8,
     analytics: ?[]const u8,
 }) !usize {
-    const allocator = args.allocator;
     const reporter = args.reporter;
     const dirs = try Dirs.init(args.out_dir);
     defer dirs.close();
@@ -30,27 +30,25 @@ pub fn generate(args: struct {
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
-    var variables = try Value.init(allocator, .{
+    var variables = try Value.init(args.arena.allocator(), .{
         .author = "Mitchell Kember",
         .style_url = "style.css", // link.to
         .blog_url = "index.html", // link to
         .home_url = args.home_url,
         .analytics = args.analytics,
-        .year = "2023", // TODO
     });
     var scope = Scope.init(variables);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-
+    var per_file_arena = std.heap.ArenaAllocator.init(args.arena.child_allocator);
+    defer per_file_arena.deinit();
+    const allocator = per_file_arena.allocator();
     for (pages) |page| {
-        _ = arena.reset(.retain_capacity);
-        try generatePage(arena_allocator, reporter, dirs, templates, &scope, posts, page);
+        _ = per_file_arena.reset(.retain_capacity);
+        try generatePage(allocator, reporter, dirs, templates, &scope, posts, page);
     }
     for (posts) |post| {
-        _ = arena.reset(.retain_capacity);
-        try generatePost(arena_allocator, reporter, dirs, templates, &scope, post);
+        _ = per_file_arena.reset(.retain_capacity);
+        try generatePost(allocator, reporter, dirs, templates, &scope, post);
     }
 
     return pages.len + posts.len;
@@ -102,15 +100,16 @@ const Page = enum {
     @"/categories/index.html",
 };
 
-fn link(allocator: Allocator, base_url: []const u8, source: []const u8, dest: []const u8) []const u8 {
-    _ = dest;
-    _ = source;
-    _ = base_url;
-    _ = allocator;
+fn url(allocator: Allocator, base_url: ?[]const u8, source: []const u8, dest: []const u8) []const u8 {
+    if (base_url) |base| {
+        _ = base;
+        return "";
+    }
+    return fs.path.relative(allocator, fs.path.dirname(source), dest);
 }
 
 fn generatePage(
-    arena_allocator: Allocator,
+    allocator: Allocator,
     reporter: *Reporter,
     dirs: Dirs,
     templates: Templates,
@@ -132,7 +131,7 @@ fn generatePage(
     const variables = blk: {
         switch (page) {
             .@"/index.html" => {
-                break :blk try Value.init(arena_allocator, .{
+                break :blk try Value.init(allocator, .{
                     .title = "Mitchell Kember",
                     .math = false,
                     .posts = .{},
@@ -140,7 +139,7 @@ fn generatePage(
                     .categories_url = "", // link.to
                 });
             },
-            else => break :blk try Value.init(arena_allocator, .{
+            else => break :blk try Value.init(allocator, .{
                 .title = "Mitchell Kember",
                 .math = false,
                 .posts = .{},
@@ -153,11 +152,11 @@ fn generatePage(
         }
     };
     var scope = parent.initChild(variables);
-    try template.execute(arena_allocator, reporter, file.writer(), &scope);
+    try template.execute(allocator, reporter, file.writer(), &scope);
 }
 
 fn generatePost(
-    arena_allocator: Allocator,
+    allocator: Allocator,
     reporter: *Reporter,
     dirs: Dirs,
     templates: Templates,
@@ -169,12 +168,12 @@ fn generatePost(
     defer dir.close();
     var file = try dir.createFile("index.html", .{});
     defer file.close();
-    const variables = try Value.init(arena_allocator, .{
+    const variables = try Value.init(allocator, .{
         .title = post.metadata.title,
         .description = post.metadata.description,
         .date = switch (post.metadata.status) {
             .draft => "DRAFT",
-            .published => |date| try std.fmt.allocPrint(arena_allocator, "{long}", .{date.fmt()}),
+            .published => |date| try std.fmt.allocPrint(allocator, "{long}", .{date.fmt()}),
         },
         .article = Markdown{
             .source = post.source[post.markdown_offset..],
@@ -189,5 +188,5 @@ fn generatePost(
         .style_url = "../../style.css",
     });
     var scope = parent.initChild(variables);
-    try templates.@"post.html".execute(arena_allocator, reporter, file.writer(), &scope);
+    try templates.@"post.html".execute(allocator, reporter, file.writer(), &scope);
 }

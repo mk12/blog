@@ -66,7 +66,7 @@ pub fn main() !void {
     defer out_dir.close();
 
     const num_written = try generate(.{
-        .allocator = allocator,
+        .arena = &arena,
         .reporter = &reporter,
         .out_dir = out_dir,
         .templates = templates,
@@ -87,8 +87,8 @@ const Timer = struct {
     }
 
     fn log(timer: *Timer, comptime format: []const u8, args: anytype) void {
-        const nanos = timer.inner.lap();
-        std.log.info(format ++ " in {} µs", args ++ .{nanos / 1000});
+        const nanos = @intToFloat(f64, timer.inner.lap());
+        std.log.info(format ++ " in {d:.2} ms", args ++ .{nanos / 1e6});
     }
 };
 
