@@ -1,6 +1,6 @@
 ---
 title: An over-shuffled deck
-description: Beware the nonuniform distribution!
+subtitle: Beware the nonuniform distribution!
 category: Algorithms
 date: 2015-04-10T16:42:00-04:00
 ---

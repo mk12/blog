@@ -1,6 +1,6 @@
 ---
 title: First year reflection
-description: Thoughts on Software Engineering at Waterloo
+subtitle: Thoughts on Software Engineering at Waterloo
 category: Life
 date: 2015-04-04T11:35:32-04:00
 ---

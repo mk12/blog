@@ -1,6 +1,6 @@
 ---
 title: Lindenmayer systems
-description: Using L-systems to draw fractal curves
+subtitle: Using L-systems to draw fractal curves
 category: Math
 date: 2015-09-18T10:28:00-04:00
 ---

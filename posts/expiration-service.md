@@ -1,6 +1,6 @@
 ---
 title: Building a file expiration service
-description: Adventures in a distributed file system
+subtitle: Adventures in a distributed file system
 category: Software
 date: 2017-09-12T12:31:00-05:00
 ---

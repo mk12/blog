@@ -1,6 +1,6 @@
 ---
 title: The tortoise and the hare
-description: Cycle detection with the help of Aesop's fables
+subtitle: Cycle detection with the help of Aesop's fables
 category: Algorithms
 date: 2015-04-02T15:43:46-04:00
 ---

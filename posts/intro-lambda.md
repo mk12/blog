@@ -1,6 +1,6 @@
 ---
 title: Introduction to the λ-calculus
-description: Meet your new favourite formal system
+subtitle: Meet your new favourite formal system
 category: Math
 date: 2015-04-07T12:48:12-04:00
 ---

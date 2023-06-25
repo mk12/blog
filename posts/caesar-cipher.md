@@ -1,6 +1,6 @@
 ---
 title: Cracking the Caesar cipher
-description: How to crack a Caesar cipher using frequency analysis
+subtitle: How to crack a Caesar cipher using frequency analysis
 category: Algorithms
 date: 2015-03-30T15:52:37-04:00
 ---

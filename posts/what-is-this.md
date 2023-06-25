@@ -1,6 +1,6 @@
 ---
 title: What is this?
-description: This is my first blog post
+subtitle: This is my first blog post
 category: Life
 date: 2015-03-28T17:05:58-04:00
 ---

@@ -1,6 +1,6 @@
 ---
 title: Shopify co-op reflection
-description: Belated thoughts on my first internship
+subtitle: Belated thoughts on my first internship
 category: Life
 ---
 

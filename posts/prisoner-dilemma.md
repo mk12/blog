@@ -1,6 +1,6 @@
 ---
 title: The prisoner's dilemma
-description: Why people settle for a lose-lose scenario
+subtitle: Why people settle for a lose-lose scenario
 category: Math
 date: 2015-04-17T16:00:00-04:00
 ---

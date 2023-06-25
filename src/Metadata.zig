@@ -8,11 +8,11 @@ const Scanner = @import("Scanner.zig");
 const Metadata = @This();
 
 title: []const u8,
-description: []const u8,
+subtitle: []const u8,
 category: []const u8,
 status: Status,
 
-const Status = union(enum) {
+pub const Status = union(enum) {
     draft,
     published: Date,
 };
@@ -21,7 +21,7 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var metadata: Metadata = undefined;
     const separator = "---\n";
     try scanner.expect(separator);
-    inline for (.{ "title", "description", "category" }) |key| {
+    inline for (.{ "title", "subtitle", "category" }) |key| {
         try scanner.expect(key ++ ": ");
         const span = try scanner.until('\n');
         @field(metadata, key) = span.text;
@@ -58,13 +58,13 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
 test "draft" {
     try expectSuccess(Metadata{
         .title = "The title",
-        .description = "The description",
+        .subtitle = "The subtitle",
         .category = "Category",
         .status = Status.draft,
     },
         \\---
         \\title: The title
-        \\description: The description
+        \\subtitle: The subtitle
         \\category: Category
         \\---
         \\
@@ -74,13 +74,13 @@ test "draft" {
 test "published" {
     try expectSuccess(Metadata{
         .title = "The title",
-        .description = "The description",
+        .subtitle = "The subtitle",
         .category = "Category",
         .status = Status{ .published = Date.from("2023-04-29T15:28:50-07:00") },
     },
         \\---
         \\title: The title
-        \\description: The description
+        \\subtitle: The subtitle
         \\category: Category
         \\date: 2023-04-29T15:28:50-07:00
         \\---
@@ -90,7 +90,7 @@ test "published" {
 
 test "missing fields" {
     try expectFailure(
-        \\<input>:3:1: expected "description: ", got "---\n"
+        \\<input>:3:1: expected "subtitle: ", got "---\n"
     ,
         \\---
         \\title: The title
@@ -105,7 +105,7 @@ test "invalid field" {
     ,
         \\---
         \\title: The title
-        \\description: The description
+        \\subtitle: The subtitle
         \\category: Category
         \\invalid: This is invalid!
         \\---
@@ -119,7 +119,7 @@ test "invalid date" {
     ,
         \\---
         \\title: The title
-        \\description: The description
+        \\subtitle: The subtitle
         \\category: Category
         \\date: 2023-04-29?15:28:50-07:00
         \\---

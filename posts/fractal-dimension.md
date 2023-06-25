@@ -1,6 +1,6 @@
 ---
 title: Fractal dimensions
-description: Exploring the gap between topological dimensions
+subtitle: Exploring the gap between topological dimensions
 category: Math
 date: 2016-02-07T21:25:00-08:00
 ---

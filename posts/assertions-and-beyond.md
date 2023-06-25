@@ -1,6 +1,6 @@
 ---
 title: Assertions and beyond
-description: Modern methods of testing software
+subtitle: Modern methods of testing software
 category: Software
 date: 2015-08-02T23:47:34-04:00
 ---

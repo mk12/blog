@@ -1,6 +1,6 @@
 ---
 title: Chasing the infinite
-description: Surprising mathematical results on infinity
+subtitle: Surprising mathematical results on infinity
 category: Math
 date: 2015-05-10T21:45:00-04:00
 ---

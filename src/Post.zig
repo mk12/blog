@@ -32,7 +32,7 @@ test "parse" {
     const source =
         \\---
         \\title: The title
-        \\description: The description
+        \\subtitle: The subtitle
         \\category: Category
         \\date: 2023-04-29T15:28:50-07:00
         \\---
@@ -45,7 +45,7 @@ test "parse" {
         .slug = "foo",
         .metadata = Metadata{
             .title = "The title",
-            .description = "The description",
+            .subtitle = "The subtitle",
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
