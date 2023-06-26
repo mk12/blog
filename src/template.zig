@@ -196,7 +196,7 @@ pub fn parse(
     allocator: Allocator,
     scanner: *Scanner,
     include_map: std.StringHashMap(Template),
-) !Template {
+) ParseError!Template {
     const ctx = ParseContext{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
     return parseUntil(ctx, .eof, true);
 }
@@ -457,8 +457,12 @@ pub const Value = union(enum) {
             return .{ .string = object };
         if (comptime std.meta.trait.isTuple(Type)) {
             var array = std.ArrayListUnmanaged(Value){};
-            inline for (object) |item|
-                try array.append(allocator, try init(allocator, item));
+            inline for (object) |item| try array.append(allocator, try init(allocator, item));
+            return .{ .array = array };
+        }
+        if (comptime std.meta.trait.isIndexable(Type)) {
+            var array = std.ArrayListUnmanaged(Value){};
+            for (object) |item| try array.append(allocator, try init(allocator, item));
             return .{ .array = array };
         }
         switch (@typeInfo(Type)) {
