@@ -177,8 +177,8 @@ const Definition = struct {
 };
 
 const Command = struct {
-    location: Reporter.Location,
     value: CommandValue,
+    location: Reporter.Location,
 };
 
 const CommandValue = union(enum) {
@@ -340,8 +340,8 @@ test "parse text" {
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
     try testing.expectEqualSlices(Command, &[_]Command{
         .{
-            .location = .{ .line = 1, .column = 1 },
             .value = .{ .text = source },
+            .location = .{ .line = 1, .column = 1 },
         },
     }, template.commands.items);
 }
@@ -488,6 +488,7 @@ test "value" {
         .string = "hello",
         .empty = .{},
         .array = .{ true, "hello" },
+        .slice = &[_]bool{ true, false },
         .nested = .{ .true = true, .string = "hello" },
     });
 }

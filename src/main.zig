@@ -10,6 +10,7 @@ const Post = @import("Post.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Template = @import("Template.zig");
+const Timer = @import("util.zig").Timer;
 
 pub const std_options = struct {
     pub const log_level = .info;
@@ -18,7 +19,7 @@ pub const std_options = struct {
 fn printUsage(writer: anytype) !void {
     const program_name = fs.path.basename(mem.span(std.os.argv[0]));
     try writer.print(
-        \\Usage: {s} [-hd] OUT_DIR
+        \\Usage: {s} [-hdct] OUT_DIR
         \\
         \\Generate static files for the blog
         \\
@@ -29,6 +30,7 @@ fn printUsage(writer: anytype) !void {
         \\    -h, --help   Show this help message
         \\    -d, --draft  Include draft posts
         \\    -c, --clean  Remove OUT_DIR first
+        \\    -t, --time   Log timing information
         \\
         \\Environment:
         \\    BASE_URL     Base URL where the blog is hosted
@@ -52,7 +54,7 @@ pub fn main() !void {
         process.exit(1);
     };
 
-    var timer = try Timer.start();
+    var timer = try Timer.start(args.time);
 
     var posts = try readPosts(allocator, &reporter, args.draft);
     timer.log("read {} posts", .{posts.len});
@@ -68,9 +70,10 @@ pub fn main() !void {
     var out_dir = try fs.cwd().makeOpenPath(args.out_dir, .{});
     defer out_dir.close();
 
-    const num_written = try generate(.{
+    try generate(.{
         .arena = &arena,
         .reporter = &reporter,
+        .timer = timer,
         .out_dir = out_dir,
         .templates = templates,
         .posts = posts,
@@ -79,26 +82,13 @@ pub fn main() !void {
         .font_url = env.font_url,
         .analytics = env.analytics,
     });
-    timer.log("wrote {} files", .{num_written});
 }
-
-const Timer = struct {
-    inner: std.time.Timer,
-
-    fn start() !Timer {
-        return .{ .inner = try std.time.Timer.start() };
-    }
-
-    fn log(timer: *Timer, comptime format: []const u8, args: anytype) void {
-        const nanos = @intToFloat(f64, timer.inner.lap());
-        std.log.info(format ++ " in {d:.2} ms", args ++ .{nanos / 1e6});
-    }
-};
 
 const Arguments = struct {
     out_dir: []const u8,
     draft: bool = false,
     clean: bool = false,
+    time: bool = false,
 };
 
 fn parseArguments() !Arguments {
@@ -113,6 +103,8 @@ fn parseArguments() !Arguments {
             args.draft = true;
         } else if (mem.eql(u8, arg, "-c") or mem.eql(u8, arg, "--clean")) {
             args.clean = true;
+        } else if (mem.eql(u8, arg, "-t") or mem.eql(u8, arg, "--time")) {
+            args.time = true;
         } else if (mem.startsWith(u8, arg, "-")) {
             std.log.err("{s}: invalid argument", .{arg});
             process.exit(1);
@@ -174,16 +166,7 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![
 
 fn cmpPostsReverseChronological(context: void, lhs: Post, rhs: Post) bool {
     _ = context;
-    return switch (lhs.meta.status) {
-        .draft => switch (rhs.meta.status) {
-            .draft => std.mem.order(u8, lhs.slug, rhs.slug) == std.math.Order.lt,
-            .published => true,
-        },
-        .published => |lhs_date| switch (rhs.meta.status) {
-            .draft => false,
-            .published => |rhs_date| lhs_date.sortKey() > rhs_date.sortKey(),
-        },
-    };
+    return Post.order(lhs, rhs) == .gt;
 }
 
 fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(Template) {

@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const fs = std.fs;
+const util = @import("util.zig");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Markdown = @import("Markdown.zig");
@@ -16,6 +17,7 @@ const Value = Template.Value;
 pub fn generate(args: struct {
     arena: *ArenaAllocator,
     reporter: *Reporter,
+    timer: util.Timer,
     out_dir: fs.Dir,
     templates: std.StringHashMap(Template),
     posts: []const Post,
@@ -23,9 +25,10 @@ pub fn generate(args: struct {
     home_url: ?[]const u8,
     font_url: ?[]const u8,
     analytics: ?[]const u8,
-}) !usize {
+}) !void {
     const allocator = args.arena.allocator();
     const reporter = args.reporter;
+    var timer = args.timer;
     const dirs = try Dirs.init(args.out_dir);
     defer dirs.close();
     const base_url = BaseUrl.init(args.base_url);
@@ -38,7 +41,7 @@ pub fn generate(args: struct {
         .style_url = try base_url.join(allocator, "/style.css"),
         .blog_url = try base_url.join(allocator, "/"),
         .home_url = args.home_url,
-        .analytics = args.analytics,
+        .analytics = args.analytics, // TODO read file
     });
     var scope = Scope.init(variables);
 
@@ -46,15 +49,20 @@ pub fn generate(args: struct {
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
 
+    // TODO breakdown making dirs etc.
+    timer.log("done setup", .{});
+
     dirs.@"/".symLink(try fs.cwd().realpathAlloc(allocator, "assets/css/style.css"), "style.css", .{}) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
+    timer.log("symlinked 1 file", .{});
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
         try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &scope, posts, page);
     }
+    timer.logEach("wrote {} pages", .{pages.len}, pages.len);
     for (posts, 0..) |post, i| {
         _ = per_file_arena.reset(.retain_capacity);
         const neighbors = Neighbors{
@@ -63,8 +71,7 @@ pub fn generate(args: struct {
         };
         try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &scope, post, neighbors);
     }
-
-    return 1 + pages.len + posts.len;
+    timer.logEach("wrote {} posts", .{posts.len}, posts.len);
 }
 
 const Dirs = struct {

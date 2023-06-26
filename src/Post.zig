@@ -61,3 +61,16 @@ test "parse" {
     try testing.expectEqualStrings(expected.body.source, post.body.source);
     try testing.expectEqualDeep(expected, post);
 }
+
+pub fn order(lhs: Post, rhs: Post) std.math.Order {
+    return switch (lhs.meta.status) {
+        .draft => switch (rhs.meta.status) {
+            .draft => std.mem.order(u8, lhs.slug, rhs.slug),
+            .published => .gt,
+        },
+        .published => |lhs_date| switch (rhs.meta.status) {
+            .draft => .lt,
+            .published => |rhs_date| std.math.order(lhs_date.sortKey(), rhs_date.sortKey()),
+        },
+    };
+}
