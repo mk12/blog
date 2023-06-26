@@ -28,6 +28,7 @@ fn printUsage(writer: anytype) !void {
         \\Options:
         \\    -h, --help   Show this help message
         \\    -d, --draft  Include draft posts
+        \\    -c, --clean  Remove OUT_DIR first
         \\
         \\Environment:
         \\    BASE_URL     Base URL where the blog is hosted
@@ -54,13 +55,15 @@ pub fn main() !void {
     var timer = try Timer.start();
 
     var posts = try readPosts(allocator, &reporter, args.draft);
-    timer.log("read {} posts", .{posts.items.len});
+    timer.log("read {} posts", .{posts.len});
 
     var templates = try readTemplates(allocator, &reporter);
     timer.log("read {} templates", .{templates.count()});
 
-    try fs.cwd().deleteTree(args.out_dir);
-    timer.log("deleted {s}", .{args.out_dir});
+    if (args.clean) {
+        try fs.cwd().deleteTree(args.out_dir);
+        timer.log("deleted {s}", .{args.out_dir});
+    }
 
     var out_dir = try fs.cwd().makeOpenPath(args.out_dir, .{});
     defer out_dir.close();
@@ -70,7 +73,7 @@ pub fn main() !void {
         .reporter = &reporter,
         .out_dir = out_dir,
         .templates = templates,
-        .posts = posts.items,
+        .posts = posts,
         .base_url = env.base_url,
         .home_url = env.home_url,
         .font_url = env.font_url,
@@ -95,6 +98,7 @@ const Timer = struct {
 const Arguments = struct {
     out_dir: []const u8,
     draft: bool = false,
+    clean: bool = false,
 };
 
 fn parseArguments() !Arguments {
@@ -107,6 +111,8 @@ fn parseArguments() !Arguments {
             process.exit(0);
         } else if (mem.eql(u8, arg, "-d") or mem.eql(u8, arg, "--draft")) {
             args.draft = true;
+        } else if (mem.eql(u8, arg, "-c") or mem.eql(u8, arg, "--clean")) {
+            args.clean = true;
         } else if (mem.startsWith(u8, arg, "-")) {
             std.log.err("{s}: invalid argument", .{arg});
             process.exit(1);
@@ -144,7 +150,7 @@ const source_post_dir = "posts";
 const template_dir = "templates";
 const max_file_size = 1024 * 1024;
 
-fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) !std.ArrayList(Post) {
+fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![]const Post {
     var posts = std.ArrayList(Post).init(allocator);
     var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
     defer iterable.close();
