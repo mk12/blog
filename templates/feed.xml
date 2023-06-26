@@ -16,7 +16,7 @@
       {{ if date }}
       <pubDate>{{ . }}</pubDate>
       {{ end }}
-      <description><![CDATA[{{ description }}]]></description>
+      <description><![CDATA[{{ subtitle }}]]></description>
     </item>
     {{ end }}
   </channel>
