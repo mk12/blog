@@ -159,10 +159,25 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) !s
             .reporter = reporter,
         };
         const post = try Post.parse(&scanner);
-        if (!include_drafts and post.metadata.status == .draft) continue;
+        if (!include_drafts and post.meta.status == .draft) continue;
         try posts.append(post);
     }
-    return posts;
+    std.mem.sort(Post, posts.items, {}, cmpPostsReverseChronological);
+    return posts.items;
+}
+
+fn cmpPostsReverseChronological(context: void, lhs: Post, rhs: Post) bool {
+    _ = context;
+    return switch (lhs.meta.status) {
+        .draft => switch (rhs.meta.status) {
+            .draft => std.mem.order(u8, lhs.slug, rhs.slug) == std.math.Order.lt,
+            .published => true,
+        },
+        .published => |lhs_date| switch (rhs.meta.status) {
+            .draft => false,
+            .published => |rhs_date| lhs_date.sortKey() > rhs_date.sortKey(),
+        },
+    };
 }
 
 fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(Template) {

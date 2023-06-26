@@ -18,24 +18,24 @@ pub const Status = union(enum) {
 };
 
 pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
-    var metadata: Metadata = undefined;
+    var meta: Metadata = undefined;
     const separator = "---\n";
     try scanner.expect(separator);
     inline for (.{ "title", "subtitle", "category" }) |key| {
         try scanner.expect(key ++ ": ");
         const span = try scanner.until('\n');
-        @field(metadata, key) = span.text;
+        @field(meta, key) = span.text;
     }
     switch (try scanner.choice(.{ .date = "date: ", .end = separator })) {
         .date => {
             const date = try Date.parse(scanner);
             try scanner.expect("\n");
-            metadata.status = Status{ .published = date };
+            meta.status = Status{ .published = date };
             try scanner.expect(separator);
         },
-        .end => metadata.status = Status.draft,
+        .end => meta.status = Status.draft,
     }
-    return metadata;
+    return meta;
 }
 
 fn expectSuccess(expected: Metadata, source: []const u8) !void {

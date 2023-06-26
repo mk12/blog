@@ -3,27 +3,26 @@
 const std = @import("std");
 const testing = std.testing;
 const Date = @import("Date.zig");
+const Markdown = @import("Markdown.zig");
 const Metadata = @import("Metadata.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Post = @This();
 
-source: []const u8,
-filename: []const u8,
 slug: []const u8,
-metadata: Metadata,
-markdown_offset: usize,
-markdown_location: Reporter.Location,
+meta: Metadata,
+body: Markdown,
 
 pub fn parse(scanner: *Scanner) Reporter.Error!Post {
-    const metadata = try Metadata.parse(scanner);
+    const meta = try Metadata.parse(scanner);
     return Post{
-        .source = scanner.source,
-        .filename = scanner.filename,
         .slug = std.fs.path.stem(scanner.filename),
-        .metadata = metadata,
-        .markdown_offset = scanner.offset,
-        .markdown_location = scanner.location,
+        .meta = meta,
+        .body = Markdown{
+            .source = scanner.source[scanner.offset..],
+            .filename = scanner.filename,
+            .location = scanner.location,
+        },
     };
 }
 
@@ -40,22 +39,25 @@ test "parse" {
         \\Hello world!
     ;
     const expected = Post{
-        .source = source,
-        .filename = filename,
         .slug = "foo",
-        .metadata = Metadata{
+        .meta = Metadata{
             .title = "The title",
             .subtitle = "The subtitle",
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .markdown_offset = 105,
-        .markdown_location = .{ .line = 7, .column = 1 },
+        .body = Markdown{
+            .source = source[99..],
+            .filename = filename,
+            .location = .{ .line = 7, .column = 1 },
+        },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
-    try testing.expectEqualDeep(expected, try parse(&scanner));
+    const post = try parse(&scanner);
+    try testing.expectEqualStrings(expected.body.source, post.body.source);
+    try testing.expectEqualDeep(expected, post);
 }

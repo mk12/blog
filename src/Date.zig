@@ -7,13 +7,14 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Date = @This();
 
-year: u16,
-month: u8,
-day: u8,
-hour: u8,
-minute: u8,
-second: u8,
+// The fields are in little-endian order to make sortKey fast.
 tz_offset_h: i8,
+second: u8,
+minute: u8,
+hour: u8,
+day: u8,
+month: u8,
+year: u16,
 
 /// Parses a date from a restricted subset of RFC-3339.
 pub fn parse(scanner: *Scanner) Reporter.Error!Date {
@@ -196,4 +197,14 @@ test "fmt" {
     try expectFmt("9 Jun 2023", "{short}", .{date.fmt()});
     try expectFmt("Friday, 9 June 2023", "{long}", .{date.fmt()});
     try expectFmt(original, "{rfc3339}", .{date.fmt()});
+}
+
+/// Returns a key for sorting dates in ascending order. Ignores the timezone.
+pub fn sortKey(self: Date) u64 {
+    return @as(u64, self.year) << 40 |
+        @as(u64, self.month) << 32 |
+        @as(u64, self.day) << 24 |
+        @as(u64, self.hour) << 16 |
+        @as(u64, self.minute) << 8 |
+        self.second;
 }
