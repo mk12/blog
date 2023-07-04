@@ -133,8 +133,8 @@ const month_names = [12][]const u8{
     "December",
 };
 
-fn monthName(date: Date) []const u8 {
-    return month_names[date.month - 1];
+fn monthName(self: Date) []const u8 {
+    return month_names[self.month - 1];
 }
 
 const weekday_names = [7][]const u8{
@@ -147,56 +147,53 @@ const weekday_names = [7][]const u8{
     "Sunday",
 };
 
-fn weekdayName(date: Date) []const u8 {
-    assert(date.year >= 2000 and date.year <= 2099);
-    const year_code = date.year + date.year / 4;
+fn weekdayName(self: Date) []const u8 {
+    assert(self.year >= 2000 and self.year <= 2099);
+    const year_code = self.year + self.year / 4;
     const month_codes = [12]u8{ 0, 3, 3, 6, 1, 4, 6, 2, 5, 0, 3, 5 };
-    const month_code = month_codes[date.month - 1];
+    const month_code = month_codes[self.month - 1];
     const century_code = 4;
-    const leap_code = @boolToInt(date.month <= 2 and isLeapYear(date.year));
-    const weekday = (year_code + month_code + century_code + date.day - leap_code) % 7;
+    const leap_code = @boolToInt(self.month <= 2 and isLeapYear(self.year));
+    const weekday = (year_code + month_code + century_code + self.day - leap_code) % 7;
     return weekday_names[weekday];
 }
 
-fn fmtDate(
-    date: Date,
-    comptime format: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = options;
-    if (comptime std.mem.eql(u8, format, "short")) {
-        try writer.print("{} {s} {}", .{ date.day, date.monthName()[0..3], date.year });
-    } else if (comptime std.mem.eql(u8, format, "long")) {
-        try writer.print("{s}, {} {s} {}", .{ date.weekdayName(), date.day, date.monthName(), date.year });
-    } else if (comptime std.mem.eql(u8, format, "rfc3339")) {
-        const sign: u8 = if (date.tz_offset_h < 0) '-' else '+';
-        const offset = std.math.absCast(date.tz_offset_h);
-        try writer.print(
-            "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{c}{:0>2}:00",
-            .{ date.year, date.month, date.day, date.hour, date.minute, date.second, sign, offset },
-        );
-    } else {
-        @compileError("invalid date format: " ++ format);
+pub const Style = enum { short, long, rfc3339 };
+
+pub fn render(self: Date, style: Style, writer: anytype) !void {
+    switch (style) {
+        .short => try writer.print(
+            "{} {s} {}",
+            .{ self.day, self.monthName()[0..3], self.year },
+        ),
+        .long => try writer.print(
+            "{s}, {} {s} {}",
+            .{ self.weekdayName(), self.day, self.monthName(), self.year },
+        ),
+        .rfc3339 => {
+            const sign: u8 = if (self.tz_offset_h < 0) '-' else '+';
+            const offset = std.math.absCast(self.tz_offset_h);
+            try writer.print(
+                "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{c}{:0>2}:00",
+                .{ self.year, self.month, self.day, self.hour, self.minute, self.second, sign, offset },
+            );
+        },
     }
 }
 
-pub fn fmt(date: Date) std.fmt.Formatter(fmtDate) {
-    return .{ .data = date };
+fn expectRender(expected: []const u8, date: Date, style: Style) !void {
+    var actual = std.ArrayList(u8).init(testing.allocator);
+    defer actual.deinit();
+    try date.render(style, actual.writer());
+    try testing.expectEqualStrings(expected, actual.items);
 }
 
-fn expectFmt(expected: []const u8, comptime format: []const u8, args: anytype) !void {
-    const actual = try std.fmt.allocPrint(testing.allocator, format, args);
-    defer testing.allocator.free(actual);
-    try testing.expectEqualStrings(expected, actual);
-}
-
-test "fmt" {
+test "render" {
     const original = "2023-06-09T16:30:07-07:00";
     const date = from(original);
-    try expectFmt("9 Jun 2023", "{short}", .{date.fmt()});
-    try expectFmt("Friday, 9 June 2023", "{long}", .{date.fmt()});
-    try expectFmt(original, "{rfc3339}", .{date.fmt()});
+    try expectRender("9 Jun 2023", date, .short);
+    try expectRender("Friday, 9 June 2023", date, .long);
+    try expectRender(original, date, .rfc3339);
 }
 
 /// Returns a key for sorting dates in ascending order. Ignores the timezone.

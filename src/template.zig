@@ -5,10 +5,13 @@ const mem = std.mem;
 const testing = std.testing;
 const fmtEscapes = std.zig.fmtEscapes;
 const Allocator = mem.Allocator;
+const Date = @import("Date.zig");
 const EnumSet = std.enums.EnumSet;
-const Markdown = @import("Markdown.zig");
+const markdown = @import("markdown.zig");
 const Reporter = @import("Reporter.zig");
+const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
+const Span = Scanner.Span;
 const Template = @This();
 
 filename: []const u8,
@@ -19,7 +22,7 @@ const Variable = []const u8;
 
 const Token = struct {
     value: TokenValue,
-    location: Reporter.Location,
+    location: Location,
 };
 
 const TokenValue = union(enum) {
@@ -105,25 +108,7 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual = std.ArrayList(TokenValue).init(allocator);
     while (try scan(&scanner)) |token| try actual.append(token.value);
-    var expected_adjusted = std.ArrayList(TokenValue).init(allocator);
-    var offset: usize = 0;
-    for (expected, 0..) |value, index| {
-        var copy = value;
-        switch (copy) {
-            .@"else", .end => {},
-            inline else => |*substring| {
-                const start = mem.indexOfPos(u8, source, offset, substring.*) orelse {
-                    std.debug.print("could not find expected[{}]: \"{}\"\n", .{ index, fmtEscapes(substring.*) });
-                    return error.SubstringNotFound;
-                };
-                const end = start + substring.len;
-                substring.* = source[start..end];
-                offset = end;
-            },
-        }
-        try expected_adjusted.append(copy);
-    }
-    try testing.expectEqualSlices(TokenValue, expected_adjusted.items, actual.items);
+    try testing.expectEqualDeep(expected, actual.items);
 }
 
 test "scan empty string" {
@@ -178,7 +163,7 @@ const Definition = struct {
 
 const Command = struct {
     value: CommandValue,
-    location: Reporter.Location,
+    location: Location,
 };
 
 const CommandValue = union(enum) {
@@ -198,7 +183,7 @@ pub fn parse(
     include_map: std.StringHashMap(Template),
 ) ParseError!Template {
     const ctx = ParseContext{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
-    return parseUntil(ctx, .eof, true);
+    return parseUntil(ctx, .eof, .trim_start);
 }
 
 const ParseContext = struct {
@@ -207,9 +192,11 @@ const ParseContext = struct {
     include_map: std.StringHashMap(Template),
 };
 
-fn parseUntil(ctx: ParseContext, terminator: Terminator, trim_start: bool) !Template {
+const Trim = enum { no_trim, trim_start };
+
+fn parseUntil(ctx: ParseContext, terminator: Terminator, trim: Trim) !Template {
     const terminators = EnumSet(Terminator).initOne(terminator);
-    const result = try parseUntilAny(ctx, terminators, trim_start);
+    const result = try parseUntilAny(ctx, terminators, trim);
     return result.template;
 }
 
@@ -217,18 +204,18 @@ const Terminator = enum { end, @"else", eof };
 const ParseError = Reporter.Error || Allocator.Error;
 const ParseResult = ParseError!struct { template: Template, terminator: Terminator };
 
-fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim_start: bool) ParseResult {
+fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .filename = scanner.filename };
     var terminator = Terminator.eof;
-    var terminator_pos: ?Reporter.Location = null;
+    var terminator_pos: ?Location = null;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
                 template.trimLastIfText();
                 try template.definitions.append(ctx.allocator, Definition{
                     .variable = variable,
-                    .body = try parseUntil(ctx, .end, true),
+                    .body = try parseUntil(ctx, .end, .trim_start),
                 });
                 continue;
             },
@@ -243,7 +230,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 break;
             },
             .text => |text| blk: {
-                if (trim_start and template.commands.items.len == 0) {
+                if (trim == .trim_start and template.commands.items.len == 0) {
                     const trimmed = trimStart(text);
                     if (trimmed.len == 0) continue;
                     break :blk .{ .text = trimmed };
@@ -258,13 +245,13 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
             .start => |variable| blk: {
                 template.trimLastIfText();
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
-                const result = try parseUntilAny(ctx, end_or_else, false);
+                const result = try parseUntilAny(ctx, end_or_else, .no_trim);
                 break :blk .{
                     .control = .{
                         .variable = variable,
                         .body = result.template,
                         .else_body = switch (result.terminator) {
-                            .@"else" => try parseUntil(ctx, .end, false),
+                            .@"else" => try parseUntil(ctx, .end, .no_trim),
                             else => null,
                         },
                     },
@@ -442,12 +429,13 @@ pub const Value = union(enum) {
     bool: bool,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
-    markdown: Markdown,
+    date: struct { date: Date, style: Date.Style },
+    markdown: struct { span: Span, filename: []const u8, options: markdown.Options },
     template: *const Template,
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
-        if (Type == Markdown) return .{ .markdown = object };
+        if (Type == Value) return object;
         switch (@typeInfo(Type)) {
             .Bool => return .{ .bool = object },
             .Optional => |Optional| Type = Optional.child,
@@ -490,6 +478,7 @@ test "value" {
         .array = .{ true, "hello" },
         .slice = &[_]bool{ true, false },
         .nested = .{ .true = true, .string = "hello" },
+        .value = try Value.init(arena.allocator(), "hello"),
     });
 }
 
@@ -552,7 +541,8 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
-            .markdown => |markdown| try markdown.render(ctx.reporter, ctx.writer),
+            .date => |args| try args.date.render(args.style, ctx.writer),
+            .markdown => |args| try markdown.render(args.span, args.filename, args.options, ctx.reporter, ctx.writer),
             .template => |template| try template.exec(ctx, scope),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
@@ -607,9 +597,9 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     var template = try parse(allocator, &scanner, include_map);
     var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
-    var buffer = std.ArrayList(u8).init(allocator);
-    try template.execute(allocator, &reporter, buffer.writer(), &scope);
-    try testing.expectEqualStrings(expected, buffer.items);
+    var actual = std.ArrayList(u8).init(allocator);
+    try template.execute(allocator, &reporter, actual.writer(), &scope);
+    try testing.expectEqualStrings(expected, actual.items);
 }
 
 fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object: anytype) !void {
@@ -623,10 +613,9 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     var template = try parse(allocator, &scanner, include_map);
     var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
-    var buffer = std.ArrayList(u8).init(allocator);
     try reporter.expectFailure(
         expected_message,
-        template.execute(allocator, &reporter, buffer.writer(), &scope),
+        template.execute(allocator, &reporter, std.io.null_writer, &scope),
     );
 }
 

@@ -2,13 +2,14 @@
 
 const std = @import("std");
 const fs = std.fs;
-const util = @import("util.zig");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const Markdown = @import("Markdown.zig");
+const Date = @import("Date.zig");
+const markdown = @import("markdown.zig");
 const Status = @import("Metadata.zig").Status;
 const Post = @import("Post.zig");
 const Scanner = @import("Scanner.zig");
+const Span = Scanner.Span;
 const Reporter = @import("Reporter.zig");
 const Template = @import("Template.zig");
 const Scope = Template.Scope;
@@ -17,8 +18,7 @@ const Value = Template.Value;
 pub fn generate(args: struct {
     arena: *ArenaAllocator,
     reporter: *Reporter,
-    timer: util.Timer,
-    out_dir: fs.Dir,
+    out_dir: []const u8,
     templates: std.StringHashMap(Template),
     posts: []const Post,
     base_url: ?[]const u8,
@@ -28,8 +28,7 @@ pub fn generate(args: struct {
 }) !void {
     const allocator = args.arena.allocator();
     const reporter = args.reporter;
-    var timer = args.timer;
-    const dirs = try Dirs.init(args.out_dir);
+    var dirs = try Directories.init(args.out_dir);
     defer dirs.close();
     const base_url = BaseUrl.init(args.base_url);
     const templates = try Templates.init(reporter, args.templates);
@@ -49,20 +48,16 @@ pub fn generate(args: struct {
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
 
-    // TODO breakdown making dirs etc.
-    timer.log("done setup", .{});
-
-    dirs.@"/".symLink(try fs.cwd().realpathAlloc(allocator, "assets/css/style.css"), "style.css", .{}) catch |err| switch (err) {
+    dirs.@"/".symLink(try fs.cwd().realpathAlloc(per_file_allocator, "assets/css/style.css"), "style.css", .{}) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
-    timer.log("symlinked 1 file", .{});
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
         try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &scope, posts, page);
     }
-    timer.logEach("wrote {} pages", .{pages.len}, pages.len);
+
     for (posts, 0..) |post, i| {
         _ = per_file_arena.reset(.retain_capacity);
         const neighbors = Neighbors{
@@ -71,30 +66,24 @@ pub fn generate(args: struct {
         };
         try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &scope, post, neighbors);
     }
-    timer.logEach("wrote {} posts", .{posts.len}, posts.len);
 }
 
-const Dirs = struct {
+const Directories = struct {
     @"/": fs.Dir,
     @"/post": fs.Dir,
     @"/categories": fs.Dir,
 
-    fn init(root: fs.Dir) !Dirs {
-        var result: Dirs = undefined;
-        result.@"/" = root;
-        inline for (@typeInfo(Dirs).Struct.fields) |field| {
-            if (comptime std.mem.eql(u8, field.name, "/")) continue;
-            @field(result, field.name) = try root.makeOpenPath(field.name[1..], .{});
-        }
-        return result;
+    fn init(root_path: []const u8) !Directories {
+        const root = try fs.cwd().makeOpenPath(root_path, .{});
+        return Directories{
+            .@"/" = root,
+            .@"/post" = try root.makeOpenPath("post", .{}),
+            .@"/categories" = try root.makeOpenPath("categories", .{}),
+        };
     }
 
-    fn close(self: Dirs) void {
-        inline for (@typeInfo(Dirs).Struct.fields) |field| {
-            if (comptime std.mem.eql(u8, field.name, "/")) continue;
-            var dir = @field(self, field.name);
-            dir.close();
-        }
+    fn close(self: *Directories) void {
+        inline for (std.meta.fields(Directories)) |field| @field(self, field.name).close();
     }
 };
 
@@ -106,7 +95,7 @@ const Templates = struct {
 
     fn init(reporter: *Reporter, map: std.StringHashMap(Template)) !Templates {
         var result: Templates = undefined;
-        inline for (@typeInfo(Templates).Struct.fields) |field|
+        inline for (std.meta.fields(Templates)) |field|
             @field(result, field.name) = map.get(field.name) orelse
                 return reporter.fail("{s}: template not found", .{field.name});
         return result;
@@ -145,7 +134,7 @@ const BaseUrl = struct {
 fn generatePage(
     allocator: Allocator,
     reporter: *Reporter,
-    dirs: Dirs,
+    dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
     parent: *const Scope,
@@ -167,16 +156,14 @@ fn generatePage(
             .@"/index.html" => {
                 break :blk try Value.init(allocator, .{
                     .title = "Mitchell Kember",
-                    // TODO detect math
-                    .math = false,
                     .posts = try recentPostSummaries(allocator, base_url, posts),
+                    // TODO maybe just use {{ base_url }}/post/ in templates?
                     .archive_url = try base_url.join(allocator, "/post/"),
                     .categories_url = try base_url.join(allocator, "/categories/"),
                 });
             },
             else => break :blk try Value.init(allocator, .{
                 .title = "Mitchell Kember",
-                .math = false,
                 .posts = .{},
                 .archive_url = "", // link.to
                 .categories_url = "", // link.to
@@ -191,10 +178,10 @@ fn generatePage(
 }
 
 const Summary = struct {
-    date: []const u8,
-    title: []const u8,
+    date: Value,
+    title: Value,
     href: []const u8,
-    excerpt: Markdown,
+    excerpt: Value,
 };
 
 const num_recent = 10;
@@ -204,10 +191,10 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
     for (0..num_recent) |i| {
         const post = posts[i];
         summaries[i] = Summary{
-            .date = try renderDate(allocator, "{long}", post.meta.status),
-            .title = post.meta.title,
+            .date = renderStatus(post.meta.status, .long),
+            .title = renderMarkdown(post.meta.title, post.filename, .{ .is_inline = true }),
             .href = try base_url.post(allocator, post.slug),
-            .excerpt = post.body.summary(),
+            .excerpt = renderMarkdown(post.body, post.filename, .{ .first_paragraph_only = true }),
         };
     }
     return summaries;
@@ -221,7 +208,7 @@ const Neighbors = struct {
 fn generatePost(
     allocator: Allocator,
     reporter: *Reporter,
-    dirs: Dirs,
+    dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
     parent: *const Scope,
@@ -233,12 +220,15 @@ fn generatePost(
     var file = try dir.createFile("index.html", .{});
     defer file.close();
     const variables = try Value.init(allocator, .{
-        .title = post.meta.title,
-        .subtitle = post.meta.subtitle,
-        .date = try renderDate(allocator, "{long}", post.meta.status),
-        .article = post.body,
-        // TODO render and detect math
-        .math = false,
+        // 3 constraints
+        // - nice for markdown.zig render function: fn render(span: Span, filename: []const u8, options: Options, reporter, writer)
+        // - nice for setting here: (span, filename, options)
+        // - need specific type for Value.init to use, otherwise need Value{ .markdown = ... }
+        // - nice for tests: don't want to create span, need separate Options
+        .title = renderMarkdown(post.meta.title, post.filename, .{ .is_inline = true }),
+        .subtitle = renderMarkdown(post.meta.subtitle, post.filename, .{ .is_inline = true }),
+        .date = renderStatus(post.meta.status, .long),
+        .article = renderMarkdown(post.body, post.filename, .{}),
         .newer = try if (neighbors.newer) |newer| base_url.post(allocator, newer.slug) else base_url.join(allocator, "/"),
         .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });
@@ -246,9 +236,13 @@ fn generatePost(
     try templates.@"post.html".execute(allocator, reporter, file.writer(), &scope);
 }
 
-fn renderDate(allocator: Allocator, comptime format: []const u8, status: Status) ![]const u8 {
+fn renderStatus(status: Status, style: Date.Style) Value {
     return switch (status) {
-        .draft => "DRAFT",
-        .published => |date| try std.fmt.allocPrint(allocator, format, .{date.fmt()}),
+        .draft => Value{ .string = "DRAFT" },
+        .published => |date| Value{ .date = .{ .date = date, .style = style } },
     };
+}
+
+fn renderMarkdown(span: Span, filename: []const u8, options: markdown.Options) Value {
+    return Value{ .markdown = .{ .span = span, .filename = filename, .options = options } };
 }

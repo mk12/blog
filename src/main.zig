@@ -10,16 +10,11 @@ const Post = @import("Post.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Template = @import("Template.zig");
-const Timer = @import("util.zig").Timer;
-
-pub const std_options = struct {
-    pub const log_level = .info;
-};
 
 fn printUsage(writer: anytype) !void {
     const program_name = fs.path.basename(mem.span(std.os.argv[0]));
     try writer.print(
-        \\Usage: {s} [-hdct] OUT_DIR
+        \\Usage: {s} [-hdc] OUT_DIR
         \\
         \\Generate static files for the blog
         \\
@@ -30,7 +25,6 @@ fn printUsage(writer: anytype) !void {
         \\    -h, --help   Show this help message
         \\    -d, --draft  Include draft posts
         \\    -c, --clean  Remove OUT_DIR first
-        \\    -t, --time   Log timing information
         \\
         \\Environment:
         \\    BASE_URL     Base URL where the blog is hosted
@@ -47,34 +41,18 @@ pub fn main() !void {
     const allocator = arena.allocator();
     const args = try parseArguments();
     const env = parseEnvironment();
-
     var reporter = Reporter.init(allocator);
     errdefer |err| if (err == error.ErrorWasReported) {
         std.log.err("{s}", .{reporter.message.?});
         process.exit(1);
     };
-
-    var timer = try Timer.start(args.time);
-
     var posts = try readPosts(allocator, &reporter, args.draft);
-    timer.log("read {} posts", .{posts.len});
-
     var templates = try readTemplates(allocator, &reporter);
-    timer.log("read {} templates", .{templates.count()});
-
-    if (args.clean) {
-        try fs.cwd().deleteTree(args.out_dir);
-        timer.log("deleted {s}", .{args.out_dir});
-    }
-
-    var out_dir = try fs.cwd().makeOpenPath(args.out_dir, .{});
-    defer out_dir.close();
-
+    if (args.clean) try fs.cwd().deleteTree(args.out_dir);
     try generate(.{
         .arena = &arena,
         .reporter = &reporter,
-        .timer = timer,
-        .out_dir = out_dir,
+        .out_dir = args.out_dir,
         .templates = templates,
         .posts = posts,
         .base_url = env.base_url,
@@ -88,7 +66,6 @@ const Arguments = struct {
     out_dir: []const u8,
     draft: bool = false,
     clean: bool = false,
-    time: bool = false,
 };
 
 fn parseArguments() !Arguments {
@@ -103,8 +80,6 @@ fn parseArguments() !Arguments {
             args.draft = true;
         } else if (mem.eql(u8, arg, "-c") or mem.eql(u8, arg, "--clean")) {
             args.clean = true;
-        } else if (mem.eql(u8, arg, "-t") or mem.eql(u8, arg, "--time")) {
-            args.time = true;
         } else if (mem.startsWith(u8, arg, "-")) {
             std.log.err("{s}: invalid argument", .{arg});
             process.exit(1);

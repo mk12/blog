@@ -5,10 +5,11 @@ const testing = std.testing;
 const Date = @import("Date.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
+const Span = Scanner.Span;
 const Metadata = @This();
 
-title: []const u8,
-subtitle: []const u8,
+title: Span,
+subtitle: Span,
 category: []const u8,
 status: Status,
 
@@ -21,11 +22,12 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var meta: Metadata = undefined;
     const separator = "---\n";
     try scanner.expect(separator);
-    inline for (.{ "title", "subtitle", "category" }) |key| {
+    inline for (.{ "title", "subtitle" }) |key| {
         try scanner.expect(key ++ ": ");
-        const span = try scanner.until('\n');
-        @field(meta, key) = span.text;
+        @field(meta, key) = try scanner.until('\n');
     }
+    try scanner.expect("category: ");
+    meta.category = (try scanner.until('\n')).text;
     switch (try scanner.choice(.{ .date = "date: ", .end = separator })) {
         .date => {
             const date = try Date.parse(scanner);
@@ -44,7 +46,7 @@ fn expectSuccess(expected: Metadata, source: []const u8) !void {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try testing.expectEqualDeep(expected, try Metadata.parse(&scanner));
+    try testing.expectEqualDeep(expected, try parse(&scanner));
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8) !void {
@@ -52,15 +54,15 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
     defer arena.deinit();
     var reporter = Reporter.init(arena.allocator());
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_message, Metadata.parse(&scanner));
+    try reporter.expectFailure(expected_message, parse(&scanner));
 }
 
 test "draft" {
     try expectSuccess(Metadata{
-        .title = "The title",
-        .subtitle = "The subtitle",
+        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
+        .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
         .category = "Category",
-        .status = Status.draft,
+        .status = .draft,
     },
         \\---
         \\title: The title
@@ -73,10 +75,10 @@ test "draft" {
 
 test "published" {
     try expectSuccess(Metadata{
-        .title = "The title",
-        .subtitle = "The subtitle",
+        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
+        .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
         .category = "Category",
-        .status = Status{ .published = Date.from("2023-04-29T15:28:50-07:00") },
+        .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
     },
         \\---
         \\title: The title
