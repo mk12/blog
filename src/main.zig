@@ -131,7 +131,7 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![
             .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
             .reporter = reporter,
         };
-        const post = try Post.parse(&scanner);
+        const post = try Post.parse(allocator, &scanner);
         if (!include_drafts and post.meta.status == .draft) continue;
         try posts.append(post);
     }

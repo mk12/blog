@@ -191,7 +191,7 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
     for (0..num_recent) |i| {
         const post = posts[i];
         summaries[i] = Summary{
-            .date = renderStatus(post.meta.status, .long),
+            .date = renderDate(post.meta.status, .long),
             .title = renderMarkdown(post.meta.title, post.filename, .{ .is_inline = true }),
             .href = try base_url.post(allocator, post.slug),
             .excerpt = renderMarkdown(post.body, post.filename, .{ .first_paragraph_only = true }),
@@ -220,14 +220,9 @@ fn generatePost(
     var file = try dir.createFile("index.html", .{});
     defer file.close();
     const variables = try Value.init(allocator, .{
-        // 3 constraints
-        // - nice for markdown.zig render function: fn render(span: Span, filename: []const u8, options: Options, reporter, writer)
-        // - nice for setting here: (span, filename, options)
-        // - need specific type for Value.init to use, otherwise need Value{ .markdown = ... }
-        // - nice for tests: don't want to create span, need separate Options
         .title = renderMarkdown(post.meta.title, post.filename, .{ .is_inline = true }),
         .subtitle = renderMarkdown(post.meta.subtitle, post.filename, .{ .is_inline = true }),
-        .date = renderStatus(post.meta.status, .long),
+        .date = renderDate(post.meta.status, .long),
         .article = renderMarkdown(post.body, post.filename, .{}),
         .newer = try if (neighbors.newer) |newer| base_url.post(allocator, newer.slug) else base_url.join(allocator, "/"),
         .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
@@ -236,7 +231,7 @@ fn generatePost(
     try templates.@"post.html".execute(allocator, reporter, file.writer(), &scope);
 }
 
-fn renderStatus(status: Status, style: Date.Style) Value {
+fn renderDate(status: Status, style: Date.Style) Value {
     return switch (status) {
         .draft => Value{ .string = "DRAFT" },
         .published => |date| Value{ .date = .{ .date = date, .style = style } },
@@ -244,5 +239,7 @@ fn renderStatus(status: Status, style: Date.Style) Value {
 }
 
 fn renderMarkdown(span: Span, filename: []const u8, options: markdown.Options) Value {
-    return Value{ .markdown = .{ .span = span, .filename = filename, .options = options } };
+    return Value{
+        .markdown = .{ .text = span.text, .filename = filename, .location = span.location, .options = options },
+    };
 }

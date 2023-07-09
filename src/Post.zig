@@ -2,7 +2,10 @@
 
 const std = @import("std");
 const testing = std.testing;
+const markdown = @import("markdown.zig");
+const Allocator = std.mem.Allocator;
 const Date = @import("Date.zig");
+const LinkMap = markdown.LinkMap;
 const Metadata = @import("Metadata.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
@@ -13,17 +16,17 @@ filename: []const u8,
 slug: []const u8,
 meta: Metadata,
 body: Span,
+links: LinkMap,
 
-pub fn parse(scanner: *Scanner) Reporter.Error!Post {
+pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const meta = try Metadata.parse(scanner);
+    const result = try markdown.parseLinkDefinitions(allocator, scanner);
     return Post{
         .filename = scanner.filename,
         .slug = std.fs.path.stem(scanner.filename),
         .meta = meta,
-        .body = Span{
-            .text = scanner.source[scanner.offset..],
-            .location = scanner.location,
-        },
+        .body = result.body,
+        .links = result.links,
     };
 }
 
@@ -49,13 +52,15 @@ test "parse" {
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
         .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
+        .links = .{},
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    var reporter = Reporter.init(arena.allocator());
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
-    const post = try parse(&scanner);
+    const post = try parse(allocator, &scanner);
     try testing.expectEqualStrings(expected.body.text, post.body.text);
     try testing.expectEqualDeep(expected, post);
 }

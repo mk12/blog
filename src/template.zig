@@ -11,7 +11,6 @@ const markdown = @import("markdown.zig");
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
-const Span = Scanner.Span;
 const Template = @This();
 
 filename: []const u8,
@@ -430,7 +429,7 @@ pub const Value = union(enum) {
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
     date: struct { date: Date, style: Date.Style },
-    markdown: struct { span: Span, filename: []const u8, options: markdown.Options },
+    markdown: struct { text: []const u8, filename: []const u8, location: Location, options: markdown.Options },
     template: *const Template,
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
@@ -542,7 +541,15 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
             .date => |args| try args.date.render(args.style, ctx.writer),
-            .markdown => |args| try markdown.render(args.span, args.filename, args.options, ctx.reporter, ctx.writer),
+            .markdown => |args| {
+                var scanner = Scanner{
+                    .source = args.text,
+                    .reporter = ctx.reporter,
+                    .filename = args.filename,
+                    .location = args.location,
+                };
+                try markdown.render(&scanner, ctx.writer, args.options);
+            },
             .template => |template| try template.exec(ctx, scope),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
