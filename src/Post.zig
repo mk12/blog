@@ -20,13 +20,13 @@ links: LinkMap,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const meta = try Metadata.parse(scanner);
-    const result = try markdown.parseLinkDefinitions(allocator, scanner);
+    const doc = try markdown.parseLinkDefinitions(allocator, scanner);
     return Post{
         .filename = scanner.filename,
         .slug = std.fs.path.stem(scanner.filename),
         .meta = meta,
-        .body = result.body,
-        .links = result.links,
+        .body = doc.body,
+        .links = doc.links,
     };
 }
 

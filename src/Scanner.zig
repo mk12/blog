@@ -60,18 +60,18 @@ pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
 
 fn slice(self: Scanner, length: usize) []const u8 {
     const offset = self.offset;
-    return self.source[offset..std.math.min(offset + length, self.source.len)];
+    return self.source[offset..@min(offset + length, self.source.len)];
 }
 
 pub fn attempt(self: *Scanner, comptime string: []const u8) bool {
     comptime assert(string.len > 0);
     if (!mem.eql(u8, self.slice(string.len), string)) return false;
-    self.offset += @intCast(u32, string.len);
-    self.location.line += @intCast(u16, comptime mem.count(u8, string, "\n"));
+    self.offset += @intCast(string.len);
+    self.location.line += @intCast(comptime mem.count(u8, string, "\n"));
     self.location.column = if (comptime mem.lastIndexOfScalar(u8, string, '\n')) |idx|
         string.len - idx
     else
-        self.location.column + @intCast(u16, string.len);
+        self.location.column + @as(u16, @intCast(string.len));
     return true;
 }
 
@@ -104,8 +104,7 @@ pub fn choice(
     comptime assert(fields.len > 0);
     inline for (fields, 0..) |field, i| {
         const value = @field(alternatives, field.name);
-        if (self.attempt(value))
-            return @intToEnum(std.meta.FieldEnum(@TypeOf(alternatives)), i);
+        if (self.attempt(value)) return @enumFromInt(i);
         const comma = if (i == 0 or fields.len == 2) "" else ",";
         const space = if (i == fields.len - 1) " or " else " ";
         message = message ++ std.fmt.comptimePrint(

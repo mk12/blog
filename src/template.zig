@@ -428,9 +428,15 @@ pub const Value = union(enum) {
     bool: bool,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
-    date: struct { date: Date, style: Date.Style },
-    markdown: struct { text: []const u8, filename: []const u8, location: Location, options: markdown.Options },
     template: *const Template,
+    date: struct { date: Date, style: Date.Style },
+    markdown: struct {
+        text: []const u8,
+        filename: []const u8,
+        location: Location,
+        links: markdown.LinkMap,
+        options: markdown.Options,
+    },
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
@@ -540,6 +546,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
+            .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(args.style, ctx.writer),
             .markdown => |args| {
                 var scanner = Scanner{
@@ -548,9 +555,8 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                     .filename = args.filename,
                     .location = args.location,
                 };
-                try markdown.render(&scanner, ctx.writer, args.options);
+                try markdown.render(&scanner, ctx.writer, args.links, args.options);
             },
-            .template => |template| try template.exec(ctx, scope),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
                 command.location,

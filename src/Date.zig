@@ -153,7 +153,7 @@ fn weekdayName(self: Date) []const u8 {
     const month_codes = [12]u8{ 0, 3, 3, 6, 1, 4, 6, 2, 5, 0, 3, 5 };
     const month_code = month_codes[self.month - 1];
     const century_code = 4;
-    const leap_code = @boolToInt(self.month <= 2 and isLeapYear(self.year));
+    const leap_code = @intFromBool(self.month <= 2 and isLeapYear(self.year));
     const weekday = (year_code + month_code + century_code + self.day - leap_code) % 7;
     return weekday_names[weekday];
 }
@@ -196,7 +196,8 @@ test "render" {
     try expectRender(original, date, .rfc3339);
 }
 
-/// Returns a key for sorting dates in ascending order. Ignores the timezone.
+/// Returns a key for sorting dates in ascending order.
+/// Ignores the timezone, which is incorrect, but fine for my use case.
 pub fn sortKey(self: Date) u64 {
     return @as(u64, self.year) << 40 |
         @as(u64, self.month) << 32 |
