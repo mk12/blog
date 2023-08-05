@@ -28,7 +28,7 @@ Most common algebraic properties have names. The property of _closure_ is so com
 We still have six types of algebraic structure left to go, but instead of defining them one at a time, I'm going to throw five axioms at you:
 
 1. **Closure**: If $a$ and $b$ are in $S$, then $a\bullet b$ is in $S$ as well.
-2. **Associativity**: If $a$, $b$, and $c$ are in $S$, then $a\bullet(b\bullet c)=(a\bullet b)\bullet c$.</li>
+2. **Associativity**: If $a$, $b$, and $c$ are in $S$, then $a\bullet(b\bullet c)=(a\bullet b)\bullet c$.
 3. **Identity**: There is an $e$ in $S$ such that $a\bullet e=e\bullet a=a$ for any $a$ in $S$.
 4. **Inverse**: For any $a$ in $S$, there is a corresponding $b$ in $S$ such that $a\bullet b=b\bullet a=e$, where $e$ is the identity element.
 5. **Commutativity**: If $a$ and $b$ are in $S$, then $a\bullet b=b\bullet a$.
