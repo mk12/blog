@@ -71,7 +71,7 @@ const Token = struct {
 
 const TokenValue = union(enum) {
     // Blocks tokens
-    newline,
+    @"\n",
     // block_html: []const u8,
     @"#": u8,
     @"-",
@@ -135,20 +135,53 @@ const Tokenizer = struct {
     }
 
     fn nextNonText(self: *Tokenizer, scanner: *Scanner) !?struct { token: Token, offset: usize } {
-        _ = self;
         var location: Location = undefined;
         var offset: usize = undefined;
         const value: TokenValue = blk: while (true) {
             location = scanner.location;
             offset = scanner.offset;
             const char = scanner.next() orelse return null;
+            if (self.block_allowed) {
+                switch (char) {
+                    '#' => {
+                        var level: u8 = 1;
+                        while (scanner.peek(0)) |c| switch (c) {
+                            '#' => {
+                                _ = scanner.next();
+                                level += 1;
+                            },
+                            ' ' => {
+                                _ = scanner.next();
+                                break :blk .{ .@"#" = level };
+                            },
+                            else => break,
+                        };
+                    },
+                    '>' => if (scanner.peek(0) == ' ') {
+                        _ = scanner.next();
+                        break :blk .@">";
+                    },
+                    '*' => if (scanner.attempt(" * *") and scanner.peek(0) == '\n') {
+                        break :blk .@"* * *";
+                    },
+                    else => {},
+                }
+            }
             switch (char) {
+                '\n' => {
+                    while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
+                    break :blk .@"\n";
+                },
                 '*' => if (scanner.peek(0) == '*') {
                     _ = scanner.next();
                     break :blk .@"**";
                 },
                 else => {},
             }
+        };
+        self.block_allowed = switch (value) {
+            .@"\n", .@">", .@"* * *" => true,
+            else => false,
         };
         return .{
             .token = .{ .value = value, .location = location },
@@ -218,13 +251,16 @@ fn Stack(comptime T: type) type {
 
         fn push(self: *Self, writer: anytype, scanner: *Scanner, location: Location, item: T) !void {
             try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
+            if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
             self.items.append(item) catch |err| switch (err) {
                 error.Overflow => return scanner.failAt(location, "exceeded maximum depth ({})", .{max_depth}),
             };
         }
 
         fn pop(self: *Self, writer: anytype) !void {
-            try std.fmt.format(writer, "</{s}>", .{@tagName(self.items.pop())});
+            const item = self.items.pop();
+            if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
+            try std.fmt.format(writer, "</{s}>", .{@tagName(item)});
         }
 
         fn truncate(self: *Self, writer: anytype, new_len: usize) !void {
@@ -240,8 +276,23 @@ fn Stack(comptime T: type) type {
 const BlockTag = enum { p, li, h1, h2, h3, h4, h5, h6, ol, ul, blockquote };
 const InlineTag = enum { em, strong, a };
 
+fn tagGoesOnItsOwnLine(tag: BlockTag) bool {
+    return switch (tag) {
+        .ol, .ul, .blockquote => true,
+        else => false,
+    };
+}
+
 fn headingTag(level: u8) BlockTag {
     return @enumFromInt(@intFromEnum(BlockTag.h1) + level - 1);
+}
+
+fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
+    return switch (parent orelse return .p) {
+        .ol, .ul => .li,
+        .blockquote => .p,
+        else => null,
+    };
 }
 
 pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Options) !void {
@@ -249,6 +300,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var tokenizer = Tokenizer{};
+    var start_with_newline = false;
     outer: while (true) {
         var token = try tokenizer.next(scanner) orelse break;
         if (!options.is_inline) {
@@ -263,12 +315,18 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 token = try tokenizer.next(scanner) orelse break :outer;
             }
             try blocks.truncate(writer, open);
-            const last = blocks.last();
-            try blocks.push(writer, scanner, token.location, if (last == .ol or last == .ul) .li else .p);
+            if (start_with_newline) try writer.writeByte('\n');
+            start_with_newline = true;
         }
+        var push_implicit = !options.is_inline;
         while (true) {
+            if (push_implicit and token.value.is_inline()) {
+                if (implicitChildBlock(blocks.last())) |block|
+                    try blocks.push(writer, scanner, token.location, block);
+                push_implicit = false;
+            }
             switch (token.value) {
-                .newline => break,
+                .@"\n" => break,
                 .@"#" => |level| try blocks.push(writer, scanner, token.location, headingTag(level)),
                 .@"-" => try blocks.push(writer, scanner, token.location, .ul),
                 .@"1." => try blocks.push(writer, scanner, token.location, .ol),
@@ -319,3 +377,45 @@ test "render bold" {
     try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{}, .{});
     try expectRenderSuccess("Hello <strong>world</strong>!", "Hello **world**!", .{}, .{ .is_inline = true });
 }
+
+test "render heading" {
+    try expectRenderSuccess("<h1>This is h1</h1>", "# This is h1", .{}, .{});
+    try expectRenderSuccess("<h2>This is h2</h2>", "## This is h2", .{}, .{});
+}
+
+test "render all headings" {
+    try expectRenderSuccess(
+        \\<h1>This is h1</h1>
+        \\<h2>This is h2</h2>
+        \\<h3>This is h3</h3>
+        \\<h4>This is h4</h4>
+        \\<h5>This is h5</h5>
+        \\<h6>This is h6</h6>
+    ,
+        \\# This is h1
+        \\## This is h2
+        \\### This is h3
+        \\#### This is h4
+        \\##### This is h5
+        \\###### This is h6
+    , .{}, .{});
+}
+
+test "render a few things" {
+    try expectRenderSuccess(
+        \\<h1>Hello <strong>world</strong>!</h1>
+        \\<p>Here is some text.</p>
+        \\<hr>
+        \\<p>And some more.</p>
+    ,
+        \\# Hello **world**!
+        \\
+        \\Here is some text.
+        \\
+        \\* * *
+        \\
+        \\And some more.
+    , .{}, .{});
+}
+
+// TODO: test render failures
