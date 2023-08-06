@@ -109,58 +109,51 @@ const TokenValue = union(enum) {
 };
 
 const Tokenizer = struct {
-    buffer: std.BoundedArray(Token, 2) = .{},
+    peeked: ?Token = null,
     block_allowed: bool = true,
 
-    fn peek(self: *Tokenizer, scanner: *Scanner) !?Token {
-        const len = self.buffer.len;
-        if (len > 0) return self.buffer.get(len - 1);
-        const token = try self.next(scanner) orelse return null;
-        self.buffer.appendAssumeCapacity(token);
-        return token;
-    }
-
     fn next(self: *Tokenizer, scanner: *Scanner) !?Token {
-        if (self.buffer.popOrNull()) |token| return token;
+        if (self.peeked) |token| {
+            self.peeked = null;
+            return token;
+        }
         const start_offset = scanner.offset;
         const start_location = scanner.location;
-        const result = try self.nextNonText(scanner);
-        const end_offset = if (result) |res| res.offset else scanner.offset;
-        if (start_offset == end_offset)
-            return if (result) |res| Token{ .value = res.value, .location = res.location } else null;
-        if (result) |res| self.buffer.appendAssumeCapacity(Token{ .value = res.value, .location = res.location });
+        if (try self.nextNonText(scanner)) |result| {
+            if (result.offset == start_offset) return result.token;
+            self.peeked = result.token;
+            return Token{
+                .value = .{ .text = scanner.source[start_offset..result.offset] },
+                .location = start_location,
+            };
+        }
+        if (scanner.offset == start_offset) return null;
         return Token{
-            .value = .{ .text = scanner.source[start_offset..end_offset] },
+            .value = .{ .text = scanner.source[start_offset..scanner.offset] },
             .location = start_location,
         };
     }
 
-    fn nextNonText(self: *Tokenizer, scanner: *Scanner) !?struct {
-        value: TokenValue,
-        location: Location,
-        offset: u32,
-    } {
+    fn nextNonText(self: *Tokenizer, scanner: *Scanner) !?struct { token: Token, offset: usize } {
         _ = self;
-        if (scanner.eof()) return null;
-        while (scanner.next()) |char| {
-            _ = char;
-        }
-        return null;
-        // const start = scanner.offset;
-        // var end: usize = undefined;
-        // var token: Token = undefined;
-        // switch (self.prev) {
-        //     .blank_line => {
-        //         if (scanner.location.column == 1) {
-        //             if (scanner.attempt("# ")) {
-        //                 scanner.skipWhitespace();
-        //                 return .{ scanner.source[start..], .@"#" };
-        //             }
-        //         }
-        //     },
-        //     else => {},
-        // }
-        // return .{ scanner.source[start..end], token };
+        var location: Location = undefined;
+        var offset: usize = undefined;
+        const value: TokenValue = blk: while (true) {
+            location = scanner.location;
+            offset = scanner.offset;
+            const char = scanner.next() orelse return null;
+            switch (char) {
+                '*' => if (scanner.peek(0) == '*') {
+                    _ = scanner.next();
+                    break :blk .@"**";
+                },
+                else => {},
+            }
+        };
+        return .{
+            .token = .{ .value = value, .location = location },
+            .offset = offset,
+        };
     }
 };
 
@@ -204,114 +197,6 @@ pub const Options = struct {
     is_inline: bool = false,
     first_paragraph_only: bool = false,
 };
-
-// TODO: thinner abstraction, just top-level push/pop functions?
-const BlockStack = struct {
-    const Tag = enum { p, li, h1, h2, h3, h4, h5, h6, ol, ul, blockquote };
-    const max_depth = 8;
-    tags: std.BoundedArray(Tag, max_depth) = .{},
-    leaf: Tag, // p, li, or h#
-    // except li not a leaf if nested
-    check_idx: usize = 0,
-
-    fn headingTag(level: u8) Tag {
-        return @enumFromInt(@intFromEnum(Tag.h1) + level - 1);
-    }
-
-    fn len(self: BlockStack) usize {
-        return self.tags.len;
-    }
-
-    fn get(self: BlockStack, i: usize) Tag {
-        return self.tags.get(i);
-    }
-
-    fn push(self: *BlockStack, tag: Tag, scanner: *Scanner, location: Location, writer: anytype) !void {
-        try std.fmt.format(writer, "<{s}>", .{@tagName(tag)});
-        self.tags.append(tag) catch |err| switch (err) {
-            error.Overflow => return scanner.failAt(location, "exceeded maximum block depth ({})", .{max_depth}),
-        };
-    }
-
-    fn pop(self: *BlockStack, writer: anytype) !void {
-        try std.fmt.format(writer, "</{s}>", .{@tagName(self.tags.pop())});
-    }
-
-    fn truncate(self: *BlockStack, i: usize, writer: anytype) !void {
-        while (self.len() > i) try self.pop(writer);
-    }
-
-    fn newline(self: *BlockStack) void {
-        self.check_idx = 0;
-    }
-
-    fn openParaOrLi(self: *BlockStack, value: TokenValue, writer: anytype) !void {
-        _ = writer;
-        _ = self;
-        if (value.is_inline()) {
-            // if (self.len() == 0) return self.push(.p, scanner,)
-        }
-    }
-
-    fn maybeConsume(self: *BlockStack, value: TokenValue, writer: anytype) !bool {
-        if (self.check_idx == self.len()) {
-            try self.openParaOrLi(value, writer);
-            return false;
-        }
-        switch (self.get(self.check_idx)) {
-            .p, .li, .h1, .h2, .h3, .h4, .h5, .h6 => try self.openParaOrLi(value, writer),
-            .ul, .ol, .blockquote => |tag| {
-                const marker = switch (tag) {
-                    .ul => TokenValue.@"-",
-                    .ol => TokenValue.@"1.",
-                    .blockquote => TokenValue.@">",
-                    else => unreachable,
-                };
-                if (value == marker) {
-                    self.check_idx += 1;
-                    return true;
-                }
-            },
-        }
-        try self.truncate(self.check_idx, writer);
-        return false;
-    }
-
-    fn closeAll(self: *BlockStack, writer: anytype) !void {
-        _ = writer;
-        _ = self;
-        // try blocks.truncate(0, writer);
-    }
-};
-
-pub fn oldRender(scanner: *Scanner, writer: anytype, links: LinkMap, options: Options) !void {
-    _ = links;
-    _ = options.is_inline;
-    _ = options.first_paragraph_only;
-    var tokenizer = Tokenizer{};
-    var blocks = BlockStack{};
-    while (try tokenizer.next(scanner)) |token| {
-        if (try blocks.maybeConsume(token.value, writer)) continue;
-        switch (token.value) {
-            .newline => blocks.newline(),
-            .@"#" => |level| try blocks.push(BlockStack.headingTag(level), scanner, token.location, writer),
-            .@"* * *" => try writer.writeAll("<hr>"),
-            .@">" => try blocks.push(.blockquote, scanner, token.location, writer),
-        }
-    }
-    try blocks.closeAll();
-
-    // > Hi
-    // >
-    // > ```
-    // > nice
-    // > ```
-    //
-}
-
-// problem: <a href="..." but don't see URL till end.
-// probably have to do two full passes
-// or write into buffer then copy
 
 fn Stack(comptime T: type) type {
     return struct {
@@ -394,8 +279,9 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
             }
             token = try tokenizer.next(scanner) orelse break :outer;
         }
+        try inlines.truncate(writer, 0);
     }
-    // close all inlines
+    try inlines.truncate(writer, 0);
     try blocks.truncate(writer, 0);
 }
 
@@ -427,4 +313,9 @@ test "render empty string" {
 test "render text" {
     try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{}, .{});
     try expectRenderSuccess("Hello world!", "Hello world!", .{}, .{ .is_inline = true });
+}
+
+test "render bold" {
+    try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{}, .{});
+    try expectRenderSuccess("Hello <strong>world</strong>!", "Hello **world**!", .{}, .{ .is_inline = true });
 }
