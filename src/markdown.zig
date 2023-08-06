@@ -15,10 +15,13 @@ pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 pub fn parseLinkDefinitions(allocator: Allocator, scanner: *Scanner) !Document {
     var links = LinkMap{};
     var source = scanner.source[scanner.offset..];
-    outer: while (std.mem.lastIndexOfScalar(u8, source, '\n')) |newline_index| {
+    outer: while (true) {
+        source = std.mem.trimRight(u8, source, "\n");
+        const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
         var i = newline_index + 1;
         if (i == source.len or source[i] != '[') break;
         i += 1;
+        if (i == source.len or source[i] == '^') break;
         const label_start = i;
         while (i < source.len) : (i += 1) switch (source[i]) {
             '\n' => break :outer,
@@ -64,6 +67,28 @@ test "parseLinkDefinitions" {
     try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
 }
 
+test "parseLinkDefinitions with gaps" {
+    const source =
+        \\This is the body.
+        \\
+        \\[foo]: foo link
+        \\
+        \\[bar baz]: bar baz link
+        \\
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    const doc = try parseLinkDefinitions(allocator, &scanner);
+    try testing.expectEqualStrings("This is the body.", doc.body.text);
+    try testing.expectEqual(@as(usize, 2), doc.links.size);
+    try testing.expectEqualStrings("foo link", doc.links.get("foo").?);
+    try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
+}
+
 const Token = struct {
     value: TokenValue,
     location: Location,
@@ -87,30 +112,33 @@ const TokenValue = union(enum) {
     // Inline tokens
     text: []const u8,
     // inline_html: []const u8,
-    // @"`",
+    @"`x`": []const u8,
     // @"$",
     // @"[^x]": []const u8,
-    // @"_",
+    // TODO(https://github.com/ziglang/zig/issues/16714): Change to @"_".
+    emph,
     @"**",
     // @"[",
     // @"](x)": []const u8,
     // @"][x]": []const u8,
     // @"'",
     // @"\"",
-    // @" -- ",
+    @" -- ",
     // @"...",
 
     fn is_inline(self: TokenValue) bool {
-        return switch (self) {
-            .text => true,
-            else => false,
-        };
+        return @intFromEnum(self) >= @intFromEnum(TokenValue.text);
     }
 };
 
 const Tokenizer = struct {
     peeked: ?Token = null,
     block_allowed: bool = true,
+
+    fn init(scanner: *Scanner) !Tokenizer {
+        while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
+        return Tokenizer{};
+    }
 
     fn next(self: *Tokenizer, scanner: *Scanner) !?Token {
         if (self.peeked) |token| {
@@ -157,9 +185,27 @@ const Tokenizer = struct {
                             else => break,
                         };
                     },
-                    '>' => if (scanner.peek(0) == ' ') {
-                        _ = scanner.next();
+                    '>' => {
+                        while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
                         break :blk .@">";
+                    },
+                    '-' => if (scanner.peek(0) == ' ') {
+                        _ = scanner.next();
+                        break :blk .@"-";
+                    },
+                    '1'...'9' => {
+                        var i: usize = 0;
+                        while (scanner.peek(i)) |c| : (i += 1) switch (c) {
+                            '0'...'9' => {},
+                            '.' => {
+                                i += 1;
+                                if (scanner.peek(i) == ' ') {
+                                    _ = try scanner.consume(i + 1);
+                                    break :blk .@"1.";
+                                }
+                            },
+                            else => break,
+                        };
                     },
                     '*' => if (scanner.attempt(" * *") and scanner.peek(0) == '\n') {
                         break :blk .@"* * *";
@@ -167,22 +213,29 @@ const Tokenizer = struct {
                     else => {},
                 }
             }
+            self.block_allowed = false;
             switch (char) {
                 '\n' => {
                     while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
                     break :blk .@"\n";
                 },
+                '`' => {
+                    const span = try scanner.until('`');
+                    break :blk .{ .@"`x`" = span.text };
+                },
                 '*' => if (scanner.peek(0) == '*') {
                     _ = scanner.next();
                     break :blk .@"**";
                 },
+                '_' => break :blk .emph,
+                ' ' => if (scanner.attempt("-- ")) break :blk .@" -- ",
                 else => {},
             }
         };
-        self.block_allowed = switch (value) {
-            .@"\n", .@">", .@"* * *" => true,
-            else => false,
-        };
+        switch (value) {
+            .@"\n", .@">", .@"* * *" => self.block_allowed = true,
+            else => {},
+        }
         return .{
             .token = .{ .value = value, .location = location },
             .offset = offset,
@@ -226,9 +279,11 @@ test "tokenize inline" {
     // );
 }
 
+// TODO: add heading shift
+// (currently mitchellkember.com uses h2 for post title, and h1 within!)
 pub const Options = struct {
     is_inline: bool = false,
-    first_paragraph_only: bool = false,
+    first_block_only: bool = false,
 };
 
 fn Stack(comptime T: type) type {
@@ -299,8 +354,8 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
     _ = links;
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
-    var tokenizer = Tokenizer{};
-    var start_with_newline = false;
+    var tokenizer = try Tokenizer.init(scanner);
+    var first_iteration = true;
     outer: while (true) {
         var token = try tokenizer.next(scanner) orelse break;
         if (!options.is_inline) {
@@ -315,15 +370,15 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 token = try tokenizer.next(scanner) orelse break :outer;
             }
             try blocks.truncate(writer, open);
-            if (start_with_newline) try writer.writeByte('\n');
-            start_with_newline = true;
+            if (!first_iteration) try writer.writeByte('\n');
+            first_iteration = false;
         }
-        var push_implicit = !options.is_inline;
+        var need_implicit_block = !options.is_inline;
         while (true) {
-            if (push_implicit and token.value.is_inline()) {
+            if (need_implicit_block and token.value.is_inline()) {
                 if (implicitChildBlock(blocks.last())) |block|
                     try blocks.push(writer, scanner, token.location, block);
-                push_implicit = false;
+                need_implicit_block = false;
             }
             switch (token.value) {
                 .@"\n" => break,
@@ -332,12 +387,17 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"1." => try blocks.push(writer, scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
+                // TODO: escape < > &
                 .text => |text| try writer.writeAll(text),
+                .@"`x`" => |code| try std.fmt.format(writer, "<code>{s}</code>", .{code}),
+                .emph => try inlines.pushOrPop(writer, scanner, token.location, .em),
                 .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
+                .@" -- " => try writer.writeAll("—"),
             }
             token = try tokenizer.next(scanner) orelse break :outer;
         }
         try inlines.truncate(writer, 0);
+        if (options.first_block_only) break;
     }
     try inlines.truncate(writer, 0);
     try blocks.truncate(writer, 0);
@@ -366,21 +426,60 @@ fn expectRenderFailure(expected_message: []const u8, source: []const u8, links: 
 test "render empty string" {
     try expectRenderSuccess("", "", .{}, .{});
     try expectRenderSuccess("", "", .{}, .{ .is_inline = true });
+    try expectRenderSuccess("", "", .{}, .{ .first_block_only = true });
+    try expectRenderSuccess("", "", .{}, .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render text" {
     try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{}, .{});
     try expectRenderSuccess("Hello world!", "Hello world!", .{}, .{ .is_inline = true });
+    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{}, .{ .first_block_only = true });
+    try expectRenderSuccess("Hello world!", "Hello world!", .{}, .{ .is_inline = true, .first_block_only = true });
 }
 
-test "render bold" {
+test "render first block only" {
+    const source =
+        \\This is the first paragraph.
+        \\
+        \\This is the second paragraph.
+    ;
+    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{}, .{ .first_block_only = true });
+    try expectRenderSuccess("This is the first paragraph.", source, .{}, .{ .is_inline = true, .first_block_only = true });
+}
+
+test "render first block only with gap" {
+    const source =
+        \\
+        \\This is the first paragraph.
+        \\
+        \\This is the second paragraph.
+    ;
+    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{}, .{ .first_block_only = true });
+    try expectRenderSuccess("This is the first paragraph.", source, .{}, .{ .is_inline = true, .first_block_only = true });
+}
+
+test "render code" {
+    try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{}, .{});
+}
+
+test "render emphasis" {
+    try expectRenderSuccess("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{}, .{});
+}
+
+test "render strong" {
     try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{}, .{});
-    try expectRenderSuccess("Hello <strong>world</strong>!", "Hello **world**!", .{}, .{ .is_inline = true });
+}
+
+test "render nested inlines" {
+    try expectRenderSuccess(
+        \\<p>a <strong>b <em>c <code>d</code> e</em> f</strong> g</p>
+    ,
+        \\a **b _c `d` e_ f** g
+    , .{}, .{});
 }
 
 test "render heading" {
     try expectRenderSuccess("<h1>This is h1</h1>", "# This is h1", .{}, .{});
-    try expectRenderSuccess("<h2>This is h2</h2>", "## This is h2", .{}, .{});
 }
 
 test "render all headings" {
@@ -401,20 +500,109 @@ test "render all headings" {
     , .{}, .{});
 }
 
+test "render unordered list" {
+    try expectRenderSuccess(
+        \\<p>Here is the list:</p>
+        \\<ul>
+        \\<li>Apples</li>
+        \\<li>Oranges</li>
+        \\</ul>
+    ,
+        \\Here is the list:
+        \\
+        \\- Apples
+        \\- Oranges
+    , .{}, .{});
+}
+
+test "render ordered list" {
+    try expectRenderSuccess(
+        \\<p>Here is the list:</p>
+        \\<ol>
+        \\<li>Apples</li>
+        \\<li>Oranges</li>
+        \\</ol>
+    ,
+        \\Here is the list:
+        \\
+        \\1. Apples
+        \\9. Oranges
+    , .{}, .{});
+}
+
+test "render multiple lists" {
+    try expectRenderSuccess(
+        \\<ol>
+        \\<li>Apples</li>
+        \\<li>Oranges</li>
+        \\</ol>
+        \\<ul>
+        \\<li>other <strong>stuff</strong></li>
+        \\<li>blah blah</li>
+        \\</ul>
+    ,
+        \\1. Apples
+        \\9. Oranges
+        \\
+        \\- other **stuff**
+        \\- blah blah
+    , .{}, .{});
+}
+
 test "render a few things" {
     try expectRenderSuccess(
         \\<h1>Hello <strong>world</strong>!</h1>
-        \\<p>Here is some text.</p>
+        \\<p>Here is <em>some</em> text.</p>
         \\<hr>
         \\<p>And some more.</p>
     ,
         \\# Hello **world**!
         \\
-        \\Here is some text.
+        \\Here is _some_ text.
         \\
         \\* * *
         \\
         \\And some more.
+    , .{}, .{});
+}
+
+// TODO: eliminate extra blank lines
+test "render nested blockquotes" {
+    try expectRenderSuccess(
+        \\<p>Quote:</p>
+        \\<blockquote>
+        \\<p>Some stuff.</p>
+        \\
+        \\<ul>
+        \\<li>For example.</li>
+        \\</ul>
+        \\
+        \\<blockquote>
+        \\<blockquote>
+        \\<p>Deep!</p>
+        \\</blockquote>
+        \\
+        \\<p>End</p>
+        \\</blockquote>
+        \\</blockquote>
+    ,
+        \\Quote:
+        \\
+        \\> Some stuff.
+        \\>
+        \\> - For example.
+        \\>
+        \\> > > Deep!
+        \\> >
+        \\> > End
+    , .{}, .{});
+}
+
+test "render smart typography" {
+    try expectRenderSuccess(
+        \\<p>This—that.</p>
+    ,
+        \\This -- that.
     , .{}, .{});
 }
 

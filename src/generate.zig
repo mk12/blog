@@ -194,7 +194,7 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
             .date = renderDate(post.meta.status, .long),
             .title = renderMarkdown(post.meta.title, post, .{ .is_inline = true }),
             .href = try base_url.post(allocator, post.slug),
-            .excerpt = renderMarkdown(post.body, post, .{ .first_paragraph_only = true }),
+            .excerpt = renderMarkdown(post.body, post, .{ .first_block_only = true }),
         };
     }
     return summaries;
