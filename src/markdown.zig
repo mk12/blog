@@ -111,12 +111,13 @@ const TokenValue = union(enum) {
     // Inline tokens
     text: []const u8,
     @"<",
+    @"&",
     escaped: u8,
-    @"`x`": []const u8,
     // @"$",
     @"[^x]": []const u8,
     _,
     @"**",
+    @"`",
     // @"[",
     // @"](x)": []const u8,
     // @"][x]": []const u8,
@@ -136,6 +137,7 @@ const TokenValue = union(enum) {
 const Tokenizer = struct {
     peeked: ?Token = null,
     block_allowed: bool = true,
+    in_inline_code: bool = false,
     html_block_depth: usize = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
@@ -236,9 +238,12 @@ const Tokenizer = struct {
                     while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
                     break :blk .@"\n";
                 },
-                '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
+                '`' => {
+                    self.in_inline_code = !self.in_inline_code;
+                    break :blk .@"`";
+                },
                 '<' => {
-                    if (scanner.peek(0)) |c| switch (c) {
+                    if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
                         '/', 'a'...'z' => {
                             _ = try scanner.until('>');
                             break :blk .{ .text = scanner.source[offset..scanner.offset] };
@@ -247,10 +252,11 @@ const Tokenizer = struct {
                     };
                     break :blk .@"<";
                 },
-                '`' => {
-                    const span = try scanner.until('`');
-                    break :blk .{ .@"`x`" = span.text };
-                },
+                '&' => if (self.in_inline_code) break :blk .@"&",
+                else => if (self.in_inline_code) continue,
+            }
+            switch (char) {
+                '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
                 '[' => {
                     if (scanner.peek(0) == '^') {
                         _ = scanner.next();
@@ -377,7 +383,7 @@ fn Stack(comptime T: type) type {
 }
 
 const BlockTag = enum { p, li, h1, h2, h3, h4, h5, h6, ol, ul, blockquote };
-const InlineTag = enum { em, strong, a };
+const InlineTag = enum { em, strong, code, a };
 
 fn tagGoesOnItsOwnLine(tag: BlockTag) bool {
     return switch (tag) {
@@ -438,15 +444,15 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"* * *" => try writer.writeAll("<hr>"),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
+                .@"&" => try writer.writeAll("&amp;"),
                 .escaped => |char| try writer.writeByte(char),
-                // TODO must escape both < and &.... maybe tokenizer should do it
-                .@"`x`" => |code| try std.fmt.format(writer, "<code>{s}</code>", .{code}),
                 .@"[^x]" => |number| if (!options.first_block_only)
                     try std.fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
                 ._ => try inlines.pushOrPop(writer, scanner, token.location, .em),
                 .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
+                .@"`" => try inlines.pushOrPop(writer, scanner, token.location, .code),
                 // TODO can combine some of these, write @tagName.
                 .@"‘" => try writer.writeAll("‘"),
                 .@"’" => try writer.writeAll("’"),
@@ -540,6 +546,10 @@ test "render entities" {
     try expectRenderSuccess("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{}, .{});
 }
 
+test "render raw entities" {
+    try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{}, .{});
+}
+
 test "render raw block html" {
     try expectRenderSuccess(
         \\<div id="foo">
@@ -554,6 +564,10 @@ test "render raw block html" {
 
 test "render code" {
     try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{}, .{});
+}
+
+test "render code with entities" {
+    try expectRenderSuccess("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{}, .{});
 }
 
 test "render emphasis" {
