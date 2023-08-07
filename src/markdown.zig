@@ -102,8 +102,8 @@ const TokenValue = union(enum) {
     @"1.",
     @">",
     @"* * *",
-    // @"```x": []const u8,
-    // @"```",
+    @"```x": []const u8,
+    @"```",
     // @"$$",
     // @"[^x]: ": []const u8,
     // TODO: figures, tables, ::: verse
@@ -210,6 +210,11 @@ const Tokenizer = struct {
                 '>' => {
                     while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
                     break :blk .@">";
+                },
+                '`' => if (scanner.attempt("``")) {
+                    const span = try scanner.until('\n');
+                    if (span.text.len == 0) break :blk .@"```";
+                    break :blk .{ .@"```x" = span.text };
                 },
                 '-' => if (scanner.peek(0) == ' ') {
                     _ = scanner.next();
@@ -442,6 +447,10 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"1." => try blocks.push(writer, scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
+                // TODO: syntax highlighting (incremental)
+                // TODO: handle when ``` is both opening and closing
+                .@"```x" => |lang| try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
+                .@"```" => try writer.writeAll("</code></pre>"),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
