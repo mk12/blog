@@ -416,17 +416,20 @@ fn Stack(comptime T: type) type {
         }
 
         fn push(self: *Self, writer: anytype, scanner: *Scanner, location: Location, item: T) !void {
-            // TODO improve control flow
-            if (T == BlockTag and item == .ol and self.footnote != null)
-                try writer.writeAll("<hr>\n<ol class=\"footnotes\">")
-            else if (T == BlockTag and item == .li and self.footnote != null)
-                try std.fmt.format(writer, "<li id=\"fn:{s}\">", .{self.footnote.?})
-            else
-                try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
+            try self.writeOpenTag(writer, item);
             if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
             self.items.append(item) catch |err| switch (err) {
                 error.Overflow => return scanner.failAt(location, "exceeded maximum depth ({})", .{max_depth}),
             };
+        }
+
+        fn writeOpenTag(self: Self, writer: anytype, item: T) !void {
+            if (T == BlockTag) if (self.footnote) |number| switch (item) {
+                .ol => return writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
+                .li => return std.fmt.format(writer, "<li id=\"fn:{s}\">", .{number}),
+                else => {},
+            };
+            try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
         }
 
         fn pop(self: *Self, writer: anytype) !void {
@@ -478,52 +481,45 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
     var first_iteration = true;
     outer: while (true) {
         var token = try tokenizer.next(scanner) orelse break;
-        switch (token.value) {
-            .@"[^x]: " => |number| blocks.footnote = number,
-            else => {},
-        }
-        if (!options.is_inline) {
-            var open: usize = 0;
-            while (open < blocks.len()) : (open += 1) {
-                switch (blocks.get(open)) {
-                    .p, .li, .h1, .h2, .h3, .h4, .h5, .h6 => break,
-                    .ul => if (token.value != .@"-") break,
-                    .ol => if (blocks.footnote) |_| {
-                        if (token.value != .@"[^x]: ") break;
-                    } else {
-                        if (token.value != .@"1.") break;
-                    },
-                    .blockquote => if (token.value != .@">") break,
-                }
-                token = try tokenizer.next(scanner) orelse break :outer;
+        var new_footnote: ?[]const u8 = null;
+        var open: usize = 0;
+        while (open < blocks.len()) : (open += 1) {
+            switch (blocks.get(open)) {
+                .p, .li, .h1, .h2, .h3, .h4, .h5, .h6 => break,
+                .ul => if (token.value != .@"-") break,
+                .ol => if (blocks.footnote) |_| switch (token.value) {
+                    .@"[^x]: " => |number| new_footnote = number,
+                    else => break,
+                } else if (token.value != .@"1.") break,
+                .blockquote => if (token.value != .@">") break,
             }
-            try blocks.truncate(writer, open);
-            if (token.value == .@"\n") continue;
-            if (!first_iteration) try writer.writeByte('\n');
-            first_iteration = false;
+            token = try tokenizer.next(scanner) orelse break :outer;
         }
+        try blocks.truncate(writer, open);
+        blocks.footnote = new_footnote;
+        if (token.value == .@"\n") continue;
+        if (!first_iteration) try writer.writeByte('\n');
+        first_iteration = false;
         var need_implicit_block = !options.is_inline;
         while (true) {
-            // TODO move last cond inside
-            if (need_implicit_block and token.value.is_inline() and
-                !(tokenizer.in_raw_html_block and blocks.len() == 0))
-            {
-                if (implicitChildBlock(blocks.last())) |block|
-                    try blocks.push(writer, scanner, token.location, block);
+            if (need_implicit_block and token.value.is_inline()) {
+                if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
+                    if (implicitChildBlock(blocks.last())) |block|
+                        try blocks.push(writer, scanner, token.location, block);
                 need_implicit_block = false;
             }
             switch (token.value) {
                 .@"\n" => break,
                 .@"#" => |level| try blocks.push(writer, scanner, token.location, headingTag(level)),
                 .@"-" => try blocks.push(writer, scanner, token.location, .ul),
-                .@"1.", .@"[^x]: " => try blocks.push(writer, scanner, token.location, .ol),
+                .@"1." => try blocks.push(writer, scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
                 .@"```x" => |lang| {
                     try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang});
-                    // TODO this is just temporeary to try and avoid unclosed <em> errors.
+                    // TODO this is just temporary to try and avoid unclosed <em> errors.
                     var i: usize = 0;
                     while (true) {
                         while (scanner.peek(i) != '`') i += 1;
@@ -535,6 +531,10 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                     }
                 },
                 .@"```" => try writer.writeAll("</code></pre>"),
+                .@"[^x]: " => |number| {
+                    blocks.footnote = number;
+                    try blocks.push(writer, scanner, token.location, .ol);
+                },
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
@@ -839,14 +839,19 @@ test "render smart typography" {
 test "render footnotes" {
     try expectRenderSuccess(
         \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
+        \\<p>Bar<sup id="fnref:2"><a href="#fn:2">2</a></sup>.</p>
         \\<hr>
         \\<ol class="footnotes">
-        \\<li id="fn:1">Bar.&nbsp;<a href="#fnref:1">↩︎</a></li>
+        \\<li id="fn:1"><em>first</em>&nbsp;<a href="#fnref:1">↩︎</a></li>
+        \\<li id="fn:2">second&nbsp;<a href="#fnref:2">↩︎</a></li>
         \\</ol>
     ,
         \\Foo[^1].
         \\
-        \\[^1]: Bar.
+        \\Bar[^2].
+        \\
+        \\[^1]: _first_
+        \\[^2]: second
     , .{}, .{});
 }
 
