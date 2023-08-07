@@ -30,6 +30,11 @@ pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
     return if (offset >= self.source.len) null else self.source[offset];
 }
 
+// TODO revisit
+pub fn behind(self: Scanner, bytes_behind: usize) ?u8 {
+    return if (self.offset < bytes_behind) null else self.source[self.offset - bytes_behind];
+}
+
 pub fn next(self: *Scanner) ?u8 {
     if (self.eof()) return null;
     const char = self.source[self.offset];

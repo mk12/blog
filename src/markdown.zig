@@ -111,6 +111,7 @@ const TokenValue = union(enum) {
 
     // Inline tokens
     text: []const u8,
+    escaped: u8,
     // inline_html: []const u8,
     @"`x`": []const u8,
     // @"$",
@@ -121,10 +122,13 @@ const TokenValue = union(enum) {
     // @"[",
     // @"](x)": []const u8,
     // @"][x]": []const u8,
-    // @"'",
-    // @"\"",
+    @"‘",
+    @"’",
+    @"“",
+    @"”",
+    @"--",
     @" -- ",
-    // @"...",
+    @"...",
 
     fn is_inline(self: TokenValue) bool {
         return @intFromEnum(self) >= @intFromEnum(TokenValue.text);
@@ -169,56 +173,53 @@ const Tokenizer = struct {
             location = scanner.location;
             offset = scanner.offset;
             const char = scanner.next() orelse return null;
-            if (self.block_allowed) {
-                switch (char) {
-                    '#' => {
-                        var level: u8 = 1;
-                        while (scanner.peek(0)) |c| switch (c) {
-                            '#' => {
-                                _ = scanner.next();
-                                level += 1;
-                            },
-                            ' ' => {
-                                _ = scanner.next();
-                                break :blk .{ .@"#" = level };
-                            },
-                            else => break,
-                        };
-                    },
-                    '>' => {
-                        while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
-                        break :blk .@">";
-                    },
-                    '-' => if (scanner.peek(0) == ' ') {
-                        _ = scanner.next();
-                        break :blk .@"-";
-                    },
-                    '1'...'9' => {
-                        var i: usize = 0;
-                        while (scanner.peek(i)) |c| : (i += 1) switch (c) {
-                            '0'...'9' => {},
-                            '.' => {
-                                i += 1;
-                                if (scanner.peek(i) == ' ') {
-                                    _ = try scanner.consume(i + 1);
-                                    break :blk .@"1.";
-                                }
-                            },
-                            else => break,
-                        };
-                    },
-                    '*' => if (scanner.attempt(" * *") and scanner.peek(0) == '\n') {
-                        break :blk .@"* * *";
-                    },
-                    else => {},
-                }
-            }
+            if (self.block_allowed) switch (char) {
+                '#' => {
+                    var level: u8 = 1;
+                    while (scanner.peek(0)) |c| switch (c) {
+                        '#' => {
+                            scanner.eat(c);
+                            level += 1;
+                        },
+                        ' ' => {
+                            scanner.eat(c);
+                            break :blk .{ .@"#" = level };
+                        },
+                        else => break,
+                    };
+                },
+                '>' => {
+                    while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
+                    break :blk .@">";
+                },
+                '-' => if (scanner.peek(0) == ' ') {
+                    _ = scanner.next();
+                    break :blk .@"-";
+                },
+                '1'...'9' => {
+                    var i: usize = 0;
+                    while (scanner.peek(i)) |c| : (i += 1) switch (c) {
+                        '0'...'9' => {},
+                        '.' => {
+                            i += 1;
+                            if (scanner.peek(i) == ' ') {
+                                _ = try scanner.consume(i + 1);
+                                break :blk .@"1.";
+                            }
+                        },
+                        else => break,
+                    };
+                },
+                '*' => if (scanner.attempt(" * *") and scanner.peek(0) == '\n') break :blk .@"* * *",
+                else => {},
+            };
             self.block_allowed = false;
             switch (char) {
                 '\n' => {
                     while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
                     break :blk .@"\n";
                 },
+                '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
                 '`' => {
                     const span = try scanner.until('`');
                     break :blk .{ .@"`x`" = span.text };
@@ -228,7 +229,20 @@ const Tokenizer = struct {
                     break :blk .@"**";
                 },
                 '_' => break :blk .emph,
+                '\'' => {
+                    const prev = scanner.behind(2);
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .@"‘" else .@"’";
+                },
+                '"' => {
+                    const prev = scanner.behind(2);
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .@"“" else .@"”";
+                },
+                '-' => if (scanner.peek(0) == '-') {
+                    _ = scanner.next();
+                    break :blk .@"--";
+                },
                 ' ' => if (scanner.attempt("-- ")) break :blk .@" -- ",
+                '.' => if (scanner.attempt("..")) break :blk .@"...",
                 else => {},
             }
         };
@@ -370,6 +384,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 token = try tokenizer.next(scanner) orelse break :outer;
             }
             try blocks.truncate(writer, open);
+            if (token.value == .@"\n") continue;
             if (!first_iteration) try writer.writeByte('\n');
             first_iteration = false;
         }
@@ -389,17 +404,25 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: escape < > &
                 .text => |text| try writer.writeAll(text),
+                .escaped => |char| try writer.writeByte(char),
                 .@"`x`" => |code| try std.fmt.format(writer, "<code>{s}</code>", .{code}),
                 .emph => try inlines.pushOrPop(writer, scanner, token.location, .em),
                 .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
+                // TODO can combine some of these, write @tagName.
+                .@"‘" => try writer.writeAll("‘"),
+                .@"’" => try writer.writeAll("’"),
+                .@"“" => try writer.writeAll("“"),
+                .@"”" => try writer.writeAll("”"),
+                .@"--" => try writer.writeAll("–"),
                 .@" -- " => try writer.writeAll("—"),
+                .@"..." => try writer.writeAll("…"),
             }
             token = try tokenizer.next(scanner) orelse break :outer;
         }
-        try inlines.truncate(writer, 0);
+        try inlines.truncate(writer, 0); // TODO: should be error if inlines aren't already all closed
         if (options.first_block_only) break;
     }
-    try inlines.truncate(writer, 0);
+    try inlines.truncate(writer, 0); // TODO: should be error if inlines aren't already all closed
     try blocks.truncate(writer, 0);
 }
 
@@ -456,6 +479,14 @@ test "render first block only with gap" {
     ;
     try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{}, .{ .first_block_only = true });
     try expectRenderSuccess("This is the first paragraph.", source, .{}, .{ .is_inline = true, .first_block_only = true });
+}
+
+test "render backslash scapes" {
+    try expectRenderSuccess(
+        \\<p># _nice_ `stuff` \</p>
+    ,
+        \\\# \_nice\_ \`stuff\` \\
+    , .{}, .{});
 }
 
 test "render code" {
@@ -566,22 +597,18 @@ test "render a few things" {
     , .{}, .{});
 }
 
-// TODO: eliminate extra blank lines
 test "render nested blockquotes" {
     try expectRenderSuccess(
         \\<p>Quote:</p>
         \\<blockquote>
         \\<p>Some stuff.</p>
-        \\
         \\<ul>
         \\<li>For example.</li>
         \\</ul>
-        \\
         \\<blockquote>
         \\<blockquote>
         \\<p>Deep!</p>
         \\</blockquote>
-        \\
         \\<p>End</p>
         \\</blockquote>
         \\</blockquote>
@@ -600,9 +627,9 @@ test "render nested blockquotes" {
 
 test "render smart typography" {
     try expectRenderSuccess(
-        \\<p>This—that.</p>
+        \\<p>This—“that isn’t 1–2” … other.</p>
     ,
-        \\This -- that.
+        \\This -- "that isn't 1--2" ... other.
     , .{}, .{});
 }
 
