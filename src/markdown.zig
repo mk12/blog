@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const testing = std.testing;
-const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
@@ -105,7 +104,7 @@ const TokenValue = union(enum) {
     @"```x": []const u8,
     @"```",
     // @"$$",
-    // @"[^x]: ": []const u8,
+    @"[^x]: ": []const u8,
     // TODO: figures, tables, ::: verse
 
     // Inline tokens
@@ -136,9 +135,11 @@ const TokenValue = union(enum) {
 
 const Tokenizer = struct {
     peeked: ?Token = null,
+    // Be careful reading these values outside the Tokenizer, since they might
+    // pertain to the peeked token, not the current one.
     block_allowed: bool = true,
     in_inline_code: bool = false,
-    html_block_depth: usize = 0,
+    in_raw_html_block: bool = false,
 
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
@@ -174,6 +175,7 @@ const Tokenizer = struct {
             location = scanner.location;
             offset = scanner.offset;
             const char = scanner.next() orelse return null;
+            // TODO: don't always have to peek, can consume if there is no need to backtrack
             if (self.block_allowed) switch (char) {
                 '#' => {
                     var level: u8 = 1;
@@ -192,16 +194,15 @@ const Tokenizer = struct {
                 '<' => if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
                         var i: usize = 1;
-                        while (scanner.peek(i) != '>') : (i += 1) {}
+                        while (scanner.peek(i) != '>') i += 1;
                         i += 1;
-                        if (scanner.peek(i) == '\n') {
-                            _ = try scanner.consume(i + 1);
-                            if (c == '/') {
-                                if (self.html_block_depth == 0) return scanner.failAt(location, "unexpected closing HTML tag", .{});
-                                self.html_block_depth -= 1;
-                            } else {
-                                self.html_block_depth += 1;
-                            }
+                        const ch = scanner.peek(i);
+                        if (ch == null or ch == '\n') {
+                            _ = try scanner.consume(i);
+                            self.in_raw_html_block = true;
+                            // Need to make a separate text token, rather than just
+                            // `continue` as we do for inline HTML, so that when the
+                            // user checks `in_raw_html_block` it's accurate.
                             break :blk .{ .text = scanner.source[offset..scanner.offset] };
                         }
                     },
@@ -234,13 +235,28 @@ const Tokenizer = struct {
                         else => break,
                     };
                 },
-                '*' => if (scanner.attempt(" * *") and scanner.peek(0) == '\n') break :blk .@"* * *",
+                '*' => if (scanner.attempt(" * *")) {
+                    const c = scanner.peek(0);
+                    if (c == null or c == '\n') break :blk .@"* * *";
+                },
+                '[' => if (scanner.peek(0) == '^') {
+                    _ = scanner.next();
+                    const span = try scanner.until(']');
+                    // TODO: maybe shouldn't be an error here.
+                    try scanner.expect(": ");
+                    break :blk .{ .@"[^x]: " = span.text };
+                },
                 else => {},
             };
             self.block_allowed = false;
             switch (char) {
                 '\n' => {
-                    while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
+                    while (scanner.peek(0)) |c| if (c == '\n') {
+                        scanner.eat(c);
+                        self.in_raw_html_block = false;
+                    } else {
+                        break;
+                    };
                     break :blk .@"\n";
                 },
                 '`' => {
@@ -251,7 +267,7 @@ const Tokenizer = struct {
                     if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
                         '/', 'a'...'z' => {
                             _ = try scanner.until('>');
-                            break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                            continue;
                         },
                         else => {},
                     };
@@ -324,18 +340,53 @@ test "tokenize text" {
 }
 
 test "tokenize inline" {
-    // try expectTokens(&[_]TokenValue{
-    //     .underscore,
-    //     .{ .text = "Hello" },
-    //     .underscore,
-    //     .{ .text = " " },
-    //     .@"**",
-    //     .{ .text = "world" },
-    //     .@"**",
-    //     .{ .text = "!" },
-    // },
-    //     \\_Hello_ **world**!
-    // );
+    try expectTokens(&[_]TokenValue{
+        ._,
+        .{ .text = "Hello" },
+        ._,
+        .{ .text = " " },
+        .@"**",
+        .{ .text = "world" },
+        .@"**",
+        .{ .text = " " },
+        .@"`",
+        .{ .text = "x" },
+        .@"&",
+        .{ .text = "y" },
+        .@"`",
+        .{ .text = "!<br>" },
+    },
+        \\_Hello_ **world** `x&y`!<br>
+    );
+}
+
+test "tokenize block" {
+    try expectTokens(&[_]TokenValue{
+        .{ .@"#" = 1 },
+        .{ .text = "The " },
+        ._,
+        .{ .text = "heading" },
+        ._,
+        .@"\n",
+        .@">",
+        .@"-",
+        .{ .text = "A " },
+        .@"`",
+        .{ .text = "list" },
+        .@"`",
+        .{ .text = " in a quote." },
+        .@"\n",
+        .@">",
+        .@"\n",
+        .@">",
+        .@"* * *",
+    },
+        \\# The _heading_
+        \\
+        \\> - A `list` in a quote.
+        \\>
+        \\> * * *
+    );
 }
 
 // TODO: add heading shift
@@ -350,6 +401,7 @@ fn Stack(comptime T: type) type {
         const Self = @This();
         const max_depth = 8;
         items: std.BoundedArray(T, max_depth) = .{},
+        footnote: if (T == BlockTag) ?[]const u8 else void = if (T == BlockTag) null else {},
 
         fn len(self: Self) usize {
             return self.items.len;
@@ -364,7 +416,13 @@ fn Stack(comptime T: type) type {
         }
 
         fn push(self: *Self, writer: anytype, scanner: *Scanner, location: Location, item: T) !void {
-            try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
+            // TODO improve control flow
+            if (T == BlockTag and item == .ol and self.footnote != null)
+                try writer.writeAll("<hr>\n<ol class=\"footnotes\">")
+            else if (T == BlockTag and item == .li and self.footnote != null)
+                try std.fmt.format(writer, "<li id=\"fn:{s}\">", .{self.footnote.?})
+            else
+                try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
             if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
             self.items.append(item) catch |err| switch (err) {
                 error.Overflow => return scanner.failAt(location, "exceeded maximum depth ({})", .{max_depth}),
@@ -372,7 +430,10 @@ fn Stack(comptime T: type) type {
         }
 
         fn pop(self: *Self, writer: anytype) !void {
-            const item = self.items.pop();
+            var item = self.items.pop();
+            if (T == BlockTag and item == .li) if (self.footnote) |number|
+                try std.fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a>", .{number});
+            if (T == BlockTag and item == .ol) self.footnote = null;
             if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
             try std.fmt.format(writer, "</{s}>", .{@tagName(item)});
         }
@@ -417,13 +478,21 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
     var first_iteration = true;
     outer: while (true) {
         var token = try tokenizer.next(scanner) orelse break;
+        switch (token.value) {
+            .@"[^x]: " => |number| blocks.footnote = number,
+            else => {},
+        }
         if (!options.is_inline) {
             var open: usize = 0;
             while (open < blocks.len()) : (open += 1) {
                 switch (blocks.get(open)) {
                     .p, .li, .h1, .h2, .h3, .h4, .h5, .h6 => break,
                     .ul => if (token.value != .@"-") break,
-                    .ol => if (token.value != .@"1.") break,
+                    .ol => if (blocks.footnote) |_| {
+                        if (token.value != .@"[^x]: ") break;
+                    } else {
+                        if (token.value != .@"1.") break;
+                    },
                     .blockquote => if (token.value != .@">") break,
                 }
                 token = try tokenizer.next(scanner) orelse break :outer;
@@ -435,7 +504,10 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
         }
         var need_implicit_block = !options.is_inline;
         while (true) {
-            if (need_implicit_block and token.value.is_inline() and tokenizer.html_block_depth == 0) {
+            // TODO move last cond inside
+            if (need_implicit_block and token.value.is_inline() and
+                !(tokenizer.in_raw_html_block and blocks.len() == 0))
+            {
                 if (implicitChildBlock(blocks.last())) |block|
                     try blocks.push(writer, scanner, token.location, block);
                 need_implicit_block = false;
@@ -444,12 +516,24 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"\n" => break,
                 .@"#" => |level| try blocks.push(writer, scanner, token.location, headingTag(level)),
                 .@"-" => try blocks.push(writer, scanner, token.location, .ul),
-                .@"1." => try blocks.push(writer, scanner, token.location, .ol),
+                .@"1.", .@"[^x]: " => try blocks.push(writer, scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
-                .@"```x" => |lang| try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
+                .@"```x" => |lang| {
+                    try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang});
+                    // TODO this is just temporeary to try and avoid unclosed <em> errors.
+                    var i: usize = 0;
+                    while (true) {
+                        while (scanner.peek(i) != '`') i += 1;
+                        if (scanner.peek(i + 1) == '`' and scanner.peek(i + 2) == '`') {
+                            const span = try scanner.consume(i - 1);
+                            try writer.writeAll(span.text);
+                            break;
+                        }
+                    }
+                },
                 .@"```" => try writer.writeAll("</code></pre>"),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
@@ -567,6 +651,39 @@ test "render raw block html" {
     ,
         \\<div id="foo">
         \\Just in a **div**.
+        \\</div>
+    , .{}, .{});
+}
+
+test "render raw block html with nested paragraph" {
+    try expectRenderSuccess(
+        \\<div>
+        \\<p>Paragraph.</p>
+        \\</div>
+    ,
+        \\<div>
+        \\
+        \\Paragraph.
+        \\
+        \\</div>
+    , .{}, .{});
+}
+
+test "render raw block html with nested blockquote and list" {
+    try expectRenderSuccess(
+        \\<div>
+        \\<blockquote>
+        \\<p>Paragraph.</p>
+        \\<ul>
+        \\<li>list</li>
+        \\</ul>
+        \\</blockquote>
+        \\</div>
+    ,
+        \\<div>
+        \\> Paragraph.
+        \\>
+        \\> - list
         \\</div>
     , .{}, .{});
 }
@@ -719,11 +836,17 @@ test "render smart typography" {
     , .{}, .{});
 }
 
-test "render footnote reference" {
+test "render footnotes" {
     try expectRenderSuccess(
         \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
+        \\<hr>
+        \\<ol class="footnotes">
+        \\<li id="fn:1">Bar.&nbsp;<a href="#fnref:1">↩︎</a></li>
+        \\</ol>
     ,
         \\Foo[^1].
+        \\
+        \\[^1]: Bar.
     , .{}, .{});
 }
 
