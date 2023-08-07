@@ -97,7 +97,6 @@ const Token = struct {
 const TokenValue = union(enum) {
     // Blocks tokens
     @"\n",
-    // block_html: []const u8,
     @"#": u8,
     @"-",
     @"1.",
@@ -111,13 +110,12 @@ const TokenValue = union(enum) {
 
     // Inline tokens
     text: []const u8,
+    @"<",
     escaped: u8,
-    // inline_html: []const u8,
     @"`x`": []const u8,
     // @"$",
-    // @"[^x]": []const u8,
-    // TODO(https://github.com/ziglang/zig/issues/16714): Change to @"_".
-    emph,
+    @"[^x]": []const u8,
+    _,
     @"**",
     // @"[",
     // @"](x)": []const u8,
@@ -138,6 +136,7 @@ const TokenValue = union(enum) {
 const Tokenizer = struct {
     peeked: ?Token = null,
     block_allowed: bool = true,
+    html_block_depth: usize = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
@@ -188,6 +187,24 @@ const Tokenizer = struct {
                         else => break,
                     };
                 },
+                '<' => if (scanner.peek(0)) |c| switch (c) {
+                    '/', 'a'...'z' => {
+                        var i: usize = 1;
+                        while (scanner.peek(i) != '>') : (i += 1) {}
+                        i += 1;
+                        if (scanner.peek(i) == '\n') {
+                            _ = try scanner.consume(i + 1);
+                            if (c == '/') {
+                                if (self.html_block_depth == 0) return scanner.failAt(location, "unexpected closing HTML tag", .{});
+                                self.html_block_depth -= 1;
+                            } else {
+                                self.html_block_depth += 1;
+                            }
+                            break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                        }
+                    },
+                    else => {},
+                },
                 '>' => {
                     while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
                     break :blk .@">";
@@ -220,15 +237,32 @@ const Tokenizer = struct {
                     break :blk .@"\n";
                 },
                 '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
+                '<' => {
+                    if (scanner.peek(0)) |c| switch (c) {
+                        '/', 'a'...'z' => {
+                            _ = try scanner.until('>');
+                            break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                        },
+                        else => {},
+                    };
+                    break :blk .@"<";
+                },
                 '`' => {
                     const span = try scanner.until('`');
                     break :blk .{ .@"`x`" = span.text };
+                },
+                '[' => {
+                    if (scanner.peek(0) == '^') {
+                        _ = scanner.next();
+                        const span = try scanner.until(']');
+                        break :blk .{ .@"[^x]" = span.text };
+                    }
                 },
                 '*' => if (scanner.peek(0) == '*') {
                     _ = scanner.next();
                     break :blk .@"**";
                 },
-                '_' => break :blk .emph,
+                '_' => break :blk ._,
                 '\'' => {
                     const prev = scanner.behind(2);
                     break :blk if (prev == null or prev == ' ' or prev == '\n') .@"‘" else .@"’";
@@ -390,7 +424,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
         }
         var need_implicit_block = !options.is_inline;
         while (true) {
-            if (need_implicit_block and token.value.is_inline()) {
+            if (need_implicit_block and token.value.is_inline() and tokenizer.html_block_depth == 0) {
                 if (implicitChildBlock(blocks.last())) |block|
                     try blocks.push(writer, scanner, token.location, block);
                 need_implicit_block = false;
@@ -402,11 +436,16 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"1." => try blocks.push(writer, scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
-                // TODO: escape < > &
                 .text => |text| try writer.writeAll(text),
+                .@"<" => try writer.writeAll("&lt;"),
                 .escaped => |char| try writer.writeByte(char),
+                // TODO must escape both < and &.... maybe tokenizer should do it
                 .@"`x`" => |code| try std.fmt.format(writer, "<code>{s}</code>", .{code}),
-                .emph => try inlines.pushOrPop(writer, scanner, token.location, .em),
+                .@"[^x]" => |number| if (!options.first_block_only)
+                    try std.fmt.format(writer,
+                        \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
+                    , .{number}),
+                ._ => try inlines.pushOrPop(writer, scanner, token.location, .em),
                 .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
                 // TODO can combine some of these, write @tagName.
                 .@"‘" => try writer.writeAll("‘"),
@@ -419,10 +458,10 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
             }
             token = try tokenizer.next(scanner) orelse break :outer;
         }
-        try inlines.truncate(writer, 0); // TODO: should be error if inlines aren't already all closed
+        if (inlines.last()) |tag| return scanner.failAt(token.location, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
-    try inlines.truncate(writer, 0); // TODO: should be error if inlines aren't already all closed
+    if (inlines.last()) |tag| return scanner.fail("unclosed <{s}> tag", .{@tagName(tag)});
     try blocks.truncate(writer, 0);
 }
 
@@ -486,6 +525,30 @@ test "render backslash scapes" {
         \\<p># _nice_ `stuff` \</p>
     ,
         \\\# \_nice\_ \`stuff\` \\
+    , .{}, .{});
+}
+
+test "render inline raw html" {
+    try expectRenderSuccess("<p><cite>Foo</cite></p>", "<cite>Foo</cite>", .{}, .{});
+}
+
+test "render Markdown within raw inline html" {
+    try expectRenderSuccess("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{}, .{});
+}
+
+test "render entities" {
+    try expectRenderSuccess("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{}, .{});
+}
+
+test "render raw block html" {
+    try expectRenderSuccess(
+        \\<div id="foo">
+        \\Just in a <strong>div</strong>.
+        \\</div>
+    ,
+        \\<div id="foo">
+        \\Just in a **div**.
+        \\</div>
     , .{}, .{});
 }
 
@@ -633,4 +696,28 @@ test "render smart typography" {
     , .{}, .{});
 }
 
-// TODO: test render failures
+test "render footnote reference" {
+    try expectRenderSuccess(
+        \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
+    ,
+        \\Foo[^1].
+    , .{}, .{});
+}
+
+test "unclosed inline at end" {
+    try expectRenderFailure(
+        \\<input>:1:5: unclosed <em> tag
+    ,
+        \\_foo
+    , .{}, .{});
+}
+
+test "unclosed inline in middle" {
+    try expectRenderFailure(
+        \\<input>:1:15: unclosed <strong> tag
+    ,
+        \\> Some **stuff
+        \\
+        \\And more.
+    , .{}, .{});
+}
