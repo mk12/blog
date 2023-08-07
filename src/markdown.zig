@@ -214,8 +214,21 @@ const Tokenizer = struct {
                 },
                 '`' => if (scanner.attempt("``")) {
                     const span = try scanner.until('\n');
-                    if (span.text.len == 0) break :blk .@"```";
-                    break :blk .{ .@"```x" = span.text };
+                    _ = span;
+                    // TODO: This is temporary, to avoid interpreting code as Markdown.
+                    while (true) {
+                        _ = try scanner.until('`');
+                        if (scanner.attempt("``")) break;
+                    }
+                    break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                    // if (span.text.len == 0) break :blk .@"```";
+                    // break :blk .{ .@"```x" = span.text };
+                },
+                '$' => if (scanner.attempt("$")) {
+                    // TODO: This is temporary, to avoid interpreting math as Markdown.
+                    _ = try scanner.until('$');
+                    try scanner.expect("$");
+                    break :blk .{ .text = scanner.source[offset..scanner.offset] };
                 },
                 '-' => if (scanner.peek(0) == ' ') {
                     _ = scanner.next();
@@ -278,6 +291,11 @@ const Tokenizer = struct {
             }
             switch (char) {
                 '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
+                '$' => {
+                    // TODO: This is temporary, to avoid interpreting math as Markdown.
+                    _ = try scanner.until('$');
+                    break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                },
                 '[' => {
                     if (scanner.peek(0) == '^') {
                         _ = scanner.next();
@@ -517,19 +535,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
-                .@"```x" => |lang| {
-                    try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang});
-                    // TODO this is just temporary to try and avoid unclosed <em> errors.
-                    var i: usize = 0;
-                    while (true) {
-                        while (scanner.peek(i) != '`') i += 1;
-                        if (scanner.peek(i + 1) == '`' and scanner.peek(i + 2) == '`') {
-                            const span = try scanner.consume(i - 1);
-                            try writer.writeAll(span.text);
-                            break;
-                        }
-                    }
-                },
+                .@"```x" => |lang| try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
                 .@"```" => try writer.writeAll("</code></pre>"),
                 .@"[^x]: " => |number| {
                     blocks.footnote = number;
