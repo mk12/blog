@@ -105,7 +105,7 @@ const TokenValue = union(enum) {
     @"```",
     // @"$$",
     @"[^x]: ": []const u8,
-    // TODO: figures, tables, ::: verse
+    // TODO: figures, tables
 
     // Inline tokens
     text: []const u8,
@@ -117,9 +117,9 @@ const TokenValue = union(enum) {
     _,
     @"**",
     @"`",
-    // @"[",
-    // @"](x)": []const u8,
-    // @"][x]": []const u8,
+    @"[...](x)": []const u8,
+    @"[...][x]": []const u8,
+    @"]",
     @"‘",
     @"’",
     @"“",
@@ -140,6 +140,7 @@ const Tokenizer = struct {
     block_allowed: bool = true,
     in_inline_code: bool = false,
     in_raw_html_block: bool = false,
+    jump_over_link: ?struct { from: usize, to: usize } = null,
 
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
@@ -174,6 +175,11 @@ const Tokenizer = struct {
         const value: TokenValue = blk: while (true) {
             location = scanner.location;
             offset = scanner.offset;
+            if (self.jump_over_link) |jump| if (scanner.offset == jump.from) {
+                while (scanner.offset < jump.to) _ = scanner.next();
+                self.jump_over_link = null;
+                break :blk .@"]";
+            };
             const char = scanner.next() orelse return null;
             // TODO: don't always have to peek, can consume if there is no need to backtrack
             if (self.block_allowed) switch (char) {
@@ -194,16 +200,18 @@ const Tokenizer = struct {
                 '<' => if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
                         var i: usize = 1;
-                        while (scanner.peek(i) != '>') i += 1;
-                        i += 1;
-                        const ch = scanner.peek(i);
-                        if (ch == null or ch == '\n') {
-                            _ = try scanner.consume(i);
-                            self.in_raw_html_block = true;
-                            // Need to make a separate text token, rather than just
-                            // `continue` as we do for inline HTML, so that when the
-                            // user checks `in_raw_html_block` it's accurate.
-                            break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == '>') break;
+                        if (scanner.peek(i) == '>') {
+                            i += 1;
+                            const ch = scanner.peek(i);
+                            if (ch == null or ch == '\n') {
+                                _ = try scanner.consume(i);
+                                self.in_raw_html_block = true;
+                                // Need to make a separate text token, rather than just
+                                // `continue` as we do for inline HTML, so that when the
+                                // user checks `in_raw_html_block` it's accurate.
+                                break :blk .{ .text = scanner.source[offset..scanner.offset] };
+                            }
                         }
                     },
                     else => {},
@@ -296,11 +304,41 @@ const Tokenizer = struct {
                     _ = try scanner.until('$');
                     break :blk .{ .text = scanner.source[offset..scanner.offset] };
                 },
-                '[' => {
-                    if (scanner.peek(0) == '^') {
-                        _ = scanner.next();
-                        const span = try scanner.until(']');
-                        break :blk .{ .@"[^x]" = span.text };
+                '[' => if (scanner.peek(0) == '^') {
+                    _ = scanner.next();
+                    const span = try scanner.until(']');
+                    break :blk .{ .@"[^x]" = span.text };
+                } else {
+                    var i: usize = 0;
+                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
+                    if (scanner.peek(i) == ']' and scanner.peek(i + 1) == '(') {
+                        const end_of_text = scanner.offset + i;
+                        i += 2;
+                        const start_of_url = scanner.offset + i;
+                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == ')') break;
+                        if (scanner.peek(i) == ')') {
+                            const closing_paren = scanner.offset + i;
+                            i += 1;
+                            const after_closing_paren = scanner.offset + i;
+                            self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
+                            break :blk .{ .@"[...](x)" = scanner.source[start_of_url..closing_paren] };
+                        }
+                    } else if (scanner.peek(i) == ']' and scanner.peek(i + 1) == '[') {
+                        const end_of_text = scanner.offset + i;
+                        i += 2;
+                        const start_of_label = scanner.offset + i;
+                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
+                        if (scanner.peek(i) == ']') {
+                            const closing_bracket = scanner.offset + i;
+                            i += 1;
+                            const after_closing_bracket = scanner.offset + i;
+                            self.jump_over_link = .{ .from = end_of_text, .to = after_closing_bracket };
+                            break :blk .{ .@"[...][x]" = scanner.source[start_of_label..closing_bracket] };
+                        }
+                    } else if (scanner.peek(i) == ']') {
+                        const end_of_text = scanner.offset + i;
+                        self.jump_over_link = .{ .from = end_of_text, .to = end_of_text + 1 };
+                        break :blk .{ .@"[...][x]" = scanner.source[offset + 1 .. end_of_text] };
                     }
                 },
                 '*' => if (scanner.peek(0) == '*') {
@@ -407,6 +445,16 @@ test "tokenize block" {
     );
 }
 
+test "tokenize inline link" {
+    try expectTokens(&[_]TokenValue{
+        .{ .@"[...](x)" = "bar" },
+        .{ .text = "foo" },
+        .@"]",
+    },
+        \\[foo](bar)
+    );
+}
+
 // TODO: add heading shift
 // (currently mitchellkember.com uses h2 for post title, and h1 within!)
 pub const Options = struct {
@@ -492,7 +540,6 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
 }
 
 pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Options) !void {
-    _ = links;
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var tokenizer = try Tokenizer.init(scanner);
@@ -552,6 +599,11 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 ._ => try inlines.pushOrPop(writer, scanner, token.location, .em),
                 .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
                 .@"`" => try inlines.pushOrPop(writer, scanner, token.location, .code),
+                // TODO hooks for links, to resolve links to other pages, etc.
+                .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
+                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{links.get(label) orelse
+                    return scanner.failAt(token.location, "link label '{s}' not defined", .{label})}),
+                .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
                 .@"‘" => try writer.writeAll("‘"),
                 .@"’" => try writer.writeAll("’"),
@@ -716,6 +768,38 @@ test "render nested inlines" {
     ,
         \\a **b _c `d` e_ f** g
     , .{}, .{});
+}
+
+test "render inline link" {
+    try expectRenderSuccess("<p><a href=\"//example.com\">foo</a></p>", "[foo](//example.com)", .{}, .{});
+}
+
+test "render reference link" {
+    // TODO: Maybe expectRenderSuccess should just always run parseLinkDefinitions first.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var links = LinkMap{};
+    try links.put(allocator, "bar", "//example.com");
+    try expectRenderSuccess(
+        \\<p>Look at <a href="//example.com">foo</a>.</p>
+    ,
+        \\Look at [foo][bar].
+    , links, .{});
+}
+
+test "render shortcut reference link" {
+    // TODO: Maybe expectRenderSuccess should just always run parseLinkDefinitions first.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var links = LinkMap{};
+    try links.put(allocator, "foo", "//example.com");
+    try expectRenderSuccess(
+        \\<p>Look at <a href="//example.com">foo</a>.</p>
+    ,
+        \\Look at [foo].
+    , links, .{});
 }
 
 test "render heading" {
