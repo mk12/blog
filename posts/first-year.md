@@ -75,7 +75,7 @@ I think this is a great metaphor. Too many people go through university like the
 
 As my first year at Waterloo draws to a close, I look forward to a great summer working at Shopify and all the new experiences that will bring. Exams haven't even started yet, but it feels like I should be going home right about now! I'll be back at school in the fall, but only for four months at a time, alternating with co-op for the rest of my undergraduate degree. By that I mean until 2019, so there's still a long road ahead! And that reminds me of the Road, from my favourite poem by Tolkien:
 
-::: verse
+<p class="verse">
 The Road goes ever on and on<br>
 Down from the door where it began.<br>
 Now far ahead the Road has gone,<br>
@@ -84,7 +84,7 @@ Pursuing it with eager feet,<br>
 Until it joins some larger way<br>
 Where many paths and errands meet.<br>
 And whither then? I cannot say.
-:::
+</p>
 
 [n2t]: http://www.nand2tetris.org
 [sb]: http://en.wikipedia.org/wiki/Scribbler_(robot)

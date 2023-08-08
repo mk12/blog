@@ -31,7 +31,7 @@ relativeFreqs s = freqs
     freqs    = map divide counts
 ```
 
-First, the type signature: the function `relativeFreqs` takes a string (list of characters) and returns a list of `a`, where `a` is a fractional type. We could say it returns a `Float` list, but it's better to be as general as possible. Now, we convert the string to lower case and throw out letters that aren't in the alphabet. Next, we create a `Map` -- maps in Haskell are like dictionaries or hash tables in other languages. This maps each letter of the alphabet to zero. Then we define `inc` which takes a map and a letter and increases the value associated with that letter by one. We [fold][] the list of letters with this function, producing a map that associates letters with the number of times they occur in the original string. Finally, we take those count values and divide them all by the total number of letters to get the relative frequencies.
+First, the type signature: the function `relativeFreqs` takes a string (list of characters) and returns a list of `a`, where `a` is a fractional type. We could say it returns a `Float` list, but it's better to be as general as possible. Now, we convert the string to lower case and throw out letters that aren't in the alphabet. Next, we create a `Map` -- maps in Haskell are like dictionaries or hash tables in other languages. This maps each letter of the alphabet to zero. Then we define `inc` which takes a map and a letter and increases the value associated with that letter by one. We [fold] the list of letters with this function, producing a map that associates letters with the number of times they occur in the original string. Finally, we take those count values and divide them all by the total number of letters to get the relative frequencies.
 
 The relative frequencies will be different for every text, but not _that_ different -- the longer the text, the more likely it is to resemble the characteristic English distribution. Imagine if we could find the relative frequencies from all 3,563,505,777,820 letters scanned by Google Books; that's exactly what [Peter Norvig did][freqs]! Here's the frequencies he came up with, expressed as percentages to avoid writing so many zeros:
 
@@ -40,7 +40,9 @@ The relative frequencies will be different for every text, but not _that_ differ
  7.23, 7.64, 2.14, 0.12, 6.28,  6.51, 9.28, 2.73, 1.05, 1.68, 0.23, 1.66, 0.09]
 ```
 
-Now we know what the correct frequencies should look like, but how do we measure the distance between two sets of relative frequencies? If you've never taken a statistics course, you might think we should just add up the absolute differences letter-wise. [_Feb. 2018_: I realize that sounds condescending; I was including myself in that description, as I hadn't taken my first statistics course yet, and so I didn't understand the theory behind the technique in this article. ---MK] That might work, but I'm going to jump straight to the best method: Pearson's chi-squared test. We calculate the cumulative chi-squared test-statistic by
+**TODO: fix brackets**
+
+Now we know what the correct frequencies should look like, but how do we measure the distance between two sets of relative frequencies? If you've never taken a statistics course, you might think we should just add up the absolute differences letter-wise. \[_Feb. 2018_: I realize that sounds condescending; I was including myself in that description, as I hadn't taken my first statistics course yet, and so I didn't understand the theory behind the technique in this article. ---MK\] That might work, but I'm going to jump straight to the best method: Pearson's chi-squared test. We calculate the cumulative chi-squared test-statistic by
 
 $$\chi^2 = \sum_{i=1}^n\frac{(O_i - E_i)^2}{E_i}$$
 

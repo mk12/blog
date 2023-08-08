@@ -69,12 +69,15 @@ This curve reveals a remarkable fact: we can specify any point on the unit squar
 
 Many objects found in nature, including plants, have intricate fractal patterns. L-systems are great for drawing these, but we need a more sophisticated turtle. It must understand two new instructions:
 
+**TODO: fix brackets**
+```
 | Symbol | Meaning |
 |:------:|:-------:|
 | [ | save the current position and orientation |
 | ] | restore the last saved position and orientation |
 
 These new symbols allow us to create branches by returning the pen to a previous location and going in a different direction. The result is no longer a curve in the technical sense, but it's still a fractal. Now, let's construct a fractal plant. The axiom is A, and the rules are A&nbsp;$\to$&nbsp;F+[[A]--A]--F[--FA]+A and F&nbsp;$\to$&nbsp;FF. Can you see the self-similarity in the branches?
+```
 
 ![Fourth generation of the fractal plant](../assets/svg/plant.svg)
 

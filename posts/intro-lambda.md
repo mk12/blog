@@ -46,6 +46,8 @@ The heart of the lambda calculus lies in the reduction of expressions. Reduction
 
 Alpha-reduction allows us to rename parameters in abstractions. We do this by changing the parameter, including and all its occurrences in the body, to a new letter. For example, _λx.x_ is alpha-equivalent to _λn.n_. The parameter is just a placeholder -- it's name doesn't really matter. However, there are two restrictions on alpha-reduction. First, the new variable must not occur as a free variable in the body. Consider _λa.a b_, an abstraction that applies its argument to _b_. If we rename _a_ to _b_, we get _λb.b b_, an abstraction that applies its argument to itself -- something went wrong here! This new expression has a different meaning because we inadvertently captured the free variable _b_, making it a bound variable. Second, the old variable must not occur in an abstraction where the new variable is already bound. Consider _λa.λb.a_; if we rename _a_ to _b_, we get _λb.λb.b_, which is different because _b_ now refers to the inner bound variable rather than the outer one. As long as we avoid these two cases, alpha-reduction always results in expressions that intuitively have the same meaning.
 
+**TODO: fix brackets**
+```
 Beta-reduction is what really makes things happen. It only works on applications of abstractions, and you can think of it as function application. An expression of the form (_λx.e_)&nbsp;_a_ beta-reduces to _e_[_a/x_], which denotes _e_ with _a_ substituted for all occurrences of _x_ in a special way called capture-avoiding substitution. For example, (_λx.x x_) _u_ is beta-equivalent to _u u_. However, it is not so straightforward to reduce (_λx.λy.x_) _y_ because it should be an abstraction that always returns the free variable _y_, but simple substitution yields _λy.y_, which returns the bound variable _y_ instead! We avoid this problem using capture-avoiding substitution:
 
 - _x_[_a/x_] = _a_, just like simple substitution.
@@ -53,6 +55,7 @@ Beta-reduction is what really makes things happen. It only works on applications
 - (_h n_)[_a/x_] = (_h_[_a/x_] _n_[_a/x_]): we recursively perform capture-avoiding substitution on the two expressions in the application.
 - (_λx.b_)[_a/x_] = _λx.b_: the variable _x_ is already bound by the abstraction, so there are no occurrences of the free variable _x_ that can be substituted.
 - (_λy.b_)[_a/x_] = _λy._(_b_[_a/x_]) if _x_&nbsp;≠&nbsp;_y_ and _y_ is not a free variable in _a_.
+```
 
 That last rule subtly avoids the problem we observed earlier. It prevents us from substituting an expression containing free variables that would be unintentionally captured. If _y_ does occur as a free variable in _a_, then we must alpha-reduce the abstraction so that its parameter does not occur as a free variable in _a_ before performing beta-reduction.
 
