@@ -174,7 +174,8 @@ fn generatePage(
         }
     };
     var scope = parent.initChild(variables);
-    try template.execute(allocator, reporter, file.writer(), &scope);
+    var buffered = std.io.bufferedWriter(file.writer());
+    try template.execute(allocator, reporter, buffered.writer(), &scope);
 }
 
 const Summary = struct {
@@ -228,7 +229,8 @@ fn generatePost(
         .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });
     var scope = parent.initChild(variables);
-    try templates.@"post.html".execute(allocator, reporter, file.writer(), &scope);
+    var buffered = std.io.bufferedWriter(file.writer());
+    try templates.@"post.html".execute(allocator, reporter, buffered.writer(), &scope);
 }
 
 fn renderDate(status: Status, style: Date.Style) Value {
