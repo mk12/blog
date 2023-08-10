@@ -126,7 +126,7 @@ const BaseUrl = struct {
         return std.fmt.allocPrint(allocator, "{s}" ++ format, .{self.base} ++ args);
     }
 
-    fn post(self: BaseUrl, allocator: Allocator, slug: []const u8) ![]const u8 {
+    fn postUrl(self: BaseUrl, allocator: Allocator, slug: []const u8) ![]const u8 {
         return self.fmt(allocator, "/post/{s}/", .{slug});
     }
 };
@@ -192,10 +192,10 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
     for (0..num_recent) |i| {
         const post = posts[i];
         summaries[i] = Summary{
-            .date = renderDate(post.meta.status, .long),
-            .title = renderMarkdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try base_url.post(allocator, post.slug),
-            .excerpt = renderMarkdown(post.body, post.context, .{ .first_block_only = true }),
+            .date = date(post.meta.status, .long),
+            .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+            .href = try base_url.postUrl(allocator, post.slug),
+            .excerpt = markdown(post.body, post.context, .{ .first_block_only = true }),
         };
     }
     return summaries;
@@ -221,26 +221,26 @@ fn generatePost(
     var file = try dir.createFile("index.html", .{});
     defer file.close();
     const variables = try Value.init(allocator, .{
-        .title = renderMarkdown(post.meta.title, post.context, .{ .is_inline = true }),
-        .subtitle = renderMarkdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
-        .date = renderDate(post.meta.status, .long),
-        .content = renderMarkdown(post.body, post.context, .{}),
-        .newer = try if (neighbors.newer) |newer| base_url.post(allocator, newer.slug) else base_url.join(allocator, "/"),
-        .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
+        .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+        .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
+        .date = date(post.meta.status, .long),
+        .content = markdown(post.body, post.context, .{}),
+        .newer = try if (neighbors.newer) |newer| base_url.postUrl(allocator, newer.slug) else base_url.join(allocator, "/"),
+        .older = try if (neighbors.older) |older| base_url.postUrl(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });
     var scope = parent.initChild(variables);
     var buffered = std.io.bufferedWriter(file.writer());
     try templates.@"post.html".execute(allocator, reporter, buffered.writer(), &scope);
 }
 
-fn renderDate(status: Status, style: Date.Style) Value {
+fn date(status: Status, style: Date.Style) Value {
     return switch (status) {
         .draft => Value{ .string = "DRAFT" },
-        .published => |date| Value{ .date = .{ .date = date, .style = style } },
+        .published => |d| Value{ .date = .{ .date = d, .style = style } },
     };
 }
 
-fn renderMarkdown(span: Span, context: Markdown.Context, options: Markdown.Options) Value {
+fn markdown(span: Span, context: Markdown.Context, options: Markdown.Options) Value {
     return Value{
         .markdown = .{
             .markdown = Markdown{ .span = span, .context = context },

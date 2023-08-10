@@ -541,7 +541,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
             .template => |template| try template.exec(ctx, scope),
-            .date => |args| try args.date.render(args.style, ctx.writer),
+            .date => |args| try args.date.render(ctx.writer, args.style),
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, args.options),
             else => |value| return ctx.reporter.failAt(
                 self.filename,

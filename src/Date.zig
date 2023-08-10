@@ -160,8 +160,7 @@ fn weekdayName(self: Date) []const u8 {
 
 pub const Style = enum { short, long, rfc3339 };
 
-// TODO reconsider arg order
-pub fn render(self: Date, style: Style, writer: anytype) !void {
+pub fn render(self: Date, writer: anytype, style: Style) !void {
     switch (style) {
         .short => try writer.print(
             "{} {s} {}",
@@ -185,7 +184,7 @@ pub fn render(self: Date, style: Style, writer: anytype) !void {
 fn expectRender(expected: []const u8, date: Date, style: Style) !void {
     var actual = std.ArrayList(u8).init(testing.allocator);
     defer actual.deinit();
-    try date.render(style, actual.writer());
+    try date.render(actual.writer(), style);
     try testing.expectEqualStrings(expected, actual.items);
 }
 

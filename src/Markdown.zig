@@ -556,6 +556,8 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
         .filename = self.context.filename,
         .location = self.span.location,
     };
+    // TODO: should tokenizer store scanner?
+    // though, more annoying is passing it to push() all the time.
     var tokenizer = try Tokenizer.init(&scanner);
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
