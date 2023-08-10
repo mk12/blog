@@ -245,9 +245,8 @@ fn renderMarkdown(span: Span, post: Post, options: Markdown.Options) Value {
         .markdown = .{
             // TODO helper method for this? same doc new span
             .markdown = Markdown{
-                .filename = post.content.filename,
+                .context = post.content.context,
                 .span = span,
-                .links = post.content.links,
             },
             .options = options,
         },

@@ -9,14 +9,16 @@ const Scanner = @import("Scanner.zig");
 const Span = Scanner.Span;
 const Markdown = @This();
 
-filename: []const u8,
+context: Context,
 span: Span,
-links: LinkMap,
 
-pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
+pub const Context = struct {
+    filename: []const u8,
+    links: std.StringHashMapUnmanaged([]const u8),
+};
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
-    var links = LinkMap{};
+    var links = std.StringHashMapUnmanaged([]const u8){};
     var source = scanner.source[scanner.offset..];
     outer: while (true) {
         source = std.mem.trimRight(u8, source, "\n");
@@ -40,8 +42,10 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         try links.put(allocator, source[label_start..label_end], source[i..]);
         source.len = newline_index;
     }
-    const span = Span{ .text = source, .location = scanner.location };
-    return Markdown{ .filename = scanner.filename, .span = span, .links = links };
+    return Markdown{
+        .context = Context{ .filename = scanner.filename, .links = links },
+        .span = Span{ .text = source, .location = scanner.location },
+    };
 }
 
 test "parse" {
@@ -65,9 +69,9 @@ test "parse" {
         \\[This is not a link]
     , md.span.text);
     try testing.expectEqualDeep(Location{}, md.span.location);
-    try testing.expectEqual(@as(usize, 2), md.links.size);
-    try testing.expectEqualStrings("foo link", md.links.get("foo").?);
-    try testing.expectEqualStrings("bar baz link", md.links.get("bar baz").?);
+    try testing.expectEqual(@as(usize, 2), md.context.links.size);
+    try testing.expectEqualStrings("foo link", md.context.links.get("foo").?);
+    try testing.expectEqualStrings("bar baz link", md.context.links.get("bar baz").?);
 }
 
 test "parse with gaps between link definitions" {
@@ -87,9 +91,9 @@ test "parse with gaps between link definitions" {
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const md = try parse(allocator, &scanner);
     try testing.expectEqualStrings("This is the body.", md.span.text);
-    try testing.expectEqual(@as(usize, 2), md.links.size);
-    try testing.expectEqualStrings("foo link", md.links.get("foo").?);
-    try testing.expectEqualStrings("bar baz link", md.links.get("bar baz").?);
+    try testing.expectEqual(@as(usize, 2), md.context.links.size);
+    try testing.expectEqualStrings("foo link", md.context.links.get("foo").?);
+    try testing.expectEqualStrings("bar baz link", md.context.links.get("bar baz").?);
 }
 
 const Token = struct {
@@ -545,12 +549,12 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
 }
 
 // TODO reconsider arg order
-pub fn render(markdown: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
+pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
     var scanner = Scanner{
-        .source = markdown.span.text,
+        .source = self.span.text,
         .reporter = reporter,
-        .filename = markdown.filename,
-        .location = markdown.span.location,
+        .filename = self.context.filename,
+        .location = self.span.location,
     };
     var tokenizer = try Tokenizer.init(&scanner);
     var blocks = Stack(BlockTag){};
@@ -613,7 +617,7 @@ pub fn render(markdown: Markdown, reporter: *Reporter, writer: anytype, options:
                 .@"`" => try inlines.pushOrPop(writer, &scanner, token.location, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
                 .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
-                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{markdown.links.get(label) orelse
+                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{self.context.links.get(label) orelse
                     return scanner.failAt(token.location, "link label '{s}' not defined", .{label})}),
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.

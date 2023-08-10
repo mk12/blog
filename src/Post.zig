@@ -13,6 +13,8 @@ const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
+// Maybe content should be span too, don't privilege it over others?
+// But then is that just what I had before?
 content: Markdown,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
@@ -43,9 +45,8 @@ test "parse" {
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
         .content = .{
-            .filename = filename,
+            .context = .{ .filename = filename, .links = .{} },
             .span = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
-            .links = .{},
         },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
