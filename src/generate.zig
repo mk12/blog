@@ -224,7 +224,7 @@ fn generatePost(
         .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
         .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
         .date = date(post.meta.status, .long),
-        .content = markdown(post.body, post.context, .{}),
+        .content = markdown(post.body, post.context, .{ .shift_heading_level = 1 }),
         .newer = try if (neighbors.newer) |newer| base_url.postUrl(allocator, newer.slug) else base_url.join(allocator, "/"),
         .older = try if (neighbors.older) |older| base_url.postUrl(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });

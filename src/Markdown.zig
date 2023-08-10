@@ -464,8 +464,6 @@ test "tokenize inline link" {
     );
 }
 
-// TODO: add heading shift
-// (currently mitchellkember.com uses h2 for post title, and h1 within!)
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,

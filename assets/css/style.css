@@ -285,7 +285,7 @@ code {
   margin: 0 0 30px;
 }
 
-h1 {
+h2 {
   font: bold 28px 'Equity B', Helvetica, Arial, sans-serif;
   margin: 20px 0 10px;
 }
@@ -355,6 +355,7 @@ li.post-li {
   font-size: 20px;
 }
 
+/* TODO: remove */
 .footnotes p {
   margin: 0;
 }
