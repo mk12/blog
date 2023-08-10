@@ -430,8 +430,7 @@ pub const Value = union(enum) {
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
     date: struct { date: Date, style: Date.Style },
-    // TODO rename document
-    markdown: struct { document: Markdown, options: Markdown.Options },
+    markdown: struct { markdown: Markdown, options: Markdown.Options },
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
@@ -543,7 +542,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
             .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(args.style, ctx.writer),
-            .markdown => |args| try args.document.render(ctx.reporter, ctx.writer, args.options),
+            .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, args.options),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
                 command.location,

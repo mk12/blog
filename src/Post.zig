@@ -13,14 +13,13 @@ const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
-// TODO rename
-document: Markdown,
+content: Markdown,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const slug = std.fs.path.stem(scanner.filename);
     const meta = try Metadata.parse(scanner);
-    const document = try Markdown.parse(allocator, scanner);
-    return Post{ .slug = slug, .meta = meta, .document = document };
+    const content = try Markdown.parse(allocator, scanner);
+    return Post{ .slug = slug, .meta = meta, .content = content };
 }
 
 test "parse" {
@@ -43,7 +42,7 @@ test "parse" {
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .document = .{
+        .content = .{
             .filename = filename,
             .span = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
             .links = .{},
@@ -56,7 +55,7 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.document.span.text, post.document.span.text);
+    try testing.expectEqualStrings(expected.content.span.text, post.content.span.text);
     try testing.expectEqualDeep(expected, post);
 }
 
