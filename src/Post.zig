@@ -13,15 +13,14 @@ const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
-// Maybe content should be span too, don't privilege it over others?
-// But then is that just what I had before?
-content: Markdown,
+content: Span,
+context: Markdown.Context,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const slug = std.fs.path.stem(scanner.filename);
     const meta = try Metadata.parse(scanner);
-    const content = try Markdown.parse(allocator, scanner);
-    return Post{ .slug = slug, .meta = meta, .content = content };
+    const markdown = try Markdown.parse(allocator, scanner);
+    return Post{ .slug = slug, .meta = meta, .content = markdown.span, .context = markdown.context };
 }
 
 test "parse" {
@@ -44,10 +43,8 @@ test "parse" {
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .content = .{
-            .context = .{ .filename = filename, .links = .{} },
-            .span = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
-        },
+        .content = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
+        .context = .{ .filename = filename, .links = .{} },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -56,7 +53,7 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.content.span.text, post.content.span.text);
+    try testing.expectEqualStrings(expected.content.text, post.content.text);
     try testing.expectEqualDeep(expected, post);
 }
 
