@@ -46,8 +46,8 @@ pub fn showMessage(self: *const Reporter, err: anyerror) void {
 }
 
 pub fn expectFailure(self: *const Reporter, expected_message: []const u8, result: anytype) !void {
-    try testing.expectEqualStrings(expected_message, self.message.?);
     try testing.expectError(error.ErrorWasReported, result);
+    try testing.expectEqualStrings(expected_message, self.message.?);
 }
 
 test "fail" {

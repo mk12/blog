@@ -14,11 +14,13 @@ context: Context,
 
 pub const Context = struct {
     filename: []const u8,
-    links: std.StringHashMapUnmanaged([]const u8),
+    links: LinkMap,
 };
 
+pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
+
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
-    var links = std.StringHashMapUnmanaged([]const u8){};
+    var links = LinkMap{};
     var source = scanner.source[scanner.offset..];
     outer: while (true) {
         source = std.mem.trimRight(u8, source, "\n");
@@ -101,6 +103,7 @@ const Token = struct {
     location: Location,
 };
 
+// TODO: Maybe just name them instead of using @"" after alls
 const TokenValue = union(enum) {
     // Blocks tokens
     @"\n",
@@ -112,6 +115,7 @@ const TokenValue = union(enum) {
     @"```x": []const u8,
     @"```",
     // @"$$",
+    // @"![...](x)": []const u8,
     @"[^x]: ": []const u8,
     // TODO: figures, tables
 
@@ -142,6 +146,8 @@ const TokenValue = union(enum) {
 };
 
 const Tokenizer = struct {
+    scanner: *Scanner,
+
     peeked: ?Token = null,
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
@@ -152,17 +158,27 @@ const Tokenizer = struct {
 
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
-        return Tokenizer{};
+        return Tokenizer{ .scanner = scanner };
     }
 
-    fn next(self: *Tokenizer, scanner: *Scanner) !?Token {
+    fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
+        const location = if (self.peeked) |token| token.location else self.scanner.location;
+        return self.scanner.failAt(location, format, args);
+    }
+
+    fn failOn(self: Tokenizer, token: Token, comptime format: []const u8, args: anytype) Reporter.Error {
+        return self.scanner.failAt(token.location, format, args);
+    }
+
+    fn next(self: *Tokenizer) !?Token {
         if (self.peeked) |token| {
             self.peeked = null;
             return token;
         }
+        const scanner = self.scanner;
         const start_offset = scanner.offset;
         const start_location = scanner.location;
-        if (try self.nextNonText(scanner)) |result| {
+        if (try self.nextNonText()) |result| {
             if (result.offset == start_offset) return result.token;
             self.peeked = result.token;
             return Token{
@@ -177,7 +193,8 @@ const Tokenizer = struct {
         };
     }
 
-    fn nextNonText(self: *Tokenizer, scanner: *Scanner) !?struct { token: Token, offset: usize } {
+    fn nextNonText(self: *Tokenizer) !?struct { token: Token, offset: usize } {
+        const scanner = self.scanner;
         var location: Location = undefined;
         var offset: usize = undefined;
         const value: TokenValue = blk: while (true) {
@@ -390,9 +407,9 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var tokenizer = Tokenizer{};
+    var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(TokenValue).init(allocator);
-    while (try tokenizer.next(&scanner)) |token| try actual.append(token.value);
+    while (try tokenizer.next()) |token| try actual.append(token.value);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -470,11 +487,12 @@ pub const Options = struct {
     shift_heading_level: i8 = 0,
 };
 
+const max_tag_depth = 8;
+
 fn Stack(comptime T: type) type {
     return struct {
         const Self = @This();
-        const max_depth = 8;
-        items: std.BoundedArray(T, max_depth) = .{},
+        items: std.BoundedArray(T, max_tag_depth) = .{},
         footnote: if (T == BlockTag) ?[]const u8 else void = if (T == BlockTag) null else {},
 
         fn len(self: Self) usize {
@@ -489,11 +507,11 @@ fn Stack(comptime T: type) type {
             return if (self.len() == 0) null else self.items.get(self.len() - 1);
         }
 
-        fn push(self: *Self, writer: anytype, scanner: *Scanner, location: Location, item: T) !void {
+        fn push(self: *Self, writer: anytype, item: T) !void {
             try self.writeOpenTag(writer, item);
             if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
             self.items.append(item) catch |err| switch (err) {
-                error.Overflow => return scanner.failAt(location, "exceeded maximum depth ({})", .{max_depth}),
+                error.Overflow => return error.ExceededMaxTagDepth,
             };
         }
 
@@ -519,8 +537,8 @@ fn Stack(comptime T: type) type {
             while (self.items.len > new_len) try self.pop(writer);
         }
 
-        fn pushOrPop(self: *Self, writer: anytype, scanner: *Scanner, location: Location, item: T) !void {
-            try if (self.last() == item) self.pop(writer) else self.push(writer, scanner, location, item);
+        fn pushOrPop(self: *Self, writer: anytype, item: T) !void {
+            try if (self.last() == item) self.pop(writer) else self.push(writer, item);
         }
     };
 }
@@ -556,14 +574,20 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
         .filename = self.context.filename,
         .location = self.span.location,
     };
-    // TODO: should tokenizer store scanner?
-    // though, more annoying is passing it to push() all the time.
     var tokenizer = try Tokenizer.init(&scanner);
+    return renderHelper(&tokenizer, writer, self.context.links, options) catch |err| switch (err) {
+        error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
+        else => return err,
+    };
+}
+
+// TODO should it live in Tokenizer (and rename it)?
+pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var first_iteration = true;
     outer: while (true) {
-        var token = try tokenizer.next(&scanner) orelse break;
+        var token = try tokenizer.next() orelse break;
         var new_footnote: ?[]const u8 = null;
         var open: usize = 0;
         while (open < blocks.len()) : (open += 1) {
@@ -576,7 +600,7 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
                 } else if (token.value != .@"1.") break,
                 .blockquote => if (token.value != .@">") break,
             }
-            token = try tokenizer.next(&scanner) orelse break :outer;
+            token = try tokenizer.next() orelse break :outer;
         }
         try blocks.truncate(writer, open);
         blocks.footnote = new_footnote;
@@ -588,15 +612,15 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
             if (need_implicit_block and token.value.is_inline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
                     if (implicitChildBlock(blocks.last())) |block|
-                        try blocks.push(writer, &scanner, token.location, block);
+                        try blocks.push(writer, block);
                 need_implicit_block = false;
             }
             switch (token.value) {
                 .@"\n" => break,
-                .@"#" => |level| try blocks.push(writer, &scanner, token.location, headingTag(level, options)),
-                .@"-" => try blocks.push(writer, &scanner, token.location, .ul),
-                .@"1." => try blocks.push(writer, &scanner, token.location, .ol),
-                .@">" => try blocks.push(writer, &scanner, token.location, .blockquote),
+                .@"#" => |level| try blocks.push(writer, headingTag(level, options)),
+                .@"-" => try blocks.push(writer, .ul),
+                .@"1." => try blocks.push(writer, .ol),
+                .@">" => try blocks.push(writer, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
@@ -604,7 +628,7 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
                 .@"```" => try writer.writeAll("</code></pre>"),
                 .@"[^x]: " => |number| {
                     blocks.footnote = number;
-                    try blocks.push(writer, &scanner, token.location, .ol);
+                    try blocks.push(writer, .ol);
                 },
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
@@ -614,13 +638,13 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
                     try std.fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
-                ._ => try inlines.pushOrPop(writer, &scanner, token.location, .em),
-                .@"**" => try inlines.pushOrPop(writer, &scanner, token.location, .strong),
-                .@"`" => try inlines.pushOrPop(writer, &scanner, token.location, .code),
+                ._ => try inlines.pushOrPop(writer, .em),
+                .@"**" => try inlines.pushOrPop(writer, .strong),
+                .@"`" => try inlines.pushOrPop(writer, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
                 .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
-                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{self.context.links.get(label) orelse
-                    return scanner.failAt(token.location, "link label '{s}' not defined", .{label})}),
+                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{links.get(label) orelse
+                    return tokenizer.failOn(token, "link label '{s}' not defined", .{label})}),
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
                 .@"‘" => try writer.writeAll("‘"),
@@ -631,12 +655,12 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
                 .@" -- " => try writer.writeAll("—"),
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next(&scanner) orelse break :outer;
+            token = try tokenizer.next() orelse break :outer;
         }
-        if (inlines.last()) |tag| return scanner.failAt(token.location, "unclosed <{s}> tag", .{@tagName(tag)});
+        if (inlines.last()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
-    if (inlines.last()) |tag| return scanner.fail("unclosed <{s}> tag", .{@tagName(tag)});
+    if (inlines.last()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
     try blocks.truncate(writer, 0);
 }
 
@@ -987,5 +1011,21 @@ test "unclosed inline in middle" {
         \\> Some **stuff
         \\
         \\And more.
+    , .{});
+}
+
+test "exceed max inline tag depth" {
+    try expectRenderFailure(
+        \\<input>:1:22: exceeded maximum tag depth (8)
+    ,
+        \\_ ** _ ** _ ** _ ** `
+    , .{});
+}
+
+test "exceed max block tag depth" {
+    try expectRenderFailure(
+        \\<input>:1:18: exceeded maximum tag depth (8)
+    ,
+        \\> > > > > > > > -
     , .{});
 }
