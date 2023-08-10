@@ -45,7 +45,7 @@ test "parse" {
         },
         .document = .{
             .filename = filename,
-            .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
+            .span = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
             .links = .{},
         },
     };
@@ -56,7 +56,7 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.document.body.text, post.document.body.text);
+    try testing.expectEqualStrings(expected.document.span.text, post.document.span.text);
     try testing.expectEqualDeep(expected, post);
 }
 

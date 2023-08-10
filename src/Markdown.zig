@@ -10,7 +10,7 @@ const Span = Scanner.Span;
 const Markdown = @This();
 
 filename: []const u8,
-body: Span,
+span: Span,
 links: LinkMap,
 
 pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
@@ -40,8 +40,8 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         try links.put(allocator, source[label_start..label_end], source[i..]);
         source.len = newline_index;
     }
-    const body = Span{ .text = source, .location = scanner.location };
-    return Markdown{ .filename = scanner.filename, .body = body, .links = links };
+    const span = Span{ .text = source, .location = scanner.location };
+    return Markdown{ .filename = scanner.filename, .span = span, .links = links };
 }
 
 test "parse" {
@@ -58,16 +58,16 @@ test "parse" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try parse(allocator, &scanner);
+    const md = try parse(allocator, &scanner);
     try testing.expectEqualStrings(
         \\This is the body.
         \\
         \\[This is not a link]
-    , doc.body.text);
-    try testing.expectEqualDeep(Location{}, doc.body.location);
-    try testing.expectEqual(@as(usize, 2), doc.links.size);
-    try testing.expectEqualStrings("foo link", doc.links.get("foo").?);
-    try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
+    , md.span.text);
+    try testing.expectEqualDeep(Location{}, md.span.location);
+    try testing.expectEqual(@as(usize, 2), md.links.size);
+    try testing.expectEqualStrings("foo link", md.links.get("foo").?);
+    try testing.expectEqualStrings("bar baz link", md.links.get("bar baz").?);
 }
 
 test "parse with gaps between link definitions" {
@@ -85,11 +85,11 @@ test "parse with gaps between link definitions" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try parse(allocator, &scanner);
-    try testing.expectEqualStrings("This is the body.", doc.body.text);
-    try testing.expectEqual(@as(usize, 2), doc.links.size);
-    try testing.expectEqualStrings("foo link", doc.links.get("foo").?);
-    try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
+    const md = try parse(allocator, &scanner);
+    try testing.expectEqualStrings("This is the body.", md.span.text);
+    try testing.expectEqual(@as(usize, 2), md.links.size);
+    try testing.expectEqualStrings("foo link", md.links.get("foo").?);
+    try testing.expectEqualStrings("bar baz link", md.links.get("bar baz").?);
 }
 
 const Token = struct {
@@ -547,10 +547,10 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
 // TODO reconsider arg order
 pub fn render(markdown: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
     var scanner = Scanner{
-        .source = markdown.body.text,
+        .source = markdown.span.text,
         .reporter = reporter,
         .filename = markdown.filename,
-        .location = markdown.body.location,
+        .location = markdown.span.location,
     };
     var tokenizer = try Tokenizer.init(&scanner);
     var blocks = Stack(BlockTag){};
