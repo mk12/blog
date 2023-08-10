@@ -5,10 +5,11 @@
 {{ include "pagenav.html" }}
 </header>
 <article>
-  <span class="post-meta">{{ date }}</span>
-  <h1 class="post-title">{{ title }}</h1>
-  <!-- TODO not div -->
-  <div class="post-description">{{ subtitle }}</div>
+  <header>
+    <span class="post-meta">{{ date }}</span>
+    <h1 class="post-title">{{ title }}</h1>
+    <p class="post-description">{{ subtitle }}</p>
+  </header>
 {{ content }}
 </article>
 <footer>

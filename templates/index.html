@@ -1,20 +1,19 @@
 {{ include "base.html" }}
 
 {{ define body }}
-<!-- TODO not div -->
-<div class="blog-title">
+<h1 class="blog-title">
   {{ if home_url }}
   <a class="no-ul" href="{{ . }}">MK</a>
   {{ else }}
   MK
   {{ end }}
-</div>
+</h1>
 
 <section>
 {{ range posts }}
   <section class="summary">
     <span class="post-meta">{{ date }}</span>
-    <h1 class="post-title"><a class="no-ul" href="{{ href }}">{{ title }}</a></h1>
+    <h2 class="post-title"><a class="no-ul" href="{{ href }}">{{ title }}</a></h2>
     {{ excerpt }}
     <div class="read-more-link">
       <a class="no-ul subtle" href="{{ href }}">Read more&nbsp;»</a>
