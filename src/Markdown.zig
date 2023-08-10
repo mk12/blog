@@ -469,6 +469,7 @@ test "tokenize inline link" {
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,
+    shift_heading_level: i8 = 0,
 };
 
 fn Stack(comptime T: type) type {
@@ -536,8 +537,10 @@ fn tagGoesOnItsOwnLine(tag: BlockTag) bool {
     };
 }
 
-fn headingTag(level: u8) BlockTag {
-    return @enumFromInt(@intFromEnum(BlockTag.h1) + level - 1);
+fn headingTag(level: u8, options: Options) BlockTag {
+    const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
+    const clamped = std.math.clamp(adjusted, 1, 6);
+    return @enumFromInt(@intFromEnum(BlockTag.h1) + clamped - 1);
 }
 
 fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
@@ -548,7 +551,6 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
     };
 }
 
-// TODO reconsider arg order
 pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
     var scanner = Scanner{
         .source = self.span.text,
@@ -593,7 +595,7 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
             }
             switch (token.value) {
                 .@"\n" => break,
-                .@"#" => |level| try blocks.push(writer, &scanner, token.location, headingTag(level)),
+                .@"#" => |level| try blocks.push(writer, &scanner, token.location, headingTag(level, options)),
                 .@"-" => try blocks.push(writer, &scanner, token.location, .ul),
                 .@"1." => try blocks.push(writer, &scanner, token.location, .ol),
                 .@">" => try blocks.push(writer, &scanner, token.location, .blockquote),
@@ -837,6 +839,18 @@ test "render all headings" {
         \\###### This is h6
         \\####### There is no h7
     , .{});
+}
+
+test "render shifted heading (positive)" {
+    try expectRenderSuccess("<h2>Foo</h2>", "# Foo", .{ .shift_heading_level = 1 });
+    try expectRenderSuccess("<h3>Foo</h3>", "## Foo", .{ .shift_heading_level = 1 });
+    try expectRenderSuccess("<h6>Foo</h6>", "###### Foo", .{ .shift_heading_level = 1 });
+}
+
+test "render shifted heading (negative)" {
+    try expectRenderSuccess("<h1>Foo</h1>", "# Foo", .{ .shift_heading_level = -1 });
+    try expectRenderSuccess("<h1>Foo</h1>", "## Foo", .{ .shift_heading_level = -1 });
+    try expectRenderSuccess("<h5>Foo</h5>", "###### Foo", .{ .shift_heading_level = -1 });
 }
 
 test "render unordered list" {
