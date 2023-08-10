@@ -193,6 +193,7 @@ const Tokenizer = struct {
                         '#' => {
                             scanner.eat(c);
                             level += 1;
+                            if (level > 6) break;
                         },
                         ' ' => {
                             scanner.eat(c);
@@ -820,6 +821,7 @@ test "render all headings" {
         \\<h4>This is h4</h4>
         \\<h5>This is h5</h5>
         \\<h6>This is h6</h6>
+        \\<p>####### There is no h7</p>
     ,
         \\# This is h1
         \\## This is h2
@@ -827,6 +829,7 @@ test "render all headings" {
         \\#### This is h4
         \\##### This is h5
         \\###### This is h6
+        \\####### There is no h7
     , .{});
 }
 
