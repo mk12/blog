@@ -581,7 +581,7 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Opt
     };
 }
 
-// TODO should it live in Tokenizer (and rename it)?
+// TODO should it live in Tokenizer (and rename it)? or not
 pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
@@ -643,8 +643,11 @@ pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, opti
                 .@"`" => try inlines.pushOrPop(writer, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
                 .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
-                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{links.get(label) orelse
-                    return tokenizer.failOn(token, "link label '{s}' not defined", .{label})}),
+                .@"[...][x]" => |label| {
+                    const url = links.get(label) orelse
+                        return tokenizer.failOn(token, "link label '{s}' is not defined", .{label});
+                    try std.fmt.format(writer, "<a href=\"{s}\">", .{url});
+                },
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
                 .@"‘" => try writer.writeAll("‘"),
