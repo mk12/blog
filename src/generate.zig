@@ -193,9 +193,9 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
         const post = posts[i];
         summaries[i] = Summary{
             .date = renderDate(post.meta.status, .long),
-            .title = renderMarkdown(post.meta.title, post, .{ .is_inline = true }),
+            .title = renderMarkdown(post.meta.title, post.context, .{ .is_inline = true }),
             .href = try base_url.post(allocator, post.slug),
-            .excerpt = renderMarkdown(post.content, post, .{ .first_block_only = true }),
+            .excerpt = renderMarkdown(post.body, post.context, .{ .first_block_only = true }),
         };
     }
     return summaries;
@@ -221,10 +221,10 @@ fn generatePost(
     var file = try dir.createFile("index.html", .{});
     defer file.close();
     const variables = try Value.init(allocator, .{
-        .title = renderMarkdown(post.meta.title, post, .{ .is_inline = true }),
-        .subtitle = renderMarkdown(post.meta.subtitle, post, .{ .is_inline = true }),
+        .title = renderMarkdown(post.meta.title, post.context, .{ .is_inline = true }),
+        .subtitle = renderMarkdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
         .date = renderDate(post.meta.status, .long),
-        .content = renderMarkdown(post.content, post, .{}),
+        .content = renderMarkdown(post.body, post.context, .{}),
         .newer = try if (neighbors.newer) |newer| base_url.post(allocator, newer.slug) else base_url.join(allocator, "/"),
         .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });
@@ -240,14 +240,10 @@ fn renderDate(status: Status, style: Date.Style) Value {
     };
 }
 
-fn renderMarkdown(span: Span, post: Post, options: Markdown.Options) Value {
+fn renderMarkdown(span: Span, context: Markdown.Context, options: Markdown.Options) Value {
     return Value{
         .markdown = .{
-            // TODO helper method for this? same doc new span
-            .markdown = Markdown{
-                .context = post.context,
-                .span = span,
-            },
+            .markdown = Markdown{ .span = span, .context = context },
             .options = options,
         },
     };

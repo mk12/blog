@@ -13,14 +13,14 @@ const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
-content: Span,
+body: Span,
 context: Markdown.Context,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const slug = std.fs.path.stem(scanner.filename);
     const meta = try Metadata.parse(scanner);
     const markdown = try Markdown.parse(allocator, scanner);
-    return Post{ .slug = slug, .meta = meta, .content = markdown.span, .context = markdown.context };
+    return Post{ .slug = slug, .meta = meta, .body = markdown.span, .context = markdown.context };
 }
 
 test "parse" {
@@ -43,7 +43,7 @@ test "parse" {
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .content = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
+        .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
         .context = .{ .filename = filename, .links = .{} },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -53,7 +53,7 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.content.text, post.content.text);
+    try testing.expectEqualStrings(expected.body.text, post.body.text);
     try testing.expectEqualDeep(expected, post);
 }
 

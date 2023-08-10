@@ -9,8 +9,8 @@ const Scanner = @import("Scanner.zig");
 const Span = Scanner.Span;
 const Markdown = @This();
 
-context: Context,
 span: Span,
+context: Context,
 
 pub const Context = struct {
     filename: []const u8,
@@ -43,8 +43,8 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         source.len = newline_index;
     }
     return Markdown{
-        .context = Context{ .filename = scanner.filename, .links = links },
         .span = Span{ .text = source, .location = scanner.location },
+        .context = Context{ .filename = scanner.filename, .links = links },
     };
 }
 
