@@ -5,29 +5,22 @@ const testing = std.testing;
 const markdown = @import("markdown.zig");
 const Allocator = std.mem.Allocator;
 const Date = @import("Date.zig");
-const LinkMap = markdown.LinkMap;
+const Document = markdown.Document;
 const Metadata = @import("Metadata.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Span = Scanner.Span;
 const Post = @This();
 
-filename: []const u8,
 slug: []const u8,
 meta: Metadata,
-body: Span,
-links: LinkMap,
+document: Document,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
+    const slug = std.fs.path.stem(scanner.filename);
     const meta = try Metadata.parse(scanner);
-    const doc = try markdown.parseLinkDefinitions(allocator, scanner);
-    return Post{
-        .filename = scanner.filename,
-        .slug = std.fs.path.stem(scanner.filename),
-        .meta = meta,
-        .body = doc.body,
-        .links = doc.links,
-    };
+    const document = try Document.parse(allocator, scanner);
+    return Post{ .slug = slug, .meta = meta, .document = document };
 }
 
 test "parse" {
@@ -43,7 +36,6 @@ test "parse" {
         \\Hello world!
     ;
     const expected = Post{
-        .filename = filename,
         .slug = "foo",
         .meta = Metadata{
             .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
@@ -51,8 +43,11 @@ test "parse" {
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
-        .links = .{},
+        .document = .{
+            .filename = filename,
+            .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
+            .links = .{},
+        },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -61,7 +56,7 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.body.text, post.body.text);
+    try testing.expectEqualStrings(expected.document.body.text, post.document.body.text);
     try testing.expectEqualDeep(expected, post);
 }
 

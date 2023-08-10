@@ -195,7 +195,7 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
             .date = renderDate(post.meta.status, .long),
             .title = renderMarkdown(post.meta.title, post, .{ .is_inline = true }),
             .href = try base_url.post(allocator, post.slug),
-            .excerpt = renderMarkdown(post.body, post, .{ .first_block_only = true }),
+            .excerpt = renderMarkdown(post.document.body, post, .{ .first_block_only = true }),
         };
     }
     return summaries;
@@ -224,7 +224,7 @@ fn generatePost(
         .title = renderMarkdown(post.meta.title, post, .{ .is_inline = true }),
         .subtitle = renderMarkdown(post.meta.subtitle, post, .{ .is_inline = true }),
         .date = renderDate(post.meta.status, .long),
-        .article = renderMarkdown(post.body, post, .{}),
+        .article = renderMarkdown(post.document.body, post, .{}),
         .newer = try if (neighbors.newer) |newer| base_url.post(allocator, newer.slug) else base_url.join(allocator, "/"),
         .older = try if (neighbors.older) |older| base_url.post(allocator, older.slug) else base_url.join(allocator, "/post/"),
     });
@@ -243,10 +243,11 @@ fn renderDate(status: Status, style: Date.Style) Value {
 fn renderMarkdown(span: Span, post: Post, options: markdown.Options) Value {
     return Value{
         .markdown = .{
-            .text = span.text,
-            .filename = post.filename,
-            .location = span.location,
-            .links = post.links,
+            .document = markdown.Document{
+                .filename = post.document.filename,
+                .body = span,
+                .links = post.document.links,
+            },
             .options = options,
         },
     };

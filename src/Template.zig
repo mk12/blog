@@ -8,6 +8,7 @@ const Allocator = mem.Allocator;
 const Date = @import("Date.zig");
 const EnumSet = std.enums.EnumSet;
 const markdown = @import("markdown.zig");
+const Document = markdown.Document;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
@@ -430,13 +431,7 @@ pub const Value = union(enum) {
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
     date: struct { date: Date, style: Date.Style },
-    markdown: struct {
-        text: []const u8,
-        filename: []const u8,
-        location: Location,
-        links: markdown.LinkMap,
-        options: markdown.Options,
-    },
+    markdown: struct { document: Document, options: markdown.Options },
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
         comptime var Type = @TypeOf(object);
@@ -550,12 +545,12 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .date => |args| try args.date.render(args.style, ctx.writer),
             .markdown => |args| {
                 var scanner = Scanner{
-                    .source = args.text,
+                    .source = args.document.body.text,
                     .reporter = ctx.reporter,
-                    .filename = args.filename,
-                    .location = args.location,
+                    .filename = args.document.filename,
+                    .location = args.document.body.location,
                 };
-                try markdown.render(&scanner, ctx.writer, args.links, args.options);
+                try markdown.render(&scanner, ctx.writer, args.document.links, args.options);
             },
             else => |value| return ctx.reporter.failAt(
                 self.filename,

@@ -8,39 +8,44 @@ const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
 const Span = Scanner.Span;
 
-pub const Document = struct { body: Span, links: LinkMap };
 pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 
-pub fn parseLinkDefinitions(allocator: Allocator, scanner: *Scanner) !Document {
-    var links = LinkMap{};
-    var source = scanner.source[scanner.offset..];
-    outer: while (true) {
-        source = std.mem.trimRight(u8, source, "\n");
-        const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
-        var i = newline_index + 1;
-        if (i == source.len or source[i] != '[') break;
-        i += 1;
-        if (i == source.len or source[i] == '^') break;
-        const label_start = i;
-        while (i < source.len) : (i += 1) switch (source[i]) {
-            '\n' => break :outer,
-            ']' => break,
-            else => {},
-        };
-        const label_end = i;
-        i += 1;
-        if (i == source.len or source[i] != ':') break;
-        i += 1;
-        if (i == source.len or source[i] != ' ') break;
-        i += 1;
-        try links.put(allocator, source[label_start..label_end], source[i..]);
-        source.len = newline_index;
-    }
-    const body = Span{ .text = source, .location = scanner.location };
-    return Document{ .body = body, .links = links };
-}
+pub const Document = struct {
+    filename: []const u8,
+    body: Span,
+    links: LinkMap,
 
-test "parseLinkDefinitions" {
+    pub fn parse(allocator: Allocator, scanner: *Scanner) !Document {
+        var links = LinkMap{};
+        var source = scanner.source[scanner.offset..];
+        outer: while (true) {
+            source = std.mem.trimRight(u8, source, "\n");
+            const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
+            var i = newline_index + 1;
+            if (i == source.len or source[i] != '[') break;
+            i += 1;
+            if (i == source.len or source[i] == '^') break;
+            const label_start = i;
+            while (i < source.len) : (i += 1) switch (source[i]) {
+                '\n' => break :outer,
+                ']' => break,
+                else => {},
+            };
+            const label_end = i;
+            i += 1;
+            if (i == source.len or source[i] != ':') break;
+            i += 1;
+            if (i == source.len or source[i] != ' ') break;
+            i += 1;
+            try links.put(allocator, source[label_start..label_end], source[i..]);
+            source.len = newline_index;
+        }
+        const body = Span{ .text = source, .location = scanner.location };
+        return Document{ .filename = scanner.filename, .body = body, .links = links };
+    }
+};
+
+test "parse document" {
     const source =
         \\This is the body.
         \\
@@ -54,7 +59,7 @@ test "parseLinkDefinitions" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try parseLinkDefinitions(allocator, &scanner);
+    const doc = try Document.parse(allocator, &scanner);
     try testing.expectEqualStrings(
         \\This is the body.
         \\
@@ -66,7 +71,7 @@ test "parseLinkDefinitions" {
     try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
 }
 
-test "parseLinkDefinitions with gaps" {
+test "parse document with gaps in links" {
     const source =
         \\This is the body.
         \\
@@ -81,7 +86,7 @@ test "parseLinkDefinitions with gaps" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try parseLinkDefinitions(allocator, &scanner);
+    const doc = try Document.parse(allocator, &scanner);
     try testing.expectEqualStrings("This is the body.", doc.body.text);
     try testing.expectEqual(@as(usize, 2), doc.links.size);
     try testing.expectEqualStrings("foo link", doc.links.get("foo").?);
@@ -775,7 +780,7 @@ test "render inline link" {
 }
 
 test "render reference link" {
-    // TODO: Maybe expectRenderSuccess should just always run parseLinkDefinitions first.
+    // TODO: Maybe expectRenderSuccess should just always run Document.parse first.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -789,7 +794,7 @@ test "render reference link" {
 }
 
 test "render shortcut reference link" {
-    // TODO: Maybe expectRenderSuccess should just always run parseLinkDefinitions first.
+    // TODO: Maybe expectRenderSuccess should just always run Document.parse first.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
