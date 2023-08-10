@@ -2,10 +2,9 @@
 
 const std = @import("std");
 const testing = std.testing;
-const markdown = @import("markdown.zig");
 const Allocator = std.mem.Allocator;
 const Date = @import("Date.zig");
-const Document = markdown.Document;
+const Markdown = @import("Markdown.zig");
 const Metadata = @import("Metadata.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
@@ -14,12 +13,13 @@ const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
-document: Document,
+// TODO rename
+document: Markdown,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const slug = std.fs.path.stem(scanner.filename);
     const meta = try Metadata.parse(scanner);
-    const document = try Document.parse(allocator, scanner);
+    const document = try Markdown.parse(allocator, scanner);
     return Post{ .slug = slug, .meta = meta, .document = document };
 }
 

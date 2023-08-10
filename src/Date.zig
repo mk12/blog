@@ -160,6 +160,7 @@ fn weekdayName(self: Date) []const u8 {
 
 pub const Style = enum { short, long, rfc3339 };
 
+// TODO reconsider arg order
 pub fn render(self: Date, style: Style, writer: anytype) !void {
     switch (style) {
         .short => try writer.print(

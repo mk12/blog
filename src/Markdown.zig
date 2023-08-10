@@ -7,45 +7,44 @@ const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
 const Span = Scanner.Span;
+const Markdown = @This();
+
+filename: []const u8,
+body: Span,
+links: LinkMap,
 
 pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 
-pub const Document = struct {
-    filename: []const u8,
-    body: Span,
-    links: LinkMap,
-
-    pub fn parse(allocator: Allocator, scanner: *Scanner) !Document {
-        var links = LinkMap{};
-        var source = scanner.source[scanner.offset..];
-        outer: while (true) {
-            source = std.mem.trimRight(u8, source, "\n");
-            const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
-            var i = newline_index + 1;
-            if (i == source.len or source[i] != '[') break;
-            i += 1;
-            if (i == source.len or source[i] == '^') break;
-            const label_start = i;
-            while (i < source.len) : (i += 1) switch (source[i]) {
-                '\n' => break :outer,
-                ']' => break,
-                else => {},
-            };
-            const label_end = i;
-            i += 1;
-            if (i == source.len or source[i] != ':') break;
-            i += 1;
-            if (i == source.len or source[i] != ' ') break;
-            i += 1;
-            try links.put(allocator, source[label_start..label_end], source[i..]);
-            source.len = newline_index;
-        }
-        const body = Span{ .text = source, .location = scanner.location };
-        return Document{ .filename = scanner.filename, .body = body, .links = links };
+pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
+    var links = LinkMap{};
+    var source = scanner.source[scanner.offset..];
+    outer: while (true) {
+        source = std.mem.trimRight(u8, source, "\n");
+        const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
+        var i = newline_index + 1;
+        if (i == source.len or source[i] != '[') break;
+        i += 1;
+        if (i == source.len or source[i] == '^') break;
+        const label_start = i;
+        while (i < source.len) : (i += 1) switch (source[i]) {
+            '\n' => break :outer,
+            ']' => break,
+            else => {},
+        };
+        const label_end = i;
+        i += 1;
+        if (i == source.len or source[i] != ':') break;
+        i += 1;
+        if (i == source.len or source[i] != ' ') break;
+        i += 1;
+        try links.put(allocator, source[label_start..label_end], source[i..]);
+        source.len = newline_index;
     }
-};
+    const body = Span{ .text = source, .location = scanner.location };
+    return Markdown{ .filename = scanner.filename, .body = body, .links = links };
+}
 
-test "parse document" {
+test "parse" {
     const source =
         \\This is the body.
         \\
@@ -59,7 +58,7 @@ test "parse document" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try Document.parse(allocator, &scanner);
+    const doc = try parse(allocator, &scanner);
     try testing.expectEqualStrings(
         \\This is the body.
         \\
@@ -71,7 +70,7 @@ test "parse document" {
     try testing.expectEqualStrings("bar baz link", doc.links.get("bar baz").?);
 }
 
-test "parse document with gaps in links" {
+test "parse with gaps between link definitions" {
     const source =
         \\This is the body.
         \\
@@ -86,7 +85,7 @@ test "parse document with gaps in links" {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const doc = try Document.parse(allocator, &scanner);
+    const doc = try parse(allocator, &scanner);
     try testing.expectEqualStrings("This is the body.", doc.body.text);
     try testing.expectEqual(@as(usize, 2), doc.links.size);
     try testing.expectEqualStrings("foo link", doc.links.get("foo").?);
@@ -544,13 +543,20 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
     };
 }
 
-pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Options) !void {
+// TODO reconsider arg order
+pub fn render(markdown: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
+    var scanner = Scanner{
+        .source = markdown.body.text,
+        .reporter = reporter,
+        .filename = markdown.filename,
+        .location = markdown.body.location,
+    };
+    var tokenizer = try Tokenizer.init(&scanner);
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
-    var tokenizer = try Tokenizer.init(scanner);
     var first_iteration = true;
     outer: while (true) {
-        var token = try tokenizer.next(scanner) orelse break;
+        var token = try tokenizer.next(&scanner) orelse break;
         var new_footnote: ?[]const u8 = null;
         var open: usize = 0;
         while (open < blocks.len()) : (open += 1) {
@@ -563,7 +569,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 } else if (token.value != .@"1.") break,
                 .blockquote => if (token.value != .@">") break,
             }
-            token = try tokenizer.next(scanner) orelse break :outer;
+            token = try tokenizer.next(&scanner) orelse break :outer;
         }
         try blocks.truncate(writer, open);
         blocks.footnote = new_footnote;
@@ -575,15 +581,15 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
             if (need_implicit_block and token.value.is_inline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
                     if (implicitChildBlock(blocks.last())) |block|
-                        try blocks.push(writer, scanner, token.location, block);
+                        try blocks.push(writer, &scanner, token.location, block);
                 need_implicit_block = false;
             }
             switch (token.value) {
                 .@"\n" => break,
-                .@"#" => |level| try blocks.push(writer, scanner, token.location, headingTag(level)),
-                .@"-" => try blocks.push(writer, scanner, token.location, .ul),
-                .@"1." => try blocks.push(writer, scanner, token.location, .ol),
-                .@">" => try blocks.push(writer, scanner, token.location, .blockquote),
+                .@"#" => |level| try blocks.push(writer, &scanner, token.location, headingTag(level)),
+                .@"-" => try blocks.push(writer, &scanner, token.location, .ul),
+                .@"1." => try blocks.push(writer, &scanner, token.location, .ol),
+                .@">" => try blocks.push(writer, &scanner, token.location, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
@@ -591,7 +597,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@"```" => try writer.writeAll("</code></pre>"),
                 .@"[^x]: " => |number| {
                     blocks.footnote = number;
-                    try blocks.push(writer, scanner, token.location, .ol);
+                    try blocks.push(writer, &scanner, token.location, .ol);
                 },
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
@@ -601,12 +607,12 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                     try std.fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
-                ._ => try inlines.pushOrPop(writer, scanner, token.location, .em),
-                .@"**" => try inlines.pushOrPop(writer, scanner, token.location, .strong),
-                .@"`" => try inlines.pushOrPop(writer, scanner, token.location, .code),
+                ._ => try inlines.pushOrPop(writer, &scanner, token.location, .em),
+                .@"**" => try inlines.pushOrPop(writer, &scanner, token.location, .strong),
+                .@"`" => try inlines.pushOrPop(writer, &scanner, token.location, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
                 .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
-                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{links.get(label) orelse
+                .@"[...][x]" => |label| try std.fmt.format(writer, "<a href=\"{s}\">", .{markdown.links.get(label) orelse
                     return scanner.failAt(token.location, "link label '{s}' not defined", .{label})}),
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
@@ -618,7 +624,7 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
                 .@" -- " => try writer.writeAll("—"),
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next(scanner) orelse break :outer;
+            token = try tokenizer.next(&scanner) orelse break :outer;
         }
         if (inlines.last()) |tag| return scanner.failAt(token.location, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
@@ -627,38 +633,41 @@ pub fn render(scanner: *Scanner, writer: anytype, links: LinkMap, options: Optio
     try blocks.truncate(writer, 0);
 }
 
-fn expectRenderSuccess(expected_html: []const u8, source: []const u8, links: LinkMap, options: Options) !void {
+fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
+    const markdown = try parse(allocator, &scanner);
     var actual_html = std.ArrayList(u8).init(allocator);
-    try render(&scanner, actual_html.writer(), links, options);
+    try markdown.render(&reporter, actual_html.writer(), options);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
-fn expectRenderFailure(expected_message: []const u8, source: []const u8, links: LinkMap, options: Options) !void {
+fn expectRenderFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    var reporter = Reporter.init(arena.allocator());
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_message, render(&scanner, std.io.null_writer, links, options));
+    const markdown = try parse(allocator, &scanner);
+    try reporter.expectFailure(expected_message, markdown.render(&reporter, std.io.null_writer, options));
 }
 
 test "render empty string" {
-    try expectRenderSuccess("", "", .{}, .{});
-    try expectRenderSuccess("", "", .{}, .{ .is_inline = true });
-    try expectRenderSuccess("", "", .{}, .{ .first_block_only = true });
-    try expectRenderSuccess("", "", .{}, .{ .is_inline = true, .first_block_only = true });
+    try expectRenderSuccess("", "", .{});
+    try expectRenderSuccess("", "", .{ .is_inline = true });
+    try expectRenderSuccess("", "", .{ .first_block_only = true });
+    try expectRenderSuccess("", "", .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render text" {
-    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{}, .{});
-    try expectRenderSuccess("Hello world!", "Hello world!", .{}, .{ .is_inline = true });
-    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{}, .{ .first_block_only = true });
-    try expectRenderSuccess("Hello world!", "Hello world!", .{}, .{ .is_inline = true, .first_block_only = true });
+    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{});
+    try expectRenderSuccess("Hello world!", "Hello world!", .{ .is_inline = true });
+    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{ .first_block_only = true });
+    try expectRenderSuccess("Hello world!", "Hello world!", .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render first block only" {
@@ -667,8 +676,8 @@ test "render first block only" {
         \\
         \\This is the second paragraph.
     ;
-    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{}, .{ .first_block_only = true });
-    try expectRenderSuccess("This is the first paragraph.", source, .{}, .{ .is_inline = true, .first_block_only = true });
+    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
+    try expectRenderSuccess("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render first block only with gap" {
@@ -678,8 +687,8 @@ test "render first block only with gap" {
         \\
         \\This is the second paragraph.
     ;
-    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{}, .{ .first_block_only = true });
-    try expectRenderSuccess("This is the first paragraph.", source, .{}, .{ .is_inline = true, .first_block_only = true });
+    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
+    try expectRenderSuccess("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render backslash scapes" {
@@ -687,23 +696,23 @@ test "render backslash scapes" {
         \\<p># _nice_ `stuff` \</p>
     ,
         \\\# \_nice\_ \`stuff\` \\
-    , .{}, .{});
+    , .{});
 }
 
 test "render inline raw html" {
-    try expectRenderSuccess("<p><cite>Foo</cite></p>", "<cite>Foo</cite>", .{}, .{});
+    try expectRenderSuccess("<p><cite>Foo</cite></p>", "<cite>Foo</cite>", .{});
 }
 
 test "render Markdown within raw inline html" {
-    try expectRenderSuccess("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{}, .{});
+    try expectRenderSuccess("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{});
 }
 
 test "render entities" {
-    try expectRenderSuccess("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{}, .{});
+    try expectRenderSuccess("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{});
 }
 
 test "render raw entities" {
-    try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{}, .{});
+    try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{});
 }
 
 test "render raw block html" {
@@ -715,7 +724,7 @@ test "render raw block html" {
         \\<div id="foo">
         \\Just in a **div**.
         \\</div>
-    , .{}, .{});
+    , .{});
 }
 
 test "render raw block html with nested paragraph" {
@@ -729,7 +738,7 @@ test "render raw block html with nested paragraph" {
         \\Paragraph.
         \\
         \\</div>
-    , .{}, .{});
+    , .{});
 }
 
 test "render raw block html with nested blockquote and list" {
@@ -748,23 +757,23 @@ test "render raw block html with nested blockquote and list" {
         \\>
         \\> - list
         \\</div>
-    , .{}, .{});
+    , .{});
 }
 
 test "render code" {
-    try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{}, .{});
+    try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{});
 }
 
 test "render code with entities" {
-    try expectRenderSuccess("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{}, .{});
+    try expectRenderSuccess("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{});
 }
 
 test "render emphasis" {
-    try expectRenderSuccess("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{}, .{});
+    try expectRenderSuccess("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{});
 }
 
 test "render strong" {
-    try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{}, .{});
+    try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{});
 }
 
 test "render nested inlines" {
@@ -772,43 +781,35 @@ test "render nested inlines" {
         \\<p>a <strong>b <em>c <code>d</code> e</em> f</strong> g</p>
     ,
         \\a **b _c `d` e_ f** g
-    , .{}, .{});
+    , .{});
 }
 
 test "render inline link" {
-    try expectRenderSuccess("<p><a href=\"//example.com\">foo</a></p>", "[foo](//example.com)", .{}, .{});
+    try expectRenderSuccess("<p><a href=\"//example.com\">foo</a></p>", "[foo](//example.com)", .{});
 }
 
 test "render reference link" {
-    // TODO: Maybe expectRenderSuccess should just always run Document.parse first.
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    var links = LinkMap{};
-    try links.put(allocator, "bar", "//example.com");
     try expectRenderSuccess(
         \\<p>Look at <a href="//example.com">foo</a>.</p>
     ,
         \\Look at [foo][bar].
-    , links, .{});
+        \\
+        \\[bar]: //example.com
+    , .{});
 }
 
 test "render shortcut reference link" {
-    // TODO: Maybe expectRenderSuccess should just always run Document.parse first.
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    var links = LinkMap{};
-    try links.put(allocator, "foo", "//example.com");
     try expectRenderSuccess(
         \\<p>Look at <a href="//example.com">foo</a>.</p>
     ,
         \\Look at [foo].
-    , links, .{});
+        \\
+        \\[foo]: //example.com
+    , .{});
 }
 
 test "render heading" {
-    try expectRenderSuccess("<h1>This is h1</h1>", "# This is h1", .{}, .{});
+    try expectRenderSuccess("<h1>This is h1</h1>", "# This is h1", .{});
 }
 
 test "render all headings" {
@@ -826,7 +827,7 @@ test "render all headings" {
         \\#### This is h4
         \\##### This is h5
         \\###### This is h6
-    , .{}, .{});
+    , .{});
 }
 
 test "render unordered list" {
@@ -841,7 +842,7 @@ test "render unordered list" {
         \\
         \\- Apples
         \\- Oranges
-    , .{}, .{});
+    , .{});
 }
 
 test "render ordered list" {
@@ -856,7 +857,7 @@ test "render ordered list" {
         \\
         \\1. Apples
         \\9. Oranges
-    , .{}, .{});
+    , .{});
 }
 
 test "render multiple lists" {
@@ -875,7 +876,7 @@ test "render multiple lists" {
         \\
         \\- other **stuff**
         \\- blah blah
-    , .{}, .{});
+    , .{});
 }
 
 test "render a few things" {
@@ -892,7 +893,7 @@ test "render a few things" {
         \\* * *
         \\
         \\And some more.
-    , .{}, .{});
+    , .{});
 }
 
 test "render nested blockquotes" {
@@ -920,7 +921,7 @@ test "render nested blockquotes" {
         \\> > > Deep!
         \\> >
         \\> > End
-    , .{}, .{});
+    , .{});
 }
 
 test "render smart typography" {
@@ -928,7 +929,7 @@ test "render smart typography" {
         \\<p>This—“that isn’t 1–2” … other.</p>
     ,
         \\This -- "that isn't 1--2" ... other.
-    , .{}, .{});
+    , .{});
 }
 
 test "render footnotes" {
@@ -947,7 +948,7 @@ test "render footnotes" {
         \\
         \\[^1]: _first_
         \\[^2]: second
-    , .{}, .{});
+    , .{});
 }
 
 test "unclosed inline at end" {
@@ -955,7 +956,7 @@ test "unclosed inline at end" {
         \\<input>:1:5: unclosed <em> tag
     ,
         \\_foo
-    , .{}, .{});
+    , .{});
 }
 
 test "unclosed inline in middle" {
@@ -965,5 +966,5 @@ test "unclosed inline in middle" {
         \\> Some **stuff
         \\
         \\And more.
-    , .{}, .{});
+    , .{});
 }

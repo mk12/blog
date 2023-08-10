@@ -5,7 +5,7 @@ const fs = std.fs;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Date = @import("Date.zig");
-const markdown = @import("markdown.zig");
+const Markdown = @import("Markdown.zig");
 const Status = @import("Metadata.zig").Status;
 const Post = @import("Post.zig");
 const Scanner = @import("Scanner.zig");
@@ -240,10 +240,11 @@ fn renderDate(status: Status, style: Date.Style) Value {
     };
 }
 
-fn renderMarkdown(span: Span, post: Post, options: markdown.Options) Value {
+fn renderMarkdown(span: Span, post: Post, options: Markdown.Options) Value {
     return Value{
         .markdown = .{
-            .document = markdown.Document{
+            // TODO helper method for this? same doc new span
+            .document = Markdown{
                 .filename = post.document.filename,
                 .body = span,
                 .links = post.document.links,
