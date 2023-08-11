@@ -124,10 +124,8 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![
     var iter = iterable.iterate();
     while (try iter.next()) |entry| {
         if (entry.name[0] == '.') continue;
-        var file = try iterable.dir.openFile(entry.name, .{});
-        defer file.close();
         var scanner = Scanner{
-            .source = try file.readToEndAlloc(allocator, max_file_size),
+            .source = try iterable.dir.readFileAlloc(allocator, entry.name, max_file_size),
             .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
             .reporter = reporter,
         };
@@ -159,10 +157,8 @@ fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(T
     var iter = templates.iterator();
     while (iter.next()) |entry| {
         const name = entry.key_ptr.*;
-        var file = try iterable.dir.openFile(name, .{});
-        defer file.close();
         var scanner = Scanner{
-            .source = try file.readToEndAlloc(allocator, max_file_size),
+            .source = try iterable.dir.readFileAlloc(allocator, name, max_file_size),
             .filename = try fs.path.join(allocator, &.{ template_dir, name }),
             .reporter = reporter,
         };
