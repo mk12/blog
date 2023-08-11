@@ -161,13 +161,6 @@ const Tokenizer = struct {
         return Tokenizer{ .scanner = scanner };
     }
 
-    fn filename(self: Tokenizer) []const u8 {
-        // TODO instead of making things pub here,
-        // probably separate Handle or something passed to Hooks
-        // which provides filename and has ability to fail on the URL token
-        return self.scanner.filename;
-    }
-
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
         const location = if (self.peeked) |token| token.location else self.scanner.location;
         return self.scanner.failAt(location, format, args);
@@ -175,6 +168,10 @@ const Tokenizer = struct {
 
     fn failOn(self: Tokenizer, token: Token, comptime format: []const u8, args: anytype) Reporter.Error {
         return self.scanner.failAt(token.location, format, args);
+    }
+
+    fn handle(self: *const Tokenizer, token: Token) Handle {
+        return Handle{ .tokenizer = self, .location = token.location };
     }
 
     fn next(self: *Tokenizer) !?Token {
@@ -348,24 +345,28 @@ const Tokenizer = struct {
                         const end_of_text = scanner.offset + i;
                         i += 2;
                         const start_of_url = scanner.offset + i;
+                        const start_of_url_location = scanner.peekLocation(i);
                         while (scanner.peek(i)) |ch| : (i += 1) if (ch == ')') break;
                         if (scanner.peek(i) == ')') {
                             const closing_paren = scanner.offset + i;
                             i += 1;
                             const after_closing_paren = scanner.offset + i;
                             self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
+                            location = start_of_url_location;
                             break :blk .{ .@"[...](x)" = scanner.source[start_of_url..closing_paren] };
                         }
                     } else if (scanner.peek(i) == ']' and scanner.peek(i + 1) == '[') {
                         const end_of_text = scanner.offset + i;
                         i += 2;
                         const start_of_label = scanner.offset + i;
+                        const start_of_label_location = scanner.peekLocation(i);
                         while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
                         if (scanner.peek(i) == ']') {
                             const closing_bracket = scanner.offset + i;
                             i += 1;
                             const after_closing_bracket = scanner.offset + i;
                             self.jump_over_link = .{ .from = end_of_text, .to = after_closing_bracket };
+                            location = start_of_label_location;
                             break :blk .{ .@"[...][x]" = scanner.source[start_of_label..closing_bracket] };
                         }
                     } else if (scanner.peek(i) == ']') {
@@ -495,10 +496,24 @@ pub const Options = struct {
 };
 
 pub const DefaultHooks = struct {
-    fn writeUrl(self: DefaultHooks, writer: anytype, tokenizer: Tokenizer, url: []const u8) !void {
+    fn writeUrl(self: DefaultHooks, writer: anytype, handle: Handle, url: []const u8) !void {
         _ = self;
-        _ = tokenizer;
+        _ = handle;
         try writer.writeAll(url);
+    }
+};
+
+// TODO maybe rename
+pub const Handle = struct {
+    tokenizer: *const Tokenizer,
+    location: Location,
+
+    pub fn filename(self: Handle) []const u8 {
+        return self.tokenizer.scanner.filename;
+    }
+
+    pub fn fail(self: Handle, comptime format: []const u8, args: anytype) Reporter.Error {
+        return self.tokenizer.scanner.failAt(self.location, format, args);
     }
 };
 
@@ -664,14 +679,14 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 // TODO hooks for links, to resolve links to other pages, etc.
                 .@"[...](x)" => |url| {
                     try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, tokenizer, url);
+                    try hooks.writeUrl(writer, tokenizer.handle(token), url);
                     try writer.writeAll("\">");
                 },
                 .@"[...][x]" => |label| {
                     const url = links.get(label) orelse
                         return tokenizer.failOn(token, "link label '{s}' is not defined", .{label});
                     try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, tokenizer, url);
+                    try hooks.writeUrl(writer, tokenizer.handle(token), url);
                     try writer.writeAll("\">");
                 },
                 .@"]" => try writer.writeAll("</a>"),
@@ -694,6 +709,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
 }
 
 fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: Options) !void {
+    try expectRenderSuccessWithHooks(expected_html, source, options, DefaultHooks{});
+}
+
+fn expectRenderSuccessWithHooks(expected_html: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -702,11 +721,15 @@ fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: O
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const markdown = try parse(allocator, &scanner);
     var actual_html = std.ArrayList(u8).init(allocator);
-    try markdown.render(&reporter, actual_html.writer(), DefaultHooks{}, options);
+    try markdown.render(&reporter, actual_html.writer(), hooks, options);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
 fn expectRenderFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
+    try expectRenderFailureWithHooks(expected_message, source, options, DefaultHooks{});
+}
+
+fn expectRenderFailureWithHooks(expected_message: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -715,7 +738,7 @@ fn expectRenderFailure(expected_message: []const u8, source: []const u8, options
     const markdown = try parse(allocator, &scanner);
     try reporter.expectFailure(
         expected_message,
-        markdown.render(&reporter, std.io.null_writer, DefaultHooks{}, options),
+        markdown.render(&reporter, std.io.null_writer, hooks, options),
     );
 }
 
@@ -1060,4 +1083,54 @@ test "exceed max block tag depth" {
     ,
         \\> > > > > > > > -
     , .{});
+}
+
+test "writeUrl hook" {
+    const hooks = struct {
+        data: []const u8 = "data",
+
+        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
+            try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, handle.filename(), self.data });
+        }
+    }{};
+    try expectRenderSuccessWithHooks(
+        \\<p><a href="hook got //example.com in <input>, can access data">text</a></p>
+    ,
+        \\[text](//example.com)
+    , .{}, hooks);
+}
+
+test "failure in writeUrl hook (inline)" {
+    const hooks = struct {
+        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
+            _ = writer;
+            _ = self;
+            return handle.fail("{s}: bad url", .{url});
+        }
+    }{};
+    try expectRenderFailureWithHooks(
+        \\<input>:2:12: xyz: bad url
+    ,
+        \\[some
+        \\link text](xyz)
+    , .{}, hooks);
+}
+
+test "failure in writeUrl hook (reference)" {
+    const hooks = struct {
+        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
+            _ = writer;
+            _ = self;
+            return handle.fail("{s}: bad url", .{url});
+        }
+    }{};
+    // It points to the reference, not the actual URL, because storing Spans in
+    // LinkMap would require a full traversal to count newlines.
+    try expectRenderFailureWithHooks(
+        \\<input>:2:12: xyz: bad url
+    ,
+        \\[some
+        \\link text][ref]
+        \\[ref]: xyz
+    , .{}, hooks);
 }

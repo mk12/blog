@@ -32,7 +32,7 @@ pub fn generate(args: struct {
     defer dirs.close();
     const base_url = BaseUrl.init(args.base_url);
     const templates = try Templates.init(reporter, args.templates);
-    const hooks = Hooks{ .base_url = base_url };
+    const hooks = Hooks{ .allocator = allocator, .base_url = base_url };
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
@@ -133,12 +133,16 @@ const BaseUrl = struct {
 };
 
 const Hooks = struct {
+    allocator: Allocator,
     base_url: BaseUrl,
 
-    pub fn writeUrl(self: Hooks, writer: anytype, tokenizer: Markdown.Tokenizer, url: []const u8) !void {
-        if (std.mem.endsWith(u8, url, ".md")) {}
-        _ = self;
-        try writer.writeAll(url);
+    pub fn writeUrl(self: Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+        if (std.mem.startsWith(u8, url, "http")) {
+            return writer.writeAll(url);
+        }
+        const dir = fs.path.dirname(handle.filename()).?;
+        const dest = try fs.path.resolve(self.allocator, &.{ dir, url });
+        _ = dest;
     }
 };
 

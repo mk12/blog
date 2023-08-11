@@ -30,9 +30,21 @@ pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
     return if (offset >= self.source.len) null else self.source[offset];
 }
 
-// TODO revisit
+// TODO revisit, also test
 pub fn behind(self: Scanner, bytes_behind: usize) ?u8 {
     return if (self.offset < bytes_behind) null else self.source[self.offset - bytes_behind];
+}
+
+// TODO revisit, also test
+pub fn peekLocation(self: Scanner, bytes_ahead: usize) Location {
+    const upcoming = self.slice(bytes_ahead);
+    return Location{
+        .line = self.location.line + @as(u16, @intCast(mem.count(u8, upcoming, "\n"))),
+        .column = if (mem.lastIndexOfScalar(u8, upcoming, '\n')) |idx|
+            @intCast(upcoming.len - idx)
+        else
+            self.location.column + @as(u16, @intCast(upcoming.len)),
+    };
 }
 
 pub fn next(self: *Scanner) ?u8 {
@@ -162,6 +174,7 @@ test "single character" {
     try testing.expectEqual(@as(?u8, null), scanner.next());
 }
 
+// TODO consider doing "test peek" for stuff like this
 test "peek" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
