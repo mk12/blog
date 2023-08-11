@@ -40,7 +40,7 @@ pub fn generate(args: struct {
         .style_url = try base_url.join(allocator, "/style.css"),
         .blog_url = try base_url.join(allocator, "/"),
         .home_url = args.home_url,
-        .analytics = args.analytics, // TODO read file
+        .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
     });
     var scope = Scope.init(variables);
 
