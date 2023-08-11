@@ -137,12 +137,21 @@ const Hooks = struct {
     base_url: BaseUrl,
 
     pub fn writeUrl(self: Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
-        if (std.mem.startsWith(u8, url, "http")) {
-            return writer.writeAll(url);
-        }
+        if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
+        if (std.mem.indexOfScalar(u8, url, '#')) |_| return handle.fail("#id links are not implemented", .{});
         const dir = fs.path.dirname(handle.filename()).?;
         const dest = try fs.path.resolve(self.allocator, &.{ dir, url });
         _ = dest;
+        // TODO don't duplicate this in main.zig and here
+        const postsSlash = "posts/";
+        if (std.mem.startsWith(u8, url, postsSlash)) {
+            const rest = url[postsSlash.len..];
+            if (!std.mem.endsWith(u8, rest, ".md")) return handle.fail("{s}: expected .md extension", .{url});
+            // TODO don't duplicate this in Post.zig and here.
+            const slug = fs.path.stem(rest);
+            // TODO use base_url, make it support writer and allocator
+            try std.fmt.format(writer, "{s}/post/{s}/", .{ self.base_url.base, slug });
+        }
     }
 };
 

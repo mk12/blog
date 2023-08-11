@@ -652,6 +652,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             switch (token.value) {
                 .@"\n" => break,
+                // TODO generate id
                 .@"#" => |level| try blocks.push(writer, headingTag(level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
@@ -871,26 +872,26 @@ test "render nested inlines" {
 }
 
 test "render inline link" {
-    try expectRenderSuccess("<p><a href=\"//example.com\">foo</a></p>", "[foo](//example.com)", .{});
+    try expectRenderSuccess("<p><a href=\"#bar\">foo</a></p>", "[foo](#bar)", .{});
 }
 
 test "render reference link" {
     try expectRenderSuccess(
-        \\<p>Look at <a href="//example.com">foo</a>.</p>
+        \\<p>Look at <a href="https://example.com">foo</a>.</p>
     ,
         \\Look at [foo][bar].
         \\
-        \\[bar]: //example.com
+        \\[bar]: https://example.com
     , .{});
 }
 
 test "render shortcut reference link" {
     try expectRenderSuccess(
-        \\<p>Look at <a href="//example.com">foo</a>.</p>
+        \\<p>Look at <a href="https://example.com">foo</a>.</p>
     ,
         \\Look at [foo].
         \\
-        \\[foo]: //example.com
+        \\[foo]: https://example.com
     , .{});
 }
 
@@ -1094,9 +1095,9 @@ test "writeUrl hook" {
         }
     }{};
     try expectRenderSuccessWithHooks(
-        \\<p><a href="hook got //example.com in <input>, can access data">text</a></p>
+        \\<p><a href="hook got #foo in <input>, can access data">text</a></p>
     ,
-        \\[text](//example.com)
+        \\[text](#foo)
     , .{}, hooks);
 }
 
@@ -1124,8 +1125,9 @@ test "failure in writeUrl hook (reference)" {
             return handle.fail("{s}: bad url", .{url});
         }
     }{};
-    // It points to the reference, not the actual URL, because storing Spans in
-    // LinkMap would require a full traversal to count newlines.
+    // It would be nicer to point to the actual "xyz", not the "ref".
+    // We could do that by storing Span in LinkMap, but that would require a
+    // full extra traversal to count newlines, which I don't want to do.
     try expectRenderFailureWithHooks(
         \\<input>:2:12: xyz: bad url
     ,
