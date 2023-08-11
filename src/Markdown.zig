@@ -1,6 +1,7 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
 const std = @import("std");
+const fmt = std.fmt;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Reporter = @import("Reporter.zig");
@@ -518,19 +519,19 @@ fn Stack(comptime T: type) type {
         fn writeOpenTag(self: Self, writer: anytype, item: T) !void {
             if (T == BlockTag) if (self.footnote) |number| switch (item) {
                 .ol => return writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
-                .li => return std.fmt.format(writer, "<li id=\"fn:{s}\">", .{number}),
+                .li => return fmt.format(writer, "<li id=\"fn:{s}\">", .{number}),
                 else => {},
             };
-            try std.fmt.format(writer, "<{s}>", .{@tagName(item)});
+            try fmt.format(writer, "<{s}>", .{@tagName(item)});
         }
 
         fn pop(self: *Self, writer: anytype) !void {
             var item = self.items.pop();
             if (T == BlockTag and item == .li) if (self.footnote) |number|
-                try std.fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a>", .{number});
+                try fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a>", .{number});
             if (T == BlockTag and item == .ol) self.footnote = null;
             if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
-            try std.fmt.format(writer, "</{s}>", .{@tagName(item)});
+            try fmt.format(writer, "</{s}>", .{@tagName(item)});
         }
 
         fn truncate(self: *Self, writer: anytype, new_len: usize) !void {
@@ -624,7 +625,7 @@ pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, opti
                 .@"* * *" => try writer.writeAll("<hr>"),
                 // TODO: syntax highlighting (incremental)
                 // TODO: handle when ``` is both opening and closing
-                .@"```x" => |lang| try std.fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
+                .@"```x" => |lang| try fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
                 .@"```" => try writer.writeAll("</code></pre>"),
                 .@"[^x]: " => |number| {
                     blocks.footnote = number;
@@ -635,18 +636,18 @@ pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, opti
                 .@"&" => try writer.writeAll("&amp;"),
                 .escaped => |char| try writer.writeByte(char),
                 .@"[^x]" => |number| if (!options.first_block_only)
-                    try std.fmt.format(writer,
+                    try fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
                 ._ => try inlines.pushOrPop(writer, .em),
                 .@"**" => try inlines.pushOrPop(writer, .strong),
                 .@"`" => try inlines.pushOrPop(writer, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
-                .@"[...](x)" => |url| try std.fmt.format(writer, "<a href=\"{s}\">", .{url}),
+                .@"[...](x)" => |url| try fmt.format(writer, "<a href=\"{s}\">", .{url}),
                 .@"[...][x]" => |label| {
                     const url = links.get(label) orelse
                         return tokenizer.failOn(token, "link label '{s}' is not defined", .{label});
-                    try std.fmt.format(writer, "<a href=\"{s}\">", .{url});
+                    try fmt.format(writer, "<a href=\"{s}\">", .{url});
                 },
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
