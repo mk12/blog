@@ -32,6 +32,7 @@ pub fn generate(args: struct {
     defer dirs.close();
     const base_url = BaseUrl.init(args.base_url);
     const templates = try Templates.init(reporter, args.templates);
+    const hooks = Hooks{ .base_url = base_url };
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
@@ -55,7 +56,7 @@ pub fn generate(args: struct {
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
-        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &scope, posts, page);
+        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, hooks, &scope, posts, page);
     }
 
     for (posts, 0..) |post, i| {
@@ -64,7 +65,7 @@ pub fn generate(args: struct {
             .newer = if (i > 0) &posts[i - 1] else null,
             .older = if (i < posts.len - 1) &posts[i + 1] else null,
         };
-        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &scope, post, neighbors);
+        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, hooks, &scope, post, neighbors);
     }
 }
 
@@ -131,12 +132,23 @@ const BaseUrl = struct {
     }
 };
 
+const Hooks = struct {
+    base_url: BaseUrl,
+
+    pub fn writeUrl(self: Hooks, writer: anytype, tokenizer: Markdown.Tokenizer, url: []const u8) !void {
+        if (std.mem.endsWith(u8, url, ".md")) {}
+        _ = self;
+        try writer.writeAll(url);
+    }
+};
+
 fn generatePage(
     allocator: Allocator,
     reporter: *Reporter,
     dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
+    hooks: Hooks,
     parent: *const Scope,
     posts: []const Post,
     page: Page,
@@ -175,7 +187,7 @@ fn generatePage(
     };
     var scope = parent.initChild(variables);
     var buffer = std.io.bufferedWriter(file.writer());
-    try template.execute(allocator, reporter, buffer.writer(), &scope);
+    try template.execute(allocator, reporter, buffer.writer(), hooks, &scope);
     try buffer.flush();
 }
 
@@ -213,6 +225,7 @@ fn generatePost(
     dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
+    hooks: Hooks,
     parent: *const Scope,
     post: Post,
     neighbors: Neighbors,
@@ -231,7 +244,7 @@ fn generatePost(
     });
     var scope = parent.initChild(variables);
     var buffer = std.io.bufferedWriter(file.writer());
-    try templates.@"post.html".execute(allocator, reporter, buffer.writer(), &scope);
+    try templates.@"post.html".execute(allocator, reporter, buffer.writer(), hooks, &scope);
     try buffer.flush();
 }
 

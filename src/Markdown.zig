@@ -148,7 +148,6 @@ const TokenValue = union(enum) {
 
 const Tokenizer = struct {
     scanner: *Scanner,
-
     peeked: ?Token = null,
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
@@ -160,6 +159,13 @@ const Tokenizer = struct {
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
         return Tokenizer{ .scanner = scanner };
+    }
+
+    fn filename(self: Tokenizer) []const u8 {
+        // TODO instead of making things pub here,
+        // probably separate Handle or something passed to Hooks
+        // which provides filename and has ability to fail on the URL token
+        return self.scanner.filename;
     }
 
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
@@ -488,6 +494,34 @@ pub const Options = struct {
     shift_heading_level: i8 = 0,
 };
 
+pub const DefaultHooks = struct {
+    fn writeUrl(self: DefaultHooks, writer: anytype, tokenizer: Tokenizer, url: []const u8) !void {
+        _ = self;
+        _ = tokenizer;
+        try writer.writeAll(url);
+    }
+};
+
+pub fn render(
+    self: Markdown,
+    reporter: *Reporter,
+    writer: anytype,
+    hooks: anytype,
+    options: Options,
+) !void {
+    var scanner = Scanner{
+        .source = self.span.text,
+        .reporter = reporter,
+        .filename = self.context.filename,
+        .location = self.span.location,
+    };
+    var tokenizer = try Tokenizer.init(&scanner);
+    return renderImpl(&tokenizer, writer, hooks, self.context.links, options) catch |err| switch (err) {
+        error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
+        else => return err,
+    };
+}
+
 const max_tag_depth = 8;
 
 fn Stack(comptime T: type) type {
@@ -568,22 +602,7 @@ fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
     };
 }
 
-pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, options: Options) !void {
-    var scanner = Scanner{
-        .source = self.span.text,
-        .reporter = reporter,
-        .filename = self.context.filename,
-        .location = self.span.location,
-    };
-    var tokenizer = try Tokenizer.init(&scanner);
-    return renderHelper(&tokenizer, writer, self.context.links, options) catch |err| switch (err) {
-        error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
-        else => return err,
-    };
-}
-
-// TODO should it live in Tokenizer (and rename it)? or not
-pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, options: Options) !void {
+fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var first_iteration = true;
@@ -643,11 +662,17 @@ pub fn renderHelper(tokenizer: *Tokenizer, writer: anytype, links: LinkMap, opti
                 .@"**" => try inlines.pushOrPop(writer, .strong),
                 .@"`" => try inlines.pushOrPop(writer, .code),
                 // TODO hooks for links, to resolve links to other pages, etc.
-                .@"[...](x)" => |url| try fmt.format(writer, "<a href=\"{s}\">", .{url}),
+                .@"[...](x)" => |url| {
+                    try writer.writeAll("<a href=\"");
+                    try hooks.writeUrl(writer, tokenizer, url);
+                    try writer.writeAll("\">");
+                },
                 .@"[...][x]" => |label| {
                     const url = links.get(label) orelse
                         return tokenizer.failOn(token, "link label '{s}' is not defined", .{label});
-                    try fmt.format(writer, "<a href=\"{s}\">", .{url});
+                    try writer.writeAll("<a href=\"");
+                    try hooks.writeUrl(writer, tokenizer, url);
+                    try writer.writeAll("\">");
                 },
                 .@"]" => try writer.writeAll("</a>"),
                 // TODO can combine some of these, write @tagName.
@@ -677,7 +702,7 @@ fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: O
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const markdown = try parse(allocator, &scanner);
     var actual_html = std.ArrayList(u8).init(allocator);
-    try markdown.render(&reporter, actual_html.writer(), options);
+    try markdown.render(&reporter, actual_html.writer(), DefaultHooks{}, options);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
@@ -688,7 +713,10 @@ fn expectRenderFailure(expected_message: []const u8, source: []const u8, options
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const markdown = try parse(allocator, &scanner);
-    try reporter.expectFailure(expected_message, markdown.render(&reporter, std.io.null_writer, options));
+    try reporter.expectFailure(
+        expected_message,
+        markdown.render(&reporter, std.io.null_writer, DefaultHooks{}, options),
+    );
 }
 
 test "render empty string" {

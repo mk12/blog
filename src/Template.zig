@@ -486,14 +486,20 @@ pub fn execute(
     allocator: Allocator,
     reporter: *Reporter,
     writer: anytype,
+    hooks: anytype,
     scope: *Scope,
 ) !void {
-    const ctx = ExecuteContext(@TypeOf(writer)){ .allocator = allocator, .reporter = reporter, .writer = writer };
+    const ctx = ExecuteContext(@TypeOf(writer), @TypeOf(hooks)){
+        .allocator = allocator,
+        .reporter = reporter,
+        .writer = writer,
+        .hooks = hooks,
+    };
     return self.exec(ctx, scope);
 }
 
-fn ExecuteContext(comptime Writer: type) type {
-    return struct { allocator: Allocator, reporter: *Reporter, writer: Writer };
+fn ExecuteContext(comptime Writer: type, comptime Hooks: type) type {
+    return struct { allocator: Allocator, reporter: *Reporter, writer: Writer, hooks: Hooks };
 }
 
 pub const Scope = struct {
@@ -542,7 +548,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
             .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(ctx.writer, args.style),
-            .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, args.options),
+            .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
                 command.location,
@@ -597,7 +603,7 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
     var actual = std.ArrayList(u8).init(allocator);
-    try template.execute(allocator, &reporter, actual.writer(), &scope);
+    try template.execute(allocator, &reporter, actual.writer(), Markdown.DefaultHooks{}, &scope);
     try testing.expectEqualStrings(expected, actual.items);
 }
 
@@ -614,7 +620,7 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     var scope = Scope.init(value);
     try reporter.expectFailure(
         expected_message,
-        template.execute(allocator, &reporter, std.io.null_writer, &scope),
+        template.execute(allocator, &reporter, std.io.null_writer, Markdown.DefaultHooks{}, &scope),
     );
 }
 
