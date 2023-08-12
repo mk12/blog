@@ -4,6 +4,7 @@ const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
+const highlight = @import("highlight.zig").highlight;
 const Allocator = std.mem.Allocator;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
@@ -113,8 +114,7 @@ const TokenValue = union(enum) {
     @"1.",
     @">",
     @"* * *",
-    @"```x": []const u8,
-    @"```",
+    @"```x\n": ?[]const u8,
     // @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
@@ -141,7 +141,7 @@ const TokenValue = union(enum) {
     @" -- ",
     @"...",
 
-    // Neither block nor inline
+    // Used for both block and inline
     @"]",
 
     fn is_inline(self: TokenValue) bool {
@@ -241,15 +241,7 @@ const Tokenizer = struct {
                 '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n') break :blk .@">",
                 '`' => if (scanner.attempt("``")) {
                     const span = try scanner.until('\n');
-                    _ = span;
-                    // TODO: This is temporary, to avoid interpreting code as Markdown.
-                    while (true) {
-                        _ = try scanner.until('`');
-                        if (scanner.attempt("``")) break;
-                    }
-                    break :blk .{ .text = scanner.source[offset..scanner.offset] };
-                    // if (span.text.len == 0) break :blk .@"```";
-                    // break :blk .{ .@"```x" = span.text };
+                    break :blk .{ .@"```x\n" = if (span.text.len > 0) span.text else null };
                 },
                 '$' => if (scanner.eatIf('$')) {
                     // TODO: This is temporary, to avoid interpreting math as Markdown.
@@ -511,6 +503,7 @@ test "tokenize figure" {
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,
+    highlight_code: bool = false,
     auto_heading_ids: bool = false,
     shift_heading_level: i8 = 0,
 };
@@ -765,10 +758,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
                 .@"* * *" => try writer.writeAll("<hr>"),
-                // TODO: syntax highlighting (incremental)
-                // TODO: handle when ``` is both opening and closing
-                .@"```x" => |lang| try fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
-                .@"```" => try writer.writeAll("</code></pre>"),
+                .@"```x\n" => |lang| {
+                    try writer.writeAll("<pre><code>");
+                    try highlight(writer, tokenizer.scanner, if (options.highlight_code) lang else null);
+                    try writer.writeAll("</code></pre>");
+                },
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
                     try blocks.push(writer, .figure);
@@ -1169,6 +1163,26 @@ test "render nested blockquotes" {
         \\> >
         \\> > End
     , .{});
+}
+
+test "render code block" {
+    try expectRenderSuccess("<pre><code>Foo</code></pre>", "```\nFoo\n```", .{});
+}
+
+test "render code block with language but no highlighting" {
+    try expectRenderSuccess("<pre><code>Foo</code></pre>", "```html\nFoo\n```", .{});
+}
+
+test "render code block with special characters" {
+    // TODO
+
+    // try expectRenderSuccess(
+    //     \\<pre><code>&lt;foo> [bar] `baz` _qux_ &amp; \</code></pre>
+    // ,
+    //     \\```
+    //     \\<foo> [bar] `baz` _qux_ & \
+    //     \\```
+    // , .{});
 }
 
 test "render smart typography" {
