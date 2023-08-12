@@ -137,6 +137,7 @@ const BaseUrl = struct {
 const Hooks = struct {
     allocator: Allocator,
     base_url: BaseUrl,
+    embedded_assets: std.StringArrayHashMapUnmanaged([]const u8) = .{},
     linked_assets: std.StringHashMapUnmanaged(void) = .{},
     dirs: *const Directories,
 
@@ -156,10 +157,25 @@ const Hooks = struct {
             const slug = Post.parseSlug(filename);
             // TODO use base_url, make it support writer and allocator
             try std.fmt.format(writer, "{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
-        } else if (std.mem.startsWith(u8, dest, "assets/svg/")) {
-            //
+        } else {
+            return handle.fail("{s}: cannot resolve internal url", .{url});
+        }
+    }
+
+    pub fn writeImage(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+        // TODO: eliminate duplication with writeUrl
+        const source_dir = fs.path.dirname(handle.filename()).?;
+        const dest = try fs.path.resolve(self.allocator, &.{ source_dir, url });
+        if (std.mem.startsWith(u8, dest, "assets/svg/")) {
+            // TODO: make SVGs use CSS variables for dark/light mode
+            const filename = dest["assets/svg/".len..];
+            const result = try self.embedded_assets.getOrPut(self.allocator, filename);
+            if (!result.found_existing) {
+                const data = try fs.cwd().readFileAlloc(self.allocator, dest, 1024 * 1024);
+                result.value_ptr.* = std.mem.trimRight(u8, data, "\n");
+            }
+            try writer.writeAll(result.value_ptr.*);
         } else if (std.mem.startsWith(u8, dest, "assets/img/")) {
-            // TODO need to be separate function that renders figure
             const filename = dest["assets/img/".len..];
             const result = try self.linked_assets.getOrPut(self.allocator, filename);
             if (!result.found_existing) {
@@ -168,17 +184,11 @@ const Hooks = struct {
                     else => return err,
                 };
             }
+            try std.fmt.format(writer, "<img src=\"/img/{s}\">", .{filename});
         } else {
             return handle.fail("{s}: cannot resolve internal url", .{url});
         }
     }
-
-    // pub fn writeImage(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
-    //     _ = url;
-    //     _ = handle;
-    //     _ = writer;
-    //     _ = self;
-    // }
 };
 
 fn generatePage(
