@@ -3,6 +3,7 @@
 const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
@@ -115,7 +116,8 @@ const TokenValue = union(enum) {
     @"```x": []const u8,
     @"```",
     // @"$$",
-    // @"![...](x)": []const u8,
+    @"![...](x)": []const u8,
+    @"![...][x]": []const u8,
     @"[^x]: ": []const u8,
     // TODO: figures, tables
 
@@ -131,7 +133,6 @@ const TokenValue = union(enum) {
     @"`",
     @"[...](x)": []const u8,
     @"[...][x]": []const u8,
-    @"]",
     lsquo,
     rsquo,
     ldquo,
@@ -139,6 +140,9 @@ const TokenValue = union(enum) {
     @"--",
     @" -- ",
     @"...",
+
+    // Neither block nor inline
+    @"]",
 
     fn is_inline(self: TokenValue) bool {
         return @intFromEnum(self) >= @intFromEnum(TokenValue.text);
@@ -320,6 +324,12 @@ const Tokenizer = struct {
                         const span = try scanner.until(']');
                         break :blk .{ .@"[^x]" = span.text };
                     }
+                    const after_lbracket = offset;
+                    const is_image = scanner.behind(2) == '!';
+                    if (is_image) {
+                        offset -= 1;
+                        location.column -= 1;
+                    }
                     var i: usize = 0;
                     // TODO should not have to check again after loop, need "until" without consuming
                     while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
@@ -330,7 +340,10 @@ const Tokenizer = struct {
                         else => {
                             const end_of_text = scanner.offset + i;
                             self.jump_over_link = .{ .from = end_of_text, .to = end_of_text + 1 };
-                            break :blk .{ .@"[...][x]" = scanner.source[offset + 1 .. end_of_text] };
+                            const tag = if (is_image) "![...][x]" else "[...][x]";
+                            _ = tag;
+                            const label = scanner.source[after_lbracket + 1 .. end_of_text];
+                            break :blk if (is_image) .{ .@"![...][x]" = label } else .{ .@"[...][x]" = label };
                         },
                     };
                     const end_of_text = scanner.offset + i;
@@ -344,10 +357,10 @@ const Tokenizer = struct {
                     const after_closing_paren = scanner.offset + i;
                     self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
                     location = start_of_url_location;
-                    const url = scanner.source[start_of_url..closing_paren];
+                    const url_or_label = scanner.source[start_of_url..closing_paren];
                     break :blk switch (closing_char) {
-                        ')' => .{ .@"[...](x)" = url },
-                        ']' => .{ .@"[...][x]" = url },
+                        ')' => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+                        ']' => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
                         else => unreachable,
                     };
                 },
@@ -467,6 +480,16 @@ test "tokenize inline link" {
     );
 }
 
+test "tokenize figure" {
+    try expectTokens(&[_]TokenValue{
+        .{ .@"![...](x)" = "bar" },
+        .{ .text = "Foo" },
+        .@"]",
+    },
+        \\![Foo](bar)
+    );
+}
+
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,
@@ -474,13 +497,26 @@ pub const Options = struct {
     shift_heading_level: i8 = 0,
 };
 
-pub const DefaultHooks = struct {
-    fn writeUrl(self: DefaultHooks, writer: anytype, handle: Handle, url: []const u8) !void {
-        _ = self;
-        _ = handle;
-        try writer.writeAll(url);
-    }
-};
+fn WithDefaultHooks(comptime Inner: type) type {
+    return struct {
+        const Self = @This();
+        const Underlying = switch (@typeInfo(Inner)) {
+            .Pointer => |info| info.child,
+            else => Inner,
+        };
+        inner: Inner,
+
+        fn writeUrl(self: Self, writer: anytype, handle: Handle, url: []const u8) !void {
+            if (@hasDecl(Underlying, "writeUrl")) return self.inner.writeUrl(writer, handle, url);
+            try writer.writeAll(url);
+        }
+
+        fn writeImage(self: Self, writer: anytype, handle: Handle, url: []const u8) !void {
+            if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, handle, url);
+            try fmt.format(writer, "<img src=\"{s}\">", .{url});
+        }
+    };
+}
 
 // TODO maybe rename
 pub const Handle = struct {
@@ -510,7 +546,8 @@ pub fn render(
         .location = self.span.location,
     };
     var tokenizer = try Tokenizer.init(&scanner);
-    return renderImpl(&tokenizer, writer, hooks, self.context.links, options) catch |err| switch (err) {
+    const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
+    return renderImpl(&tokenizer, writer, full_hooks, self.context.links, options) catch |err| switch (err) {
         error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
         else => return err,
     };
@@ -531,12 +568,16 @@ fn Stack(comptime Tag: type) type {
             return self.items.get(i);
         }
 
-        fn last(self: Self) ?Tag {
+        fn top(self: Self) ?Tag {
             return if (self.len() == 0) null else self.items.get(self.len() - 1);
         }
 
         fn push(self: *Self, writer: anytype, item: Tag) !void {
             try item.writeOpenTag(writer);
+            try self.pushWithoutWriting(item);
+        }
+
+        fn pushWithoutWriting(self: *Self, item: Tag) !void {
             self.items.append(item) catch |err| return switch (err) {
                 error.Overflow => error.ExceededMaxTagDepth,
             };
@@ -547,7 +588,7 @@ fn Stack(comptime Tag: type) type {
         }
 
         fn toggle(self: *Self, writer: anytype, item: Tag) !void {
-            try if (self.last() == item) self.pop(writer) else self.push(writer, item);
+            try if (self.top() == item) self.pop(writer) else self.push(writer, item);
         }
 
         fn truncate(self: *Self, writer: anytype, new_len: usize) !void {
@@ -557,15 +598,18 @@ fn Stack(comptime Tag: type) type {
 }
 
 const BlockTag = union(enum) {
+    // TODO reorder these
     p,
     li,
     footnote_li: []const u8,
     // I'm making this fit in 8 bytes just because I can.
     h: struct { source: ?[*]const u8, source_len: u32, level: u8 },
+    figcaption,
     ul,
     ol,
     footnote_ol,
     blockquote,
+    figure,
 
     fn heading(source: []const u8, level: u8, options: Options) BlockTag {
         const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
@@ -589,8 +633,8 @@ const BlockTag = union(enum) {
 
     fn goesOnItsOwnLine(self: BlockTag) bool {
         return switch (self) {
-            .p, .li, .footnote_li, .h => false,
-            .ul, .ol, .footnote_ol, .blockquote => true,
+            .p, .li, .footnote_li, .h, .figcaption => false,
+            .ul, .ol, .footnote_ol, .blockquote, .figure => true,
         };
     }
 
@@ -625,6 +669,7 @@ const InlineTag = enum {
     em,
     strong,
     code,
+    a,
 
     fn writeOpenTag(self: InlineTag, writer: anytype) !void {
         try fmt.format(writer, "<{s}>", .{@tagName(self)});
@@ -650,6 +695,15 @@ fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
     };
 }
 
+fn maybeLookupUrl(tokenizer: *const Tokenizer, token: Token, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(TokenValue)) ![]const u8 {
+    return switch (tag) {
+        .@"[...](x)", .@"![...](x)" => url_or_label,
+        .@"[...][x]", .@"![...][x]" => links.get(url_or_label) orelse
+            tokenizer.failOn(token, "link label '{s}' is not defined", .{url_or_label}),
+        else => unreachable,
+    };
+}
+
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
@@ -660,7 +714,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
         var num_blocks_open: usize = 0;
         while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .footnote_li, .h => break,
+                .p, .li, .footnote_li, .h, .figcaption, .figure => break,
                 .ul => if (token.value != .@"-") break,
                 .ol => if (token.value != .@"1.") break,
                 .footnote_ol => switch (token.value) {
@@ -679,7 +733,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
         while (true) {
             if (need_implicit_block and token.value.is_inline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
-                    if (BlockTag.implicitChild(blocks.last(), footnote_label)) |block|
+                    if (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
             }
@@ -697,6 +751,13 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 // TODO: handle when ``` is both opening and closing
                 .@"```x" => |lang| try fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
                 .@"```" => try writer.writeAll("</code></pre>"),
+                inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
+                    const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
+                    try blocks.push(writer, .figure);
+                    try hooks.writeImage(writer, tokenizer.handle(token), url);
+                    try writer.writeByte('\n');
+                    try blocks.push(writer, .figcaption);
+                },
                 .@"[^x]: " => |label| {
                     footnote_label = label;
                     try blocks.push(writer, .footnote_ol);
@@ -712,19 +773,21 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 ._ => try inlines.toggle(writer, .em),
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
-                .@"[...](x)" => |url| {
+                inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
+                    const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
                     try hooks.writeUrl(writer, tokenizer.handle(token), url);
                     try writer.writeAll("\">");
+                    try inlines.pushWithoutWriting(.a);
                 },
-                .@"[...][x]" => |label| {
-                    const url = links.get(label) orelse
-                        return tokenizer.failOn(token, "link label '{s}' is not defined", .{label});
-                    try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, tokenizer.handle(token), url);
-                    try writer.writeAll("\">");
+                .@"]" => if (inlines.top() == .a) {
+                    try inlines.pop(writer);
+                } else {
+                    assert(std.meta.activeTag(blocks.top().?) == .figcaption);
+                    try blocks.pop(writer);
+                    assert(std.meta.activeTag(blocks.top().?) == .figure);
+                    try blocks.pop(writer);
                 },
-                .@"]" => try writer.writeAll("</a>"),
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
                 .ldquo => try writer.writeAll("“"),
@@ -735,15 +798,15 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             token = try tokenizer.next() orelse break :outer;
         }
-        if (inlines.last()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
+        if (inlines.top()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
-    if (inlines.last()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
+    if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
     try blocks.truncate(writer, 0);
 }
 
 fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: Options) !void {
-    try expectRenderSuccessWithHooks(expected_html, source, options, DefaultHooks{});
+    try expectRenderSuccessWithHooks(expected_html, source, options, .{});
 }
 
 fn expectRenderSuccessWithHooks(expected_html: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
@@ -760,7 +823,7 @@ fn expectRenderSuccessWithHooks(expected_html: []const u8, source: []const u8, o
 }
 
 fn expectRenderFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
-    try expectRenderFailureWithHooks(expected_message, source, options, DefaultHooks{});
+    try expectRenderFailureWithHooks(expected_message, source, options, .{});
 }
 
 fn expectRenderFailureWithHooks(expected_message: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
@@ -1106,6 +1169,43 @@ test "no footnotes if first block only" {
         \\Foo[^1].
         \\[^1]: second
     , .{ .first_block_only = true });
+}
+
+test "render figure (url)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\<figcaption>Some caption</figcaption>
+        \\</figure>
+    ,
+        \\![Some caption](rabbit.jpg)
+    , .{});
+}
+
+test "render figure (reference)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\<figcaption>Some caption</figcaption>
+        \\</figure>
+    ,
+        \\![Some caption][img]
+        \\
+        \\[img]: rabbit.jpg
+    , .{});
+}
+
+test "render figure (shortcut)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\<figcaption>Some caption</figcaption>
+        \\</figure>
+    ,
+        \\![Some caption]
+        \\
+        \\[Some caption]: rabbit.jpg
+    , .{});
 }
 
 test "unclosed inline at end" {

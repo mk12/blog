@@ -603,7 +603,7 @@ fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytyp
     var value = try Value.init(allocator, object);
     var scope = Scope.init(value);
     var actual = std.ArrayList(u8).init(allocator);
-    try template.execute(allocator, &reporter, actual.writer(), Markdown.DefaultHooks{}, &scope);
+    try template.execute(allocator, &reporter, actual.writer(), .{}, &scope);
     try testing.expectEqualStrings(expected, actual.items);
 }
 
@@ -620,7 +620,7 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     var scope = Scope.init(value);
     try reporter.expectFailure(
         expected_message,
-        template.execute(allocator, &reporter, std.io.null_writer, Markdown.DefaultHooks{}, &scope),
+        template.execute(allocator, &reporter, std.io.null_writer, .{}, &scope),
     );
 }
 

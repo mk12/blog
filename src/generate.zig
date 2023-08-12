@@ -172,6 +172,13 @@ const Hooks = struct {
             return handle.fail("{s}: cannot resolve internal url", .{url});
         }
     }
+
+    // pub fn writeImage(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+    //     _ = url;
+    //     _ = handle;
+    //     _ = writer;
+    //     _ = self;
+    // }
 };
 
 fn generatePage(
