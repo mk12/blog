@@ -148,8 +148,7 @@ const Hooks = struct {
         if (std.mem.startsWith(u8, url, postsSlash)) {
             const rest = url[postsSlash.len..];
             if (!std.mem.endsWith(u8, rest, ".md")) return handle.fail("{s}: expected .md extension", .{url});
-            // TODO don't duplicate this in Post.zig and here.
-            const slug = fs.path.stem(rest);
+            const slug = Post.parseSlug(rest);
             // TODO use base_url, make it support writer and allocator
             try std.fmt.format(writer, "{s}/post/{s}/", .{ self.base_url.base, slug });
         }

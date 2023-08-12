@@ -17,10 +17,14 @@ body: Span,
 context: Markdown.Context,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
-    const slug = std.fs.path.stem(scanner.filename);
+    const slug = parseSlug(scanner.filename);
     const meta = try Metadata.parse(scanner);
     const markdown = try Markdown.parse(allocator, scanner);
     return Post{ .slug = slug, .meta = meta, .body = markdown.span, .context = markdown.context };
+}
+
+pub fn parseSlug(filename: []const u8) []const u8 {
+    return std.fs.path.stem(filename);
 }
 
 test "parse" {
