@@ -65,6 +65,22 @@ pub fn eat(self: *Scanner, char: u8) void {
     }
 }
 
+// TODO revisit, also test
+pub fn eatIf(self: *Scanner, char: u8) bool {
+    if (self.peek(0)) |c| if (c == char) {
+        self.eat(c);
+        return true;
+    };
+    return false;
+}
+
+// TODO revisit, also test
+pub fn eatWhile(self: *Scanner, char: u8) usize {
+    const start = self.offset;
+    while (self.peek(0)) |c| if (c == char) self.eat(c) else break;
+    return self.offset - start;
+}
+
 pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
     assert(byte_count > 0);
     const location = self.location;

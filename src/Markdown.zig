@@ -215,22 +215,10 @@ const Tokenizer = struct {
                 break :blk .@"]";
             };
             const char = scanner.next() orelse return null;
-            // TODO: don't always have to peek, can consume if there is no need to backtrack
             if (self.block_allowed) switch (char) {
                 '#' => {
-                    var level: u8 = 1;
-                    while (scanner.peek(0)) |c| switch (c) {
-                        '#' => {
-                            scanner.eat(c);
-                            level += 1;
-                            if (level > 6) break;
-                        },
-                        ' ' => {
-                            scanner.eat(c);
-                            break :blk .{ .@"#" = level };
-                        },
-                        else => break,
-                    };
+                    const level: u8 = @intCast(1 + scanner.eatWhile('#'));
+                    if (level <= 6 and scanner.eatIf(' ')) break :blk .{ .@"#" = level };
                 },
                 '<' => if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
@@ -251,10 +239,7 @@ const Tokenizer = struct {
                     },
                     else => {},
                 },
-                '>' => {
-                    while (scanner.peek(0)) |c| if (c == ' ') scanner.eat(c) else break;
-                    break :blk .@">";
-                },
+                '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n') break :blk .@">",
                 '`' => if (scanner.attempt("``")) {
                     const span = try scanner.until('\n');
                     _ = span;
@@ -267,16 +252,13 @@ const Tokenizer = struct {
                     // if (span.text.len == 0) break :blk .@"```";
                     // break :blk .{ .@"```x" = span.text };
                 },
-                '$' => if (scanner.attempt("$")) {
+                '$' => if (scanner.eatIf('$')) {
                     // TODO: This is temporary, to avoid interpreting math as Markdown.
                     _ = try scanner.until('$');
                     try scanner.expect("$");
                     break :blk .{ .text = scanner.source[offset..scanner.offset] };
                 },
-                '-' => if (scanner.peek(0) == ' ') {
-                    _ = scanner.next();
-                    break :blk .@"-";
-                },
+                '-' => if (scanner.eatIf(' ')) break :blk .@"-",
                 '1'...'9' => {
                     var i: usize = 0;
                     while (scanner.peek(i)) |c| : (i += 1) switch (c) {
@@ -291,12 +273,9 @@ const Tokenizer = struct {
                         else => break,
                     };
                 },
-                '*' => if (scanner.attempt(" * *")) {
-                    const c = scanner.peek(0);
-                    if (c == null or c == '\n') break :blk .@"* * *";
-                },
-                '[' => if (scanner.peek(0) == '^') {
-                    _ = scanner.next();
+                '*' => if (scanner.attempt(" * *") and (scanner.eof() or scanner.eatIf('\n')))
+                    break :blk .@"* * *",
+                '[' => if (scanner.eatIf('^')) {
                     const span = try scanner.until(']');
                     // TODO: maybe shouldn't be an error here.
                     try scanner.expect(": ");
@@ -307,12 +286,7 @@ const Tokenizer = struct {
             self.block_allowed = false;
             switch (char) {
                 '\n' => {
-                    while (scanner.peek(0)) |c| if (c == '\n') {
-                        scanner.eat(c);
-                        self.in_raw_html_block = false;
-                    } else {
-                        break;
-                    };
+                    if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
                     break :blk .@"\n";
                 },
                 '`' => {
@@ -330,7 +304,7 @@ const Tokenizer = struct {
                     break :blk .@"<";
                 },
                 // Only escape ampersands in inline code. If regular text contains something
-                // that parses as an entity, you probably actually want an entity.
+                // that parses as an entity, you probably actually wanted an entity.
                 '&' => if (self.in_inline_code) break :blk .@"&",
                 else => if (self.in_inline_code) continue,
             }
@@ -341,8 +315,7 @@ const Tokenizer = struct {
                     _ = try scanner.until('$');
                     break :blk .{ .text = scanner.source[offset..scanner.offset] };
                 },
-                '[' => if (scanner.peek(0) == '^') {
-                    _ = scanner.next();
+                '[' => if (scanner.eatIf('^')) {
                     const span = try scanner.until(']');
                     break :blk .{ .@"[^x]" = span.text };
                 } else {
@@ -382,10 +355,7 @@ const Tokenizer = struct {
                         break :blk .{ .@"[...][x]" = scanner.source[offset + 1 .. end_of_text] };
                     }
                 },
-                '*' => if (scanner.peek(0) == '*') {
-                    _ = scanner.next();
-                    break :blk .@"**";
-                },
+                '*' => if (scanner.eatIf('*')) break :blk .@"**",
                 '_' => break :blk ._,
                 '\'' => {
                     const prev = scanner.behind(2);
@@ -395,11 +365,16 @@ const Tokenizer = struct {
                     const prev = scanner.behind(2);
                     break :blk if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
                 },
-                '-' => if (scanner.peek(0) == '-') {
-                    _ = scanner.next();
+                '-' => if (scanner.eatIf('-')) {
+                    // Look backwards for the space in " -- " instead of checking for
+                    // "-- " after any space, because spaces are much more common.
+                    if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
+                        offset -= 1;
+                        location.column -= 1;
+                        break :blk .@" -- ";
+                    }
                     break :blk .@"--";
                 },
-                ' ' => if (scanner.attempt("-- ")) break :blk .@" -- ",
                 '.' => if (scanner.attempt("..")) break :blk .@"...",
                 else => {},
             }
