@@ -539,106 +539,133 @@ pub fn render(
 
 const max_tag_depth = 8;
 
-fn Stack(comptime T: type) type {
+fn Stack(comptime Tag: type) type {
     return struct {
         const Self = @This();
-        items: std.BoundedArray(T, max_tag_depth) = .{},
-        footnote: if (T == BlockTag) ?[]const u8 else void = if (T == BlockTag) null else {},
+        items: std.BoundedArray(Tag, max_tag_depth) = .{},
 
         fn len(self: Self) usize {
             return self.items.len;
         }
 
-        fn get(self: Self, i: usize) T {
+        fn get(self: Self, i: usize) Tag {
             return self.items.get(i);
         }
 
-        fn last(self: Self) ?T {
+        fn last(self: Self) ?Tag {
             return if (self.len() == 0) null else self.items.get(self.len() - 1);
         }
 
-        fn push(self: *Self, writer: anytype, item: T) !void {
-            try self.writeOpenTag(writer, item);
-            if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
-            self.items.append(item) catch |err| switch (err) {
-                error.Overflow => return error.ExceededMaxTagDepth,
+        fn push(self: *Self, writer: anytype, item: Tag) !void {
+            try item.writeOpenTag(writer);
+            self.items.append(item) catch |err| return switch (err) {
+                error.Overflow => error.ExceededMaxTagDepth,
             };
-        }
-
-        fn writeOpenTag(self: Self, writer: anytype, item: T) !void {
-            if (T == BlockTag) if (self.footnote) |number| switch (item) {
-                .ol => return writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
-                .li => return fmt.format(writer, "<li id=\"fn:{s}\">", .{number}),
-                else => {},
-            };
-            try fmt.format(writer, "<{s}>", .{@tagName(item)});
         }
 
         fn pop(self: *Self, writer: anytype) !void {
-            var item = self.items.pop();
-            if (T == BlockTag and item == .li) if (self.footnote) |number|
-                try fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a>", .{number});
-            if (T == BlockTag and item == .ol) self.footnote = null;
-            if (T == BlockTag and tagGoesOnItsOwnLine(item)) try writer.writeByte('\n');
-            try fmt.format(writer, "</{s}>", .{@tagName(item)});
+            try self.items.pop().writeCloseTag(writer);
+        }
+
+        fn toggle(self: *Self, writer: anytype, item: Tag) !void {
+            try if (self.last() == item) self.pop(writer) else self.push(writer, item);
         }
 
         fn truncate(self: *Self, writer: anytype, new_len: usize) !void {
             while (self.items.len > new_len) try self.pop(writer);
         }
+    };
+}
 
-        fn pushOrPop(self: *Self, writer: anytype, item: T) !void {
-            try if (self.last() == item) self.pop(writer) else self.push(writer, item);
+const BlockTag = union(enum) {
+    p,
+    li,
+    footnote_li: []const u8,
+    h: u8,
+    ul,
+    ol,
+    footnote_ol,
+    blockquote,
+
+    fn heading(level: u8, options: Options) BlockTag {
+        const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
+        const clamped = std.math.clamp(adjusted, 1, 6);
+        return BlockTag{ .h = @intCast(clamped) };
+    }
+
+    fn implicitChild(parent: ?BlockTag, footnote_label: ?[]const u8) ?BlockTag {
+        return switch (parent orelse return .p) {
+            .ul, .ol => .li,
+            .footnote_ol => .{ .footnote_li = footnote_label.? },
+            .blockquote => .p,
+            else => null,
+        };
+    }
+
+    fn goesOnItsOwnLine(self: BlockTag) bool {
+        return switch (self) {
+            .p, .li, .footnote_li, .h => false,
+            .ul, .ol, .footnote_ol, .blockquote => true,
+        };
+    }
+
+    fn writeOpenTag(self: BlockTag, writer: anytype) !void {
+        switch (self) {
+            .h => |level| try fmt.format(writer, "<h{}>", .{level}),
+            .footnote_ol => try writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
+            .footnote_li => |label| try fmt.format(writer, "<li id=\"fn:{s}\">", .{label}),
+            else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
         }
-    };
-}
+        if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
+    }
 
-const BlockTag = enum { p, li, h1, h2, h3, h4, h5, h6, ol, ul, blockquote };
-const InlineTag = enum { em, strong, code, a };
+    fn writeCloseTag(self: BlockTag, writer: anytype) !void {
+        if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
+        switch (self) {
+            .h => |level| try fmt.format(writer, "</h{}>", .{level}),
+            .footnote_ol => try writer.writeAll("</ol>"),
+            .footnote_li => |label| try fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a></li>", .{label}),
+            else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
+        }
+    }
+};
 
-fn tagGoesOnItsOwnLine(tag: BlockTag) bool {
-    return switch (tag) {
-        .ol, .ul, .blockquote => true,
-        else => false,
-    };
-}
+const InlineTag = enum {
+    em,
+    strong,
+    code,
 
-fn headingTag(level: u8, options: Options) BlockTag {
-    const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
-    const clamped = std.math.clamp(adjusted, 1, 6);
-    return @enumFromInt(@intFromEnum(BlockTag.h1) + clamped - 1);
-}
+    fn writeOpenTag(self: InlineTag, writer: anytype) !void {
+        try fmt.format(writer, "<{s}>", .{@tagName(self)});
+    }
 
-fn implicitChildBlock(parent: ?BlockTag) ?BlockTag {
-    return switch (parent orelse return .p) {
-        .ol, .ul => .li,
-        .blockquote => .p,
-        else => null,
-    };
-}
+    fn writeCloseTag(self: InlineTag, writer: anytype) !void {
+        try fmt.format(writer, "</{s}>", .{@tagName(self)});
+    }
+};
 
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
+    var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     outer: while (true) {
         var token = try tokenizer.next() orelse break;
-        var new_footnote: ?[]const u8 = null;
-        var open: usize = 0;
-        while (open < blocks.len()) : (open += 1) {
-            switch (blocks.get(open)) {
-                .p, .li, .h1, .h2, .h3, .h4, .h5, .h6 => break,
+        var num_blocks_open: usize = 0;
+        while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+            switch (blocks.get(num_blocks_open)) {
+                .p, .li, .footnote_li, .h => break,
                 .ul => if (token.value != .@"-") break,
-                .ol => if (blocks.footnote) |_| switch (token.value) {
-                    .@"[^x]: " => |number| new_footnote = number,
+                .ol => if (token.value != .@"1.") break,
+                .footnote_ol => switch (token.value) {
+                    .@"[^x]: " => |label| footnote_label = label,
                     else => break,
-                } else if (token.value != .@"1.") break,
+                },
                 .blockquote => if (token.value != .@">") break,
             }
             token = try tokenizer.next() orelse break :outer;
         }
-        try blocks.truncate(writer, open);
-        blocks.footnote = new_footnote;
+        try blocks.truncate(writer, num_blocks_open);
         if (token.value == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
         first_iteration = false;
@@ -646,14 +673,14 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
         while (true) {
             if (need_implicit_block and token.value.is_inline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
-                    if (implicitChildBlock(blocks.last())) |block|
+                    if (BlockTag.implicitChild(blocks.last(), footnote_label)) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
             }
             switch (token.value) {
                 .@"\n" => break,
                 // TODO generate id
-                .@"#" => |level| try blocks.push(writer, headingTag(level, options)),
+                .@"#" => |level| try blocks.push(writer, BlockTag.heading(level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
@@ -662,9 +689,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 // TODO: handle when ``` is both opening and closing
                 .@"```x" => |lang| try fmt.format(writer, "<pre><code class=\"lang-{s}\">", .{lang}),
                 .@"```" => try writer.writeAll("</code></pre>"),
-                .@"[^x]: " => |number| {
-                    blocks.footnote = number;
-                    try blocks.push(writer, .ol);
+                .@"[^x]: " => |label| {
+                    footnote_label = label;
+                    try blocks.push(writer, .footnote_ol);
                 },
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
@@ -674,10 +701,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                     try fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
-                ._ => try inlines.pushOrPop(writer, .em),
-                .@"**" => try inlines.pushOrPop(writer, .strong),
-                .@"`" => try inlines.pushOrPop(writer, .code),
-                // TODO hooks for links, to resolve links to other pages, etc.
+                ._ => try inlines.toggle(writer, .em),
+                .@"**" => try inlines.toggle(writer, .strong),
+                .@"`" => try inlines.toggle(writer, .code),
                 .@"[...](x)" => |url| {
                     try writer.writeAll("<a href=\"");
                     try hooks.writeUrl(writer, tokenizer.handle(token), url);
@@ -1052,6 +1078,15 @@ test "render footnotes" {
     , .{});
 }
 
+test "no footnotes if first block only" {
+    try expectRenderSuccess(
+        \\<p>Foo.</p>
+    ,
+        \\Foo[^1].
+        \\[^1]: second
+    , .{ .first_block_only = true });
+}
+
 test "unclosed inline at end" {
     try expectRenderFailure(
         \\<input>:1:5: unclosed <em> tag
@@ -1089,7 +1124,6 @@ test "exceed max block tag depth" {
 test "writeUrl hook" {
     const hooks = struct {
         data: []const u8 = "data",
-
         fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
             try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, handle.filename(), self.data });
         }
