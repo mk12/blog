@@ -315,45 +315,41 @@ const Tokenizer = struct {
                     _ = try scanner.until('$');
                     break :blk .{ .text = scanner.source[offset..scanner.offset] };
                 },
-                '[' => if (scanner.eatIf('^')) {
-                    const span = try scanner.until(']');
-                    break :blk .{ .@"[^x]" = span.text };
-                } else {
-                    var i: usize = 0;
-                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
-                    if (scanner.peek(i) == ']' and scanner.peek(i + 1) == '(') {
-                        const end_of_text = scanner.offset + i;
-                        i += 2;
-                        const start_of_url = scanner.offset + i;
-                        const start_of_url_location = scanner.peekLocation(i);
-                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == ')') break;
-                        if (scanner.peek(i) == ')') {
-                            const closing_paren = scanner.offset + i;
-                            i += 1;
-                            const after_closing_paren = scanner.offset + i;
-                            self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
-                            location = start_of_url_location;
-                            break :blk .{ .@"[...](x)" = scanner.source[start_of_url..closing_paren] };
-                        }
-                    } else if (scanner.peek(i) == ']' and scanner.peek(i + 1) == '[') {
-                        const end_of_text = scanner.offset + i;
-                        i += 2;
-                        const start_of_label = scanner.offset + i;
-                        const start_of_label_location = scanner.peekLocation(i);
-                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
-                        if (scanner.peek(i) == ']') {
-                            const closing_bracket = scanner.offset + i;
-                            i += 1;
-                            const after_closing_bracket = scanner.offset + i;
-                            self.jump_over_link = .{ .from = end_of_text, .to = after_closing_bracket };
-                            location = start_of_label_location;
-                            break :blk .{ .@"[...][x]" = scanner.source[start_of_label..closing_bracket] };
-                        }
-                    } else if (scanner.peek(i) == ']') {
-                        const end_of_text = scanner.offset + i;
-                        self.jump_over_link = .{ .from = end_of_text, .to = end_of_text + 1 };
-                        break :blk .{ .@"[...][x]" = scanner.source[offset + 1 .. end_of_text] };
+                '[' => link: {
+                    if (scanner.eatIf('^')) {
+                        const span = try scanner.until(']');
+                        break :blk .{ .@"[^x]" = span.text };
                     }
+                    var i: usize = 0;
+                    // TODO should not have to check again after loop, need "until" without consuming
+                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
+                    if (scanner.peek(i) != ']') break :link;
+                    const closing_char: u8 = switch (scanner.peek(i + 1) orelse 0) {
+                        '(' => ')',
+                        '[' => ']',
+                        else => {
+                            const end_of_text = scanner.offset + i;
+                            self.jump_over_link = .{ .from = end_of_text, .to = end_of_text + 1 };
+                            break :blk .{ .@"[...][x]" = scanner.source[offset + 1 .. end_of_text] };
+                        },
+                    };
+                    const end_of_text = scanner.offset + i;
+                    i += 2;
+                    const start_of_url = scanner.offset + i;
+                    const start_of_url_location = scanner.peekLocation(i);
+                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == closing_char) break;
+                    if (scanner.peek(i) != closing_char) break :link;
+                    const closing_paren = scanner.offset + i;
+                    i += 1;
+                    const after_closing_paren = scanner.offset + i;
+                    self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
+                    location = start_of_url_location;
+                    const url = scanner.source[start_of_url..closing_paren];
+                    break :blk switch (closing_char) {
+                        ')' => .{ .@"[...](x)" = url },
+                        ']' => .{ .@"[...][x]" = url },
+                        else => unreachable,
+                    };
                 },
                 '*' => if (scanner.eatIf('*')) break :blk .@"**",
                 '_' => break :blk ._,

@@ -16,6 +16,13 @@ filename: []const u8 = "<input>",
 offset: usize = 0,
 location: Location = .{},
 
+// TODO: redesign this
+// Needed features:
+// - functions that consume
+// - functions that peek ("unmanaged" index passed in)
+// - functions that deal with a character
+// - functions that deal with a string
+
 pub const Span = struct {
     text: []const u8,
     location: Location,
