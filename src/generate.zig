@@ -32,7 +32,7 @@ pub fn generate(args: struct {
     defer dirs.close();
     const base_url = BaseUrl.init(args.base_url);
     const templates = try Templates.init(reporter, args.templates);
-    const hooks = Hooks{ .allocator = allocator, .base_url = base_url };
+    var hooks = Hooks{ .allocator = allocator, .base_url = base_url, .dirs = &dirs };
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
@@ -56,7 +56,7 @@ pub fn generate(args: struct {
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
-        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, hooks, &scope, posts, page);
+        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &hooks, &scope, posts, page);
     }
 
     for (posts, 0..) |post, i| {
@@ -65,7 +65,7 @@ pub fn generate(args: struct {
             .newer = if (i > 0) &posts[i - 1] else null,
             .older = if (i < posts.len - 1) &posts[i + 1] else null,
         };
-        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, hooks, &scope, post, neighbors);
+        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &hooks, &scope, post, neighbors);
     }
 }
 
@@ -73,6 +73,7 @@ const Directories = struct {
     @"/": fs.Dir,
     @"/post": fs.Dir,
     @"/categories": fs.Dir,
+    @"/img": fs.Dir,
 
     fn init(root_path: []const u8) !Directories {
         const root = try fs.cwd().makeOpenPath(root_path, .{});
@@ -80,6 +81,7 @@ const Directories = struct {
             .@"/" = root,
             .@"/post" = try root.makeOpenPath("post", .{}),
             .@"/categories" = try root.makeOpenPath("categories", .{}),
+            .@"/img" = try root.makeOpenPath("img", .{}),
         };
     }
 
@@ -135,8 +137,10 @@ const BaseUrl = struct {
 const Hooks = struct {
     allocator: Allocator,
     base_url: BaseUrl,
+    linked_assets: std.StringHashMapUnmanaged(void) = .{},
+    dirs: *const Directories,
 
-    pub fn writeUrl(self: Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+    pub fn writeUrl(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
         if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
         // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
         const hash_idx = std.mem.indexOfScalar(u8, url, '#') orelse url.len;
@@ -145,18 +149,25 @@ const Hooks = struct {
         const fragment = url[hash_idx..];
         const source_dir = fs.path.dirname(handle.filename()).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
-        // TODO don't duplicate this in main.zig and here
-        const postsSlash = "posts/";
-        if (std.mem.startsWith(u8, dest, postsSlash)) {
-            const rest = dest[postsSlash.len..];
-            if (!std.mem.endsWith(u8, rest, ".md")) return handle.fail("{s}: expected .md extension", .{url});
-            const slug = Post.parseSlug(rest);
+        // TODO don't duplicate "posts/" in main.zig and here
+        if (std.mem.startsWith(u8, dest, "posts/")) {
+            const filename = dest["posts/".len..];
+            if (!std.mem.endsWith(u8, filename, ".md")) return handle.fail("{s}: expected .md extension", .{url});
+            const slug = Post.parseSlug(filename);
             // TODO use base_url, make it support writer and allocator
             try std.fmt.format(writer, "{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
         } else if (std.mem.startsWith(u8, dest, "assets/svg/")) {
             //
         } else if (std.mem.startsWith(u8, dest, "assets/img/")) {
-            //
+            // TODO need to be separate function that renders figure
+            const filename = dest["assets/img/".len..];
+            const result = try self.linked_assets.getOrPut(self.allocator, filename);
+            if (!result.found_existing) {
+                self.dirs.@"/img".symLink(try fs.cwd().realpathAlloc(self.allocator, dest), filename, .{}) catch |err| switch (err) {
+                    error.PathAlreadyExists => {},
+                    else => return err,
+                };
+            }
         } else {
             return handle.fail("{s}: cannot resolve internal url", .{url});
         }
@@ -169,7 +180,7 @@ fn generatePage(
     dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
-    hooks: Hooks,
+    hooks: *Hooks,
     parent: *const Scope,
     posts: []const Post,
     page: Page,
@@ -246,7 +257,7 @@ fn generatePost(
     dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
-    hooks: Hooks,
+    hooks: *Hooks,
     parent: *const Scope,
     post: Post,
     neighbors: Neighbors,
