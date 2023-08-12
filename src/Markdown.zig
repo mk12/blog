@@ -104,7 +104,6 @@ const Token = struct {
     location: Location,
 };
 
-// TODO: Maybe just name them instead of using @"" after alls
 const TokenValue = union(enum) {
     // Blocks tokens
     @"\n",
@@ -124,7 +123,7 @@ const TokenValue = union(enum) {
     text: []const u8,
     @"<",
     @"&",
-    escaped: u8,
+    @"\\x": u8,
     // @"$",
     @"[^x]": []const u8,
     _,
@@ -133,10 +132,10 @@ const TokenValue = union(enum) {
     @"[...](x)": []const u8,
     @"[...][x]": []const u8,
     @"]",
-    @"‘",
-    @"’",
-    @"“",
-    @"”",
+    lsquo,
+    rsquo,
+    ldquo,
+    rdquo,
     @"--",
     @" -- ",
     @"...",
@@ -174,8 +173,8 @@ const Tokenizer = struct {
         return Handle{ .tokenizer = self, .location = token.location };
     }
 
-    // Returns the remaining untokenized content.
-    // This is not accurate after next() returns .text.
+    // Returns the remaining untokenized source.
+    // This is inaccurate when there is a peeked token (i.e. after next() returns text).
     fn remaining(self: Tokenizer) []const u8 {
         return self.scanner.source[self.scanner.offset..];
     }
@@ -330,11 +329,13 @@ const Tokenizer = struct {
                     };
                     break :blk .@"<";
                 },
+                // Only escape ampersands in inline code. If regular text contains something
+                // that parses as an entity, you probably actually want an entity.
                 '&' => if (self.in_inline_code) break :blk .@"&",
                 else => if (self.in_inline_code) continue,
             }
             switch (char) {
-                '\\' => if (scanner.next()) |c| break :blk .{ .escaped = c },
+                '\\' => if (scanner.next()) |c| break :blk .{ .@"\\x" = c },
                 '$' => {
                     // TODO: This is temporary, to avoid interpreting math as Markdown.
                     _ = try scanner.until('$');
@@ -388,11 +389,11 @@ const Tokenizer = struct {
                 '_' => break :blk ._,
                 '\'' => {
                     const prev = scanner.behind(2);
-                    break :blk if (prev == null or prev == ' ' or prev == '\n') .@"‘" else .@"’";
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .lsquo else .rsquo;
                 },
                 '"' => {
                     const prev = scanner.behind(2);
-                    break :blk if (prev == null or prev == ' ' or prev == '\n') .@"“" else .@"”";
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
                 },
                 '-' => if (scanner.peek(0) == '-') {
                     _ = scanner.next();
@@ -404,7 +405,7 @@ const Tokenizer = struct {
             }
         };
         switch (value) {
-            .@"\n", .@">", .@"* * *" => self.block_allowed = true,
+            .@"\n", .@">" => self.block_allowed = true,
             else => {},
         }
         return .{
@@ -624,22 +625,12 @@ const BlockTag = union(enum) {
 
     fn writeOpenTag(self: BlockTag, writer: anytype) !void {
         switch (self) {
-            .h => |h| blk: {
-                const source_ptr = h.source orelse break :blk try fmt.format(writer, "<h{}>", .{h.level});
+            .h => |h| if (h.source) |source_ptr| {
                 try fmt.format(writer, "<h{} id=\"", .{h.level});
-                var pending: enum { start, none, hyphen } = .start;
-                for (source_ptr[0..h.source_len]) |char| switch (char) {
-                    '\n' => break,
-                    'A'...'Z', 'a'...'z', '0'...'9' => {
-                        if (pending == .hyphen) try writer.writeByte('-');
-                        pending = .none;
-                        try writer.writeByte(std.ascii.toLower(char));
-                    },
-                    else => if (pending == .none) {
-                        pending = .hyphen;
-                    },
-                };
+                try generateAutoIdUntilNewline(writer, source_ptr[0..h.source_len]);
                 try writer.writeAll("\">");
+            } else {
+                try fmt.format(writer, "<h{}>", .{h.level});
             },
             .footnote_ol => try writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
             .footnote_li => |label| try fmt.format(writer, "<li id=\"fn:{s}\">", .{label}),
@@ -672,6 +663,21 @@ const InlineTag = enum {
         try fmt.format(writer, "</{s}>", .{@tagName(self)});
     }
 };
+
+fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
+    var pending: enum { start, none, hyphen } = .start;
+    for (source) |char| switch (char) {
+        '\n' => break,
+        'A'...'Z', 'a'...'z', '0'...'9' => {
+            if (pending == .hyphen) try writer.writeByte('-');
+            pending = .none;
+            try writer.writeByte(std.ascii.toLower(char));
+        },
+        else => if (pending == .none) {
+            pending = .hyphen;
+        },
+    };
+}
 
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
@@ -727,7 +733,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
-                .escaped => |char| try writer.writeByte(char),
+                .@"\\x" => |char| try writer.writeByte(char),
                 .@"[^x]" => |number| if (!options.first_block_only)
                     try fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
@@ -748,13 +754,12 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                     try writer.writeAll("\">");
                 },
                 .@"]" => try writer.writeAll("</a>"),
-                // TODO can combine some of these, write @tagName.
-                .@"‘" => try writer.writeAll("‘"),
-                .@"’" => try writer.writeAll("’"),
-                .@"“" => try writer.writeAll("“"),
-                .@"”" => try writer.writeAll("”"),
-                .@"--" => try writer.writeAll("–"),
-                .@" -- " => try writer.writeAll("—"),
+                .lsquo => try writer.writeAll("‘"),
+                .rsquo => try writer.writeAll("’"),
+                .ldquo => try writer.writeAll("“"),
+                .rdquo => try writer.writeAll("”"),
+                .@"--" => try writer.writeAll("–"), // en dash
+                .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
             token = try tokenizer.next() orelse break :outer;
