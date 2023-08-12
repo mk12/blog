@@ -138,6 +138,7 @@ const Hooks = struct {
 
     pub fn writeUrl(self: Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
         if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
+        // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
         if (std.mem.indexOfScalar(u8, url, '#')) |_| return handle.fail("#id links are not implemented", .{});
         const dir = fs.path.dirname(handle.filename()).?;
         const dest = try fs.path.resolve(self.allocator, &.{ dir, url });

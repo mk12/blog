@@ -174,6 +174,12 @@ const Tokenizer = struct {
         return Handle{ .tokenizer = self, .location = token.location };
     }
 
+    // Returns the remaining untokenized content.
+    // This is not accurate after next() returns .text.
+    fn remaining(self: Tokenizer) []const u8 {
+        return self.scanner.source[self.scanner.offset..];
+    }
+
     fn next(self: *Tokenizer) !?Token {
         if (self.peeked) |token| {
             self.peeked = null;
@@ -492,6 +498,7 @@ test "tokenize inline link" {
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,
+    auto_heading_ids: bool = false,
     shift_heading_level: i8 = 0,
 };
 
@@ -581,16 +588,22 @@ const BlockTag = union(enum) {
     p,
     li,
     footnote_li: []const u8,
-    h: u8,
+    // I'm making this fit in 8 bytes just because I can.
+    h: struct { source: ?[*]const u8, source_len: u32, level: u8 },
     ul,
     ol,
     footnote_ol,
     blockquote,
 
-    fn heading(level: u8, options: Options) BlockTag {
+    fn heading(source: []const u8, level: u8, options: Options) BlockTag {
         const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
-        const clamped = std.math.clamp(adjusted, 1, 6);
-        return BlockTag{ .h = @intCast(clamped) };
+        return BlockTag{
+            .h = .{
+                .source = if (options.auto_heading_ids) source.ptr else null,
+                .source_len = @intCast(source.len),
+                .level = @intCast(std.math.clamp(adjusted, 1, 6)),
+            },
+        };
     }
 
     fn implicitChild(parent: ?BlockTag, footnote_label: ?[]const u8) ?BlockTag {
@@ -611,7 +624,23 @@ const BlockTag = union(enum) {
 
     fn writeOpenTag(self: BlockTag, writer: anytype) !void {
         switch (self) {
-            .h => |level| try fmt.format(writer, "<h{}>", .{level}),
+            .h => |h| blk: {
+                const source_ptr = h.source orelse break :blk try fmt.format(writer, "<h{}>", .{h.level});
+                try fmt.format(writer, "<h{} id=\"", .{h.level});
+                var pending: enum { start, none, hyphen } = .start;
+                for (source_ptr[0..h.source_len]) |char| switch (char) {
+                    '\n' => break,
+                    'A'...'Z', 'a'...'z', '0'...'9' => {
+                        if (pending == .hyphen) try writer.writeByte('-');
+                        pending = .none;
+                        try writer.writeByte(std.ascii.toLower(char));
+                    },
+                    else => if (pending == .none) {
+                        pending = .hyphen;
+                    },
+                };
+                try writer.writeAll("\">");
+            },
             .footnote_ol => try writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
             .footnote_li => |label| try fmt.format(writer, "<li id=\"fn:{s}\">", .{label}),
             else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
@@ -622,7 +651,7 @@ const BlockTag = union(enum) {
     fn writeCloseTag(self: BlockTag, writer: anytype) !void {
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
         switch (self) {
-            .h => |level| try fmt.format(writer, "</h{}>", .{level}),
+            .h => |h| try fmt.format(writer, "</h{}>", .{h.level}),
             .footnote_ol => try writer.writeAll("</ol>"),
             .footnote_li => |label| try fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a></li>", .{label}),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
@@ -679,8 +708,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             switch (token.value) {
                 .@"\n" => break,
-                // TODO generate id
-                .@"#" => |level| try blocks.push(writer, BlockTag.heading(level, options)),
+                .@"#" => |level| {
+                    const tag = BlockTag.heading(tokenizer.remaining(), level, options);
+                    try blocks.push(writer, tag);
+                },
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
@@ -943,6 +974,20 @@ test "render all headings" {
         \\###### This is h6
         \\####### There is no h7
     , .{});
+}
+
+test "render heading id" {
+    try expectRenderSuccess(
+        \\<h1 id="this-is-h1">This is h1</h1>
+        \\<h6 id="this-is-h6">This is h6</h6>
+        \\<h2 id="abcxyz-abcxyz-0123456789">abcxyz ABCXYZ 0123456789</h2>
+        \\<h2 id="cool-stuff"><strong>Cool</strong> <em>stuff</em></h2>
+    ,
+        \\# This is h1
+        \\###### This is h6
+        \\## abcxyz ABCXYZ 0123456789
+        \\## **Cool** _stuff_
+    , .{ .auto_heading_ids = true });
 }
 
 test "render shifted heading (positive)" {
