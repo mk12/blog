@@ -139,18 +139,26 @@ const Hooks = struct {
     pub fn writeUrl(self: Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
         if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
         // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
-        if (std.mem.indexOfScalar(u8, url, '#')) |_| return handle.fail("#id links are not implemented", .{});
-        const dir = fs.path.dirname(handle.filename()).?;
-        const dest = try fs.path.resolve(self.allocator, &.{ dir, url });
-        _ = dest;
+        const hash_idx = std.mem.indexOfScalar(u8, url, '#') orelse url.len;
+        if (hash_idx == 0) return handle.fail("direct #id links in same page not implemented yet", .{});
+        const path = url[0..hash_idx];
+        const fragment = url[hash_idx..];
+        const source_dir = fs.path.dirname(handle.filename()).?;
+        const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
         // TODO don't duplicate this in main.zig and here
         const postsSlash = "posts/";
-        if (std.mem.startsWith(u8, url, postsSlash)) {
-            const rest = url[postsSlash.len..];
+        if (std.mem.startsWith(u8, dest, postsSlash)) {
+            const rest = dest[postsSlash.len..];
             if (!std.mem.endsWith(u8, rest, ".md")) return handle.fail("{s}: expected .md extension", .{url});
             const slug = Post.parseSlug(rest);
             // TODO use base_url, make it support writer and allocator
-            try std.fmt.format(writer, "{s}/post/{s}/", .{ self.base_url.base, slug });
+            try std.fmt.format(writer, "{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
+        } else if (std.mem.startsWith(u8, dest, "assets/svg/")) {
+            //
+        } else if (std.mem.startsWith(u8, dest, "assets/img/")) {
+            //
+        } else {
+            return handle.fail("{s}: cannot resolve internal url", .{url});
         }
     }
 };
