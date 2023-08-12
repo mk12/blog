@@ -3,6 +3,7 @@
 /build
 zig-cache
 zig-out
+# TODO update this stuff
 node_modules
 *.sock
 *.fifo
