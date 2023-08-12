@@ -157,7 +157,7 @@ const Tokenizer = struct {
     block_allowed: bool = true,
     in_inline_code: bool = false,
     in_raw_html_block: bool = false,
-    jump_over_link: ?struct { from: usize, to: usize } = null,
+    link_depth: u8 = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
         while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
@@ -213,11 +213,6 @@ const Tokenizer = struct {
         const value: TokenValue = blk: while (true) {
             location = scanner.location;
             offset = scanner.offset;
-            if (self.jump_over_link) |jump| if (scanner.offset == jump.from) {
-                while (scanner.offset < jump.to) _ = scanner.next();
-                self.jump_over_link = null;
-                break :blk .@"]";
-            };
             const char = scanner.next() orelse return null;
             if (self.block_allowed) switch (char) {
                 '#' => {
@@ -331,22 +326,36 @@ const Tokenizer = struct {
                         location.column -= 1;
                     }
                     var i: usize = 0;
-                    // TODO should not have to check again after loop, need "until" without consuming
-                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == ']') break;
-                    if (scanner.peek(i) != ']') break :link;
+                    var escaped = false;
+                    var in_code = false;
+                    var depth: usize = 1;
+                    while (true) : (i += 1) {
+                        const ch = scanner.peek(i) orelse break :link;
+                        if (escaped) {
+                            escaped = false;
+                        } else if (in_code) {
+                            if (ch == '`') in_code = false;
+                        } else switch (ch) {
+                            '[' => depth += 1,
+                            ']' => {
+                                depth -= 1;
+                                if (depth == 0) break;
+                            },
+                            '\\' => escaped = true,
+                            '`' => in_code = true,
+                            else => {},
+                        }
+                    }
                     const closing_char: u8 = switch (scanner.peek(i + 1) orelse 0) {
                         '(' => ')',
                         '[' => ']',
                         else => {
                             const end_of_text = scanner.offset + i;
-                            self.jump_over_link = .{ .from = end_of_text, .to = end_of_text + 1 };
-                            const tag = if (is_image) "![...][x]" else "[...][x]";
-                            _ = tag;
                             const label = scanner.source[after_lbracket + 1 .. end_of_text];
+                            self.link_depth += 1;
                             break :blk if (is_image) .{ .@"![...][x]" = label } else .{ .@"[...][x]" = label };
                         },
                     };
-                    const end_of_text = scanner.offset + i;
                     i += 2;
                     const start_of_url = scanner.offset + i;
                     const start_of_url_location = scanner.peekLocation(i);
@@ -354,15 +363,24 @@ const Tokenizer = struct {
                     if (scanner.peek(i) != closing_char) break :link;
                     const closing_paren = scanner.offset + i;
                     i += 1;
-                    const after_closing_paren = scanner.offset + i;
-                    self.jump_over_link = .{ .from = end_of_text, .to = after_closing_paren };
                     location = start_of_url_location;
                     const url_or_label = scanner.source[start_of_url..closing_paren];
+                    self.link_depth += 1;
                     break :blk switch (closing_char) {
                         ')' => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
                         ']' => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
                         else => unreachable,
                     };
+                },
+                ']' => {
+                    if (self.link_depth == 0) return scanner.failAt(location, "unexpected ']'", .{});
+                    self.link_depth -= 1;
+                    if (scanner.peek(0)) |c| switch (c) {
+                        '(' => _ = try scanner.until(')'),
+                        '[' => _ = try scanner.until(']'),
+                        else => {},
+                    };
+                    break :blk .@"]";
                 },
                 '*' => if (scanner.eatIf('*')) break :blk .@"**",
                 '_' => break :blk ._,
@@ -947,6 +965,10 @@ test "render code" {
     try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{});
 }
 
+test "render code with backslash" {
+    try expectRenderSuccess("<p><code>\\newline</code></p>", "`\\newline`", .{});
+}
+
 test "render code with entities" {
     try expectRenderSuccess("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{});
 }
@@ -988,6 +1010,20 @@ test "render shortcut reference link" {
         \\Look at [foo].
         \\
         \\[foo]: https://example.com
+    , .{});
+}
+
+test "render link with escaped brackets" {
+    try expectRenderSuccess(
+        \\<p><a href="1">]</a></p>
+        \\<p><a href="2"><code>]</code></a></p>
+        \\<p><a href="3"><code>\</code></a></p>
+    ,
+        \\[\]](1)
+        \\
+        \\[`]`](2)
+        \\
+        \\[`\`](3)
     , .{});
 }
 
@@ -1208,6 +1244,18 @@ test "render figure (shortcut)" {
     , .{});
 }
 
+test "render figure with link in caption" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\<figcaption>Some <a href="foo">caption</a> here</figcaption>
+        \\</figure>
+    ,
+        \\![Some [caption] here](rabbit.jpg)
+        \\[caption]: foo
+    , .{});
+}
+
 test "unclosed inline at end" {
     try expectRenderFailure(
         \\<input>:1:5: unclosed <em> tag
@@ -1239,6 +1287,14 @@ test "exceed max block tag depth" {
         \\<input>:1:18: exceeded maximum tag depth (8)
     ,
         \\> > > > > > > > -
+    , .{});
+}
+
+test "unexpected right bracket" {
+    try expectRenderFailure(
+        \\<input>:1:6: unexpected ']'
+    ,
+        \\Some ] out of nowhere
     , .{});
 }
 
