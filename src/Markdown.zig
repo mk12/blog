@@ -4,8 +4,9 @@ const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
-const highlight = @import("highlight.zig").highlight;
 const Allocator = std.mem.Allocator;
+const Highlighter = @import("Highlighter.zig");
+const Language = Highlighter.Language;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
@@ -113,8 +114,10 @@ const TokenValue = union(enum) {
     @"-",
     @"1.",
     @">",
-    @"* * *",
-    @"```x\n": ?[]const u8,
+    @"* * *\n",
+    @"```x\n": []const u8,
+    stay_in_code_block,
+    @"```\n",
     // @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
@@ -183,7 +186,7 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer) !?Token {
+    fn next(self: *Tokenizer, in_code_block: bool) !?Token {
         if (self.peeked) |token| {
             self.peeked = null;
             return token;
@@ -191,7 +194,7 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         const start_offset = scanner.offset;
         const start_location = scanner.location;
-        if (try self.nextNonText()) |result| {
+        if (try self.nextNonText(in_code_block)) |result| {
             if (result.offset == start_offset) return result.token;
             self.peeked = result.token;
             return Token{
@@ -206,13 +209,24 @@ const Tokenizer = struct {
         };
     }
 
-    fn nextNonText(self: *Tokenizer) !?struct { token: Token, offset: usize } {
+    fn nextNonText(self: *Tokenizer, in_code_block: bool) !?struct { token: Token, offset: usize } {
         const scanner = self.scanner;
         var location: Location = undefined;
         var offset: usize = undefined;
         const value: TokenValue = blk: while (true) {
             location = scanner.location;
             offset = scanner.offset;
+            if (in_code_block) {
+                if (scanner.eof()) return null;
+                if (scanner.peek(0) == '`' and scanner.peek(1) == '`' and scanner.peek(2) == '`' and (scanner.peek(3) == '\n' or scanner.peek(3) == null)) {
+                    scanner.eat('`');
+                    scanner.eat('`');
+                    scanner.eat('`');
+                    _ = scanner.next();
+                    break :blk .@"```\n";
+                }
+                break :blk .stay_in_code_block;
+            }
             const char = scanner.next() orelse return null;
             if (self.block_allowed) switch (char) {
                 '#' => {
@@ -238,10 +252,18 @@ const Tokenizer = struct {
                     },
                     else => {},
                 },
-                '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n') break :blk .@">",
-                '`' => if (scanner.attempt("``")) {
-                    const span = try scanner.until('\n');
-                    break :blk .{ .@"```x\n" = if (span.text.len > 0) span.text else null };
+                '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n' or scanner.eof()) break :blk .@">",
+                '`' => if (scanner.peek(0) == '`' and scanner.peek(1) == '`') {
+                    scanner.eat('`');
+                    scanner.eat('`');
+                    var start = scanner.offset;
+                    var end = start;
+                    while (scanner.next()) |ch| if (ch == '\n') {
+                        break;
+                    } else {
+                        end += 1;
+                    };
+                    break :blk .{ .@"```x\n" = scanner.source[start..end] };
                 },
                 '$' => if (scanner.eatIf('$')) {
                     // TODO: This is temporary, to avoid interpreting math as Markdown.
@@ -265,7 +287,7 @@ const Tokenizer = struct {
                     };
                 },
                 '*' => if (scanner.attempt(" * *") and (scanner.eof() or scanner.eatIf('\n')))
-                    break :blk .@"* * *",
+                    break :blk .@"* * *\n",
                 '[' => if (scanner.eatIf('^')) {
                     const span = try scanner.until(']');
                     // TODO: maybe shouldn't be an error here.
@@ -418,7 +440,7 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(TokenValue).init(allocator);
-    while (try tokenizer.next()) |token| try actual.append(token.value);
+    while (try tokenizer.next(false)) |token| try actual.append(token.value);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -470,7 +492,7 @@ test "tokenize block" {
         .@">",
         .@"\n",
         .@">",
-        .@"* * *",
+        .@"* * *\n",
     },
         \\# The _heading_
         \\
@@ -718,12 +740,14 @@ fn maybeLookupUrl(tokenizer: *const Tokenizer, token: Token, links: LinkMap, url
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
+    var highlighter = Highlighter{ .enabled = options.highlight_code };
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     outer: while (true) {
-        var token = try tokenizer.next() orelse break;
         var num_blocks_open: usize = 0;
-        while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+        var all_open = num_blocks_open == blocks.len();
+        var token = try tokenizer.next(all_open and highlighter.active) orelse break;
+        while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
                 .ul => if (token.value != .@"-") break,
@@ -734,7 +758,18 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 },
                 .blockquote => if (token.value != .@">") break,
             }
-            token = try tokenizer.next() orelse break :outer;
+            num_blocks_open += 1;
+            all_open = num_blocks_open == blocks.len();
+            token = try tokenizer.next(all_open and highlighter.active) orelse break :outer;
+        }
+        if (highlighter.active) {
+            if (!all_open) return tokenizer.failOn(token, "missing closing ```", .{});
+            switch (token.value) {
+                .stay_in_code_block => try highlighter.renderLine(writer, tokenizer.scanner),
+                .@"```\n" => try highlighter.end(writer),
+                else => unreachable,
+            }
+            continue;
         }
         try blocks.truncate(writer, num_blocks_open);
         if (token.value == .@"\n") continue;
@@ -750,6 +785,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             switch (token.value) {
                 .@"\n" => break,
+                .@"* * *\n" => break try writer.writeAll("<hr>"),
+                .@"```x\n" => |language| break try highlighter.begin(writer, Language.from(language)),
+                .stay_in_code_block, .@"```\n" => unreachable,
                 .@"#" => |level| {
                     const tag = BlockTag.heading(tokenizer.remaining(), level, options);
                     try blocks.push(writer, tag);
@@ -757,12 +795,6 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
-                .@"* * *" => try writer.writeAll("<hr>"),
-                .@"```x\n" => |lang| {
-                    try writer.writeAll("<pre><code>");
-                    try highlight(writer, tokenizer.scanner, if (options.highlight_code) lang else null);
-                    try writer.writeAll("</code></pre>");
-                },
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
                     try blocks.push(writer, .figure);
@@ -808,12 +840,13 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next() orelse break :outer;
+            token = try tokenizer.next(false) orelse break :outer;
         }
         if (inlines.top()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
     if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
+    if (highlighter.active) return tokenizer.fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
 
@@ -1120,6 +1153,33 @@ test "render multiple lists" {
     , .{});
 }
 
+test "render two thematic breaks" {
+    try expectRenderSuccess("<hr>\n<hr>", "* * *\n* * *", .{});
+}
+
+test "render two thematic breaks in blockquote" {
+    try expectRenderSuccess(
+        \\<blockquote>
+        \\<hr>
+        \\<hr>
+        \\</blockquote>
+    ,
+        \\> * * *
+        \\> * * *
+    , .{});
+}
+
+test "render blockquote with blank final line" {
+    try expectRenderSuccess(
+        \\<blockquote>
+        \\<p>Hi</p>
+        \\</blockquote>
+    ,
+        \\> Hi
+        \\>
+    , .{});
+}
+
 test "render a few things" {
     try expectRenderSuccess(
         \\<h1>Hello <strong>world</strong>!</h1>
@@ -1166,23 +1226,43 @@ test "render nested blockquotes" {
 }
 
 test "render code block" {
-    try expectRenderSuccess("<pre><code>Foo</code></pre>", "```\nFoo\n```", .{});
+    try expectRenderSuccess("<pre>\n<code>Foo</code>\n</pre>", "```\nFoo\n```", .{});
 }
 
 test "render code block with language but no highlighting" {
-    try expectRenderSuccess("<pre><code>Foo</code></pre>", "```html\nFoo\n```", .{});
+    try expectRenderSuccess("<pre>\n<code>Foo</code>\n</pre>", "```html\nFoo\n```", .{});
 }
 
 test "render code block with special characters" {
     // TODO
 
     // try expectRenderSuccess(
-    //     \\<pre><code>&lt;foo> [bar] `baz` _qux_ &amp; \</code></pre>
+    //     \\<pre>
+    //     \\<code>&lt;foo> [bar] `baz` _qux_ &amp; \</code>
+    //     \\</pre>
     // ,
     //     \\```
     //     \\<foo> [bar] `baz` _qux_ & \
     //     \\```
     // , .{});
+}
+
+test "render code block in blockquote" {
+    try expectRenderSuccess(
+        \\<blockquote>
+        \\<pre>
+        \\<code>Some code
+        \\
+        \\> > ></code>
+        \\</pre>
+        \\</blockquote>
+    ,
+        \\> ```
+        \\> Some code
+        \\>
+        \\> > > >
+        \\> ```
+    , .{});
 }
 
 test "render smart typography" {
