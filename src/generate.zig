@@ -41,6 +41,9 @@ pub fn generate(args: struct {
         .style_url = try base_url.join(allocator, "/style.css"),
         .blog_url = try base_url.join(allocator, "/"),
         .home_url = args.home_url,
+        // TODO maybe just use {{ base_url }}/post/ in templates?
+        .archive_url = try base_url.join(allocator, "/post/"),
+        .categories_url = try base_url.join(allocator, "/categories/"),
         .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
     });
     var scope = Scope.init(variables);
@@ -212,27 +215,24 @@ fn generatePage(
         .@"/index.xml" => templates.@"feed.xml",
         .@"/post/index.html", .@"/categories/index.html" => templates.@"listing.html",
     };
-    const variables = blk: {
-        switch (page) {
-            .@"/index.html" => {
-                break :blk try Value.init(allocator, .{
-                    .title = "Mitchell Kember",
-                    .posts = try recentPostSummaries(allocator, base_url, posts),
-                    // TODO maybe just use {{ base_url }}/post/ in templates?
-                    .archive_url = try base_url.join(allocator, "/post/"),
-                    .categories_url = try base_url.join(allocator, "/categories/"),
-                });
-            },
-            else => break :blk try Value.init(allocator, .{
-                .title = "Mitchell Kember",
-                .posts = .{},
-                .archive_url = "", // link.to
-                .categories_url = "", // link.to
-                .last_build_date = "",
-                .feed_url = "",
-                .groups = .{},
-            }),
-        }
+    const variables = switch (page) {
+        .@"/index.html" => try Value.init(allocator, .{
+            .title = "Mitchell Kember",
+            .posts = try recentPostSummaries(allocator, base_url, posts),
+        }),
+        .@"/post/index.html" => try Value.init(allocator, .{
+            .title = "Post Archive",
+            .groups = try groupPostsByYear(allocator, base_url, posts),
+        }),
+        else => try Value.init(allocator, .{
+            .title = "Mitchell Kember",
+            .posts = .{},
+            .archive_url = "", // link.to
+            .categories_url = "", // link.to
+            .last_build_date = "",
+            .feed_url = "",
+            .groups = .{},
+        }),
     };
     var scope = parent.initChild(variables);
     var buffer = std.io.bufferedWriter(file.writer());
@@ -240,14 +240,8 @@ fn generatePage(
     try buffer.flush();
 }
 
-const Summary = struct {
-    date: Value,
-    title: Value,
-    href: []const u8,
-    excerpt: Value,
-};
-
 const num_recent = 10;
+const Summary = struct { date: Value, title: Value, href: []const u8, excerpt: Value };
 
 fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![num_recent]Summary {
     var summaries: [num_recent]Summary = undefined;
@@ -261,6 +255,43 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
         };
     }
     return summaries;
+}
+
+const Group = struct { name: []const u8, posts: []Entry };
+const Entry = struct { date: Value, title: Value, href: []const u8 };
+
+const unset_year: u16 = 0;
+const draft_year: u16 = 1;
+
+fn groupPostsByYear(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![]Group {
+    var groups = std.ArrayList(Group).init(allocator);
+    var year: u16 = unset_year;
+    var entries = std.ArrayList(Entry).init(allocator);
+    for (posts) |post| {
+        const post_year = switch (post.meta.status) {
+            .draft => draft_year,
+            .published => |d| d.year,
+        };
+        try flushGroup(allocator, &groups, year, &entries, post_year);
+        year = post_year;
+        try entries.append(Entry{
+            .date = date(post.meta.status, .short),
+            .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+            .href = try base_url.postUrl(allocator, post.slug),
+        });
+    }
+    try flushGroup(allocator, &groups, year, &entries, unset_year);
+    return groups.items;
+}
+
+fn flushGroup(allocator: Allocator, groups: *std.ArrayList(Group), year: u16, entries: *std.ArrayList(Entry), post_year: u16) !void {
+    if (year == post_year or entries.items.len == 0) return;
+    const name = switch (year) {
+        unset_year => unreachable,
+        draft_year => "Drafts",
+        else => |y| try std.fmt.allocPrint(allocator, "{}", .{y}),
+    };
+    try groups.append(Group{ .name = name, .posts = try entries.toOwnedSlice() });
 }
 
 const Neighbors = struct {
