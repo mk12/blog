@@ -221,8 +221,12 @@ fn generatePage(
             .posts = try recentPostSummaries(allocator, base_url, posts),
         }),
         .@"/post/index.html" => try Value.init(allocator, .{
-            .title = "Post Archive",
+            .title = "Post Archive", // TODO <title> should have my name
             .groups = try groupPostsByYear(allocator, base_url, posts),
+        }),
+        .@"/categories/index.html" => try Value.init(allocator, .{
+            .title = "Categories", // TODO <title> should have my name
+            .groups = try groupPostsByCategory(allocator, base_url, posts),
         }),
         else => try Value.init(allocator, .{
             .title = "Mitchell Kember",
@@ -258,7 +262,20 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
 }
 
 const Group = struct { name: []const u8, posts: []Entry };
-const Entry = struct { date: Value, title: Value, href: []const u8 };
+
+const Entry = struct {
+    date: Value,
+    title: Value,
+    href: []const u8,
+
+    fn init(allocator: Allocator, post: Post, base_url: BaseUrl) !Entry {
+        return Entry{
+            .date = date(post.meta.status, .short),
+            .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+            .href = try base_url.postUrl(allocator, post.slug),
+        };
+    }
+};
 
 const unset_year: u16 = 0;
 const draft_year: u16 = 1;
@@ -272,19 +289,15 @@ fn groupPostsByYear(allocator: Allocator, base_url: BaseUrl, posts: []const Post
             .draft => draft_year,
             .published => |d| d.year,
         };
-        try flushGroup(allocator, &groups, year, &entries, post_year);
+        try flushYearGroup(allocator, &groups, year, &entries, post_year);
         year = post_year;
-        try entries.append(Entry{
-            .date = date(post.meta.status, .short),
-            .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try base_url.postUrl(allocator, post.slug),
-        });
+        try entries.append(try Entry.init(allocator, post, base_url));
     }
-    try flushGroup(allocator, &groups, year, &entries, unset_year);
+    try flushYearGroup(allocator, &groups, year, &entries, unset_year);
     return groups.items;
 }
 
-fn flushGroup(allocator: Allocator, groups: *std.ArrayList(Group), year: u16, entries: *std.ArrayList(Entry), post_year: u16) !void {
+fn flushYearGroup(allocator: Allocator, groups: *std.ArrayList(Group), year: u16, entries: *std.ArrayList(Entry), post_year: u16) !void {
     if (year == post_year or entries.items.len == 0) return;
     const name = switch (year) {
         unset_year => unreachable,
@@ -292,6 +305,30 @@ fn flushGroup(allocator: Allocator, groups: *std.ArrayList(Group), year: u16, en
         else => |y| try std.fmt.allocPrint(allocator, "{}", .{y}),
     };
     try groups.append(Group{ .name = name, .posts = try entries.toOwnedSlice() });
+}
+
+fn groupPostsByCategory(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![]Group {
+    var map = std.StringHashMap(std.ArrayListUnmanaged(Entry)).init(allocator);
+    var categories = std.ArrayList([]const u8).init(allocator);
+    for (posts) |post| {
+        const result = try map.getOrPut(post.meta.category);
+        if (!result.found_existing) {
+            try categories.append(post.meta.category);
+            result.value_ptr.* = .{};
+        }
+        try result.value_ptr.append(allocator, try Entry.init(allocator, post, base_url));
+    }
+    std.mem.sort([]const u8, categories.items, {}, cmpStringsAscending);
+    var groups = try std.ArrayList(Group).initCapacity(allocator, categories.items.len);
+    for (categories.items) |category| try groups.append(Group{
+        .name = category,
+        .posts = map.get(category).?.items,
+    });
+    return groups.items;
+}
+
+fn cmpStringsAscending(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .lt;
 }
 
 const Neighbors = struct {
@@ -330,7 +367,7 @@ fn generatePost(
 
 fn date(status: Status, style: Date.Style) Value {
     return switch (status) {
-        .draft => Value{ .string = "DRAFT" },
+        .draft => Value{ .string = "Draft" },
         .published => |d| Value{ .date = .{ .date = d, .style = style } },
     };
 }

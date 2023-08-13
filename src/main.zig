@@ -137,8 +137,7 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![
     return posts.items;
 }
 
-fn cmpPostsReverseChronological(context: void, lhs: Post, rhs: Post) bool {
-    _ = context;
+fn cmpPostsReverseChronological(_: void, lhs: Post, rhs: Post) bool {
     return Post.order(lhs, rhs) == .gt;
 }
 
