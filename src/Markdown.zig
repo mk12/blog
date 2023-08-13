@@ -767,6 +767,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             all_open = num_blocks_open == blocks.len();
             token = try tokenizer.next(all_open and highlighter.active);
         }
+        if (token.value == .eof) break;
         if (highlighter.active) {
             if (!all_open) return tokenizer.failOn(token, "missing closing ```", .{});
             switch (token.value) {
@@ -777,7 +778,6 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             continue;
         }
         try blocks.truncate(writer, num_blocks_open);
-        if (token.value == .eof) break;
         if (token.value == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
         first_iteration = false;
@@ -1269,6 +1269,18 @@ test "render code block in blockquote" {
         \\> > > >
         \\> ```
     , .{});
+}
+
+test "unclosed code block" {
+    try expectRenderFailure("<input>:1:4: missing closing ```", "```", .{});
+}
+
+test "unclosed code block in blockquote" {
+    try expectRenderFailure("<input>:1:6: missing closing ```", "> ```", .{});
+}
+
+test "unclosed code block in blockquote with text after" {
+    try expectRenderFailure("<input>:2:1: missing closing ```", "> ```\n\nFoo", .{});
 }
 
 test "render smart typography" {
