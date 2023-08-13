@@ -108,6 +108,9 @@ const Token = struct {
 };
 
 const TokenValue = union(enum) {
+    // End of file
+    eof,
+
     // Blocks tokens
     @"\n",
     @"#": u8,
@@ -186,7 +189,7 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer, in_code_block: bool) !?Token {
+    fn next(self: *Tokenizer, in_code_block: bool) !Token {
         if (self.peeked) |token| {
             self.peeked = null;
             return token;
@@ -194,22 +197,16 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         const start_offset = scanner.offset;
         const start_location = scanner.location;
-        if (try self.nextNonText(in_code_block)) |result| {
-            if (result.offset == start_offset) return result.token;
-            self.peeked = result.token;
-            return Token{
-                .value = .{ .text = scanner.source[start_offset..result.offset] },
-                .location = start_location,
-            };
-        }
-        if (scanner.offset == start_offset) return null;
+        const result = try self.nextNonText(in_code_block);
+        if (result.offset == start_offset) return result.token;
+        self.peeked = result.token;
         return Token{
-            .value = .{ .text = scanner.source[start_offset..scanner.offset] },
+            .value = .{ .text = scanner.source[start_offset..result.offset] },
             .location = start_location,
         };
     }
 
-    fn nextNonText(self: *Tokenizer, in_code_block: bool) !?struct { token: Token, offset: usize } {
+    fn nextNonText(self: *Tokenizer, in_code_block: bool) !struct { token: Token, offset: usize } {
         const scanner = self.scanner;
         var location: Location = undefined;
         var offset: usize = undefined;
@@ -217,7 +214,7 @@ const Tokenizer = struct {
             location = scanner.location;
             offset = scanner.offset;
             if (in_code_block) {
-                if (scanner.eof()) return null;
+                if (scanner.eof()) break :blk .eof;
                 if (scanner.peek(0) == '`' and scanner.peek(1) == '`' and scanner.peek(2) == '`' and (scanner.peek(3) == '\n' or scanner.peek(3) == null)) {
                     scanner.eat('`');
                     scanner.eat('`');
@@ -227,7 +224,7 @@ const Tokenizer = struct {
                 }
                 break :blk .stay_in_code_block;
             }
-            const char = scanner.next() orelse return null;
+            const char = scanner.next() orelse break :blk .eof;
             if (self.block_allowed) switch (char) {
                 '#' => {
                     const level: u8 = @intCast(1 + scanner.eatWhile('#'));
@@ -440,16 +437,20 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(TokenValue).init(allocator);
-    while (try tokenizer.next(false)) |token| try actual.append(token.value);
+    while (true) {
+        const token = try tokenizer.next(false);
+        try actual.append(token.value);
+        if (token.value == .eof) break;
+    }
     try testing.expectEqualDeep(expected, actual.items);
 }
 
 test "tokenize empty string" {
-    try expectTokens(&[_]TokenValue{}, "");
+    try expectTokens(&[_]TokenValue{.eof}, "");
 }
 
 test "tokenize text" {
-    try expectTokens(&[_]TokenValue{.{ .text = "Hello world!" }}, "Hello world!");
+    try expectTokens(&[_]TokenValue{ .{ .text = "Hello world!" }, .eof }, "Hello world!");
 }
 
 test "tokenize inline" {
@@ -468,6 +469,7 @@ test "tokenize inline" {
         .{ .text = "y" },
         .@"`",
         .{ .text = "!<br>" },
+        .eof,
     },
         \\_Hello_ **world** `x&y`!<br>
     );
@@ -493,6 +495,7 @@ test "tokenize block" {
         .@"\n",
         .@">",
         .@"* * *\n",
+        .eof,
     },
         \\# The _heading_
         \\
@@ -507,6 +510,7 @@ test "tokenize inline link" {
         .{ .@"[...](x)" = "bar" },
         .{ .text = "foo" },
         .@"]",
+        .eof,
     },
         \\[foo](bar)
     );
@@ -517,6 +521,7 @@ test "tokenize figure" {
         .{ .@"![...](x)" = "bar" },
         .{ .text = "Foo" },
         .@"]",
+        .eof,
     },
         \\![Foo](bar)
     );
@@ -743,10 +748,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
     var highlighter = Highlighter{ .enabled = options.highlight_code };
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
-    outer: while (true) {
+    while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
-        var token = try tokenizer.next(all_open and highlighter.active) orelse break;
+        var token = try tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
@@ -760,7 +765,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
-            token = try tokenizer.next(all_open and highlighter.active) orelse break :outer;
+            token = try tokenizer.next(all_open and highlighter.active);
         }
         if (highlighter.active) {
             if (!all_open) return tokenizer.failOn(token, "missing closing ```", .{});
@@ -772,6 +777,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             continue;
         }
         try blocks.truncate(writer, num_blocks_open);
+        if (token.value == .eof) break;
         if (token.value == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
         first_iteration = false;
@@ -784,7 +790,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 need_implicit_block = false;
             }
             switch (token.value) {
-                .@"\n" => break,
+                .eof, .@"\n" => break,
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
                 .@"```x\n" => |language| break try highlighter.begin(writer, Language.from(language)),
                 .stay_in_code_block, .@"```\n" => unreachable,
@@ -840,12 +846,12 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next(false) orelse break :outer;
+            token = try tokenizer.next(false);
         }
         if (inlines.top()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
-    if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
+    assert(inlines.len() == 0);
     if (highlighter.active) return tokenizer.fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
