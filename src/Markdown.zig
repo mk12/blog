@@ -198,18 +198,17 @@ const Tokenizer = struct {
         const start_offset = scanner.offset;
         const start_location = scanner.location;
         const result = try self.nextNonText(in_code_block);
-        if (result.offset == start_offset) return result.token;
+        const text = scanner.source[start_offset..result.offset];
+        if (text.len == 0) return result.token;
         self.peeked = result.token;
-        return Token{
-            .value = .{ .text = scanner.source[start_offset..result.offset] },
-            .location = start_location,
-        };
+        return Token{ .value = .{ .text = text }, .location = start_location };
     }
 
     fn nextNonText(self: *Tokenizer, in_code_block: bool) !struct { token: Token, offset: usize } {
         const scanner = self.scanner;
         var location: Location = undefined;
         var offset: usize = undefined;
+        // TODO don't need blk?
         const value: TokenValue = blk: while (true) {
             location = scanner.location;
             offset = scanner.offset;
@@ -1239,18 +1238,20 @@ test "render code block with language but no highlighting" {
     try expectRenderSuccess("<pre>\n<code>Foo</code>\n</pre>", "```html\nFoo\n```", .{});
 }
 
-test "render code block with special characters" {
-    // TODO
+test "render code block with blank lines" {
+    try expectRenderSuccess("<pre>\n<code>\n\n</code>\n</pre>", "```\n\n\n\n```", .{});
+}
 
-    // try expectRenderSuccess(
-    //     \\<pre>
-    //     \\<code>&lt;foo> [bar] `baz` _qux_ &amp; \</code>
-    //     \\</pre>
-    // ,
-    //     \\```
-    //     \\<foo> [bar] `baz` _qux_ & \
-    //     \\```
-    // , .{});
+test "render code block with special characters" {
+    try expectRenderSuccess(
+        \\<pre>
+        \\<code>&lt;foo> [bar] `baz` _qux_ &amp; \</code>
+        \\</pre>
+    ,
+        \\```
+        \\<foo> [bar] `baz` _qux_ & \
+        \\```
+    , .{});
 }
 
 test "render code block in blockquote" {

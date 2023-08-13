@@ -36,25 +36,26 @@ pub fn end(self: *Highlighter, writer: anytype) !void {
 }
 
 pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
-    const start = scanner.offset;
-    while (scanner.next()) |ch| if (ch == '\n') break;
     if (!self.first_line) try writer.writeByte('\n');
     self.first_line = false;
-    try writer.writeAll(std.mem.trimRight(u8, scanner.source[start..scanner.offset], "\n"));
-    // while (true) {
-    //     const offset = scanner.offset;
-    //     const token = self.next(scanner);
-    //     if (token.start != offset)
-    //         try self.write(writer, scanner.source[offset..token.start], .none);
-    //     try self.write(writer, scanner.source[token.start..scanner.offset], token.)
-    // }
+    while (true) {
+        const start = scanner.offset;
+        const token = self.next(scanner);
+        const text_before = scanner.source[start..token.offset];
+        if (text_before.len != 0) try self.write(writer, text_before, .none);
+        switch (token.value) {
+            .eof, .@"\n" => break,
+            .@"<" => try self.write(writer, "&lt;", token.class),
+            .@"&" => try self.write(writer, "&amp;", token.class),
+            .text => |text| try self.write(writer, text, token.class),
+        }
+    }
 }
 
 fn write(self: *Highlighter, writer: anytype, text: []const u8, class: Class) !void {
     _ = class;
-    _ = text;
-    _ = writer;
     _ = self;
+    try writer.writeAll(text);
 }
 
 fn flush(self: *Highlighter, writer: anytype) !void {
@@ -63,14 +64,12 @@ fn flush(self: *Highlighter, writer: anytype) !void {
 }
 
 const Token = struct {
-    start: usize,
-    value: union(enum) {
-        end_of_code,
-        @"<",
-        @"&",
-        text: Class,
-    },
+    offset: usize,
+    value: TokenValue,
+    class: Class,
 };
+
+const TokenValue = union(enum) { eof, @"\n", @"<", @"&", text: []const u8 };
 
 const Class = enum {
     none,
@@ -83,5 +82,16 @@ const Class = enum {
 
 fn next(self: *Highlighter, scanner: *Scanner) Token {
     _ = self;
-    _ = scanner;
+    var offset: usize = undefined;
+    const value: TokenValue = while (true) {
+        offset = scanner.offset;
+        const char = scanner.next() orelse break .eof;
+        switch (char) {
+            '\n' => break .@"\n",
+            '&' => break .@"&",
+            '<' => break .@"<",
+            else => {},
+        }
+    };
+    return Token{ .offset = offset, .value = value, .class = .none };
 }
