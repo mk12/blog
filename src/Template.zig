@@ -12,8 +12,8 @@
 //!     {{ include "file.html" }}              include another template
 //!     {{ define foo }}...{{ end }}           define a variable as sub-template
 //!
-//! A value is either a bool, (optional) string, array of values, dictionary
-//! from strings to values, sub-template, date object, or Markdown object.
+//! A value is either null, a bool, string, array of values, dictionary from
+//! strings to values, sub-template, date object, or Markdown object.
 //!
 //! Everything is truthy except false, null, empty arrays, and empty strings.
 //! {{ if }} is actually an alias for {{ range }}; ranging over a non-array
@@ -461,8 +461,9 @@ test "invalid include" {
 }
 
 pub const Value = union(enum) {
-    string: ?[]const u8,
+    null,
     bool: bool,
+    string: []const u8,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
     template: *const Template,
@@ -470,11 +471,18 @@ pub const Value = union(enum) {
     markdown: struct { markdown: Markdown, options: Markdown.Options },
 
     pub fn init(allocator: Allocator, object: anytype) !Value {
-        comptime var Type = @TypeOf(object);
-        if (Type == Value) return object;
-        switch (@typeInfo(Type)) {
-            .Bool => return .{ .bool = object },
-            .Optional => |Optional| Type = Optional.child,
+        return switch (@typeInfo(@TypeOf(object))) {
+            .Optional => if (object) |obj| initNonOptional(allocator, obj) else .null,
+            else => initNonOptional(allocator, object),
+        };
+    }
+
+    fn initNonOptional(allocator: Allocator, object: anytype) !Value {
+        const Type = @TypeOf(object);
+        switch (Type) {
+            Value => return object,
+            @TypeOf(null) => return .null,
+            bool => return .{ .bool = object },
             else => {},
         }
         if (comptime std.meta.trait.isZigString(Type))
@@ -507,6 +515,7 @@ test "value" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     _ = try Value.init(arena.allocator(), .{
+        .null = null,
         .true = true,
         .false = false,
         .string = "hello",
@@ -582,7 +591,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .text => |text| try ctx.writer.writeAll(text),
         .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
-            .string => |optional| if (optional) |string| try ctx.writer.writeAll(string),
+            .string => |string| try ctx.writer.writeAll(string),
             .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(ctx.writer, args.style),
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
@@ -593,29 +602,17 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                 .{ variable, @tagName(value) },
             ),
         },
-        .control => |control| switch (try self.lookup(ctx, scope, command, control.variable)) {
-            .bool => |value| if (value) {
-                try control.body.exec(ctx, scope);
-            } else if (control.else_body) |else_body| {
-                try else_body.exec(ctx, scope);
-            },
-            .array => |array| if (array.items.len == 0) {
-                if (control.else_body) |else_body| try else_body.exec(ctx, scope);
-            } else {
-                var child = scope.initChild(undefined);
-                for (array.items) |item| try control.body.exec(ctx, child.reset(item));
-            },
-            else => |value| blk: {
-                switch (value) {
-                    .string => |optional| if (optional == null or optional.?.len == 0) {
-                        if (control.else_body) |else_body| try else_body.exec(ctx, scope);
-                        break :blk;
-                    },
-                    else => {},
-                }
-                var child = scope.initChild(value);
-                try control.body.exec(ctx, &child);
-            },
+        .control => |control| blk: {
+            const body = control.body;
+            var child = scope.initChild(undefined);
+            switch (try self.lookup(ctx, scope, command, control.variable)) {
+                .null => {},
+                .bool => |value| if (value) break :blk try body.exec(ctx, scope),
+                .string => |string| if (string.len > 0) break :blk try body.exec(ctx, child.reset(Value{ .string = string })),
+                .array => |array| if (array.items.len > 0) break :blk for (array.items) |item| try body.exec(ctx, child.reset(item)),
+                else => |value| break :blk try body.exec(ctx, child.reset(value)),
+            }
+            if (control.else_body) |else_body| try else_body.exec(ctx, scope);
         },
     };
 }
