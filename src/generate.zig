@@ -52,10 +52,7 @@ pub fn generate(args: struct {
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
 
-    dirs.@"/".symLink(try fs.cwd().realpathAlloc(per_file_allocator, "assets/css/style.css"), "style.css", .{}) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
+    try symlink(per_file_allocator, dirs.@"/", "assets/css/style.css", "style.css");
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
@@ -137,6 +134,14 @@ const BaseUrl = struct {
     }
 };
 
+fn symlink(allocator: Allocator, dir: fs.Dir, cwd_target_path: []const u8, sym_link_path: []const u8) !void {
+    const target_path = try fs.cwd().realpathAlloc(allocator, cwd_target_path);
+    dir.symLink(target_path, sym_link_path, .{}) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+}
+
 const Hooks = struct {
     allocator: Allocator,
     base_url: BaseUrl,
@@ -181,12 +186,7 @@ const Hooks = struct {
         } else if (std.mem.startsWith(u8, dest, "assets/img/")) {
             const filename = dest["assets/img/".len..];
             const result = try self.linked_assets.getOrPut(self.allocator, filename);
-            if (!result.found_existing) {
-                self.dirs.@"/img".symLink(try fs.cwd().realpathAlloc(self.allocator, dest), filename, .{}) catch |err| switch (err) {
-                    error.PathAlreadyExists => {},
-                    else => return err,
-                };
-            }
+            if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", dest, filename);
             try std.fmt.format(writer, "<img src=\"/img/{s}\">", .{filename});
         } else {
             return handle.fail("{s}: cannot resolve internal url", .{url});
