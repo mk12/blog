@@ -12,7 +12,14 @@
 //!     {{ include "file.html" }}              include another template
 //!     {{ define foo }}...{{ end }}           define a variable as sub-template
 //!
-//! If-statements
+//! A value is either a bool, (optional) string, array of values, dictionary
+//! from strings to values, sub-template, date object, or Markdown object.
+//!
+//! Everything is truthy except false, null, empty arrays, and empty strings.
+//! {{ if }} is actually an alias for {{ range }}; ranging over a non-array
+//! iterates 0 or 1 times (and executes {{ else }} if 0 times). Within a range,
+//! {{ . }} is bound to the item. If the item is a dictionary, its fields are
+//! brought into scope as variables as well.
 //!
 //! When {{ if }}, {{ range}}, {{ else }}, or {{ end }} are preceded on their
 //! line only by whitespace, all prior whitespace (even before the line) is
@@ -24,7 +31,7 @@
 //!     This is the base.
 //!     {{ body }}
 //!
-//!     <!-- page.html -->
+//!     <!-- index.html -->
 //!     {{ include "base.html" }}
 //!     {{ define body }}...{{ end }}
 //!
@@ -600,7 +607,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             },
             else => |value| blk: {
                 switch (value) {
-                    .string => |optional| if (optional == null) {
+                    .string => |optional| if (optional == null or optional.?.len == 0) {
                         if (control.else_body) |else_body| try else_body.exec(ctx, scope);
                         break :blk;
                     },
@@ -685,8 +692,8 @@ test "execute if-else bool" {
 }
 
 test "execute if-else string" {
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
+    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
+    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
     try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) }, .{});
 }
 
