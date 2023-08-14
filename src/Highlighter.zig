@@ -2,6 +2,8 @@
 
 const std = @import("std");
 const fmt = std.fmt;
+const testing = std.testing;
+const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Highlighter = @This();
 
@@ -94,4 +96,32 @@ fn next(self: *Highlighter, scanner: *Scanner) Token {
         }
     };
     return Token{ .offset = offset, .value = value, .class = .none };
+}
+
+fn expectHighlight(expected_html: []const u8, source: []const u8, language: Language) !void {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    var actual_html = std.ArrayList(u8).init(allocator);
+    const writer = actual_html.writer();
+    var highlighter = Highlighter{ .enabled = true };
+    try highlighter.begin(writer, language);
+    while (!scanner.eof()) try highlighter.renderLine(writer, &scanner);
+    try highlighter.end(writer);
+    try testing.expectEqualStrings(expected_html, actual_html.items);
+}
+
+test "empty" {
+    try expectHighlight("<pre>\n<code></code>\n</pre>", "", .none);
+}
+
+test "one line" {
+    try expectHighlight("<pre>\n<code>Foo</code>\n</pre>", "Foo", .none);
+}
+
+test "escape with entities" {
+    try expectHighlight("<pre>\n<code>&lt;&amp;></code>\n</pre>", "<&>", .none);
 }
