@@ -1,5 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module implements date parsing and formatting.
+//! It parses from a subset of RFC-3339 to an 8-byte representation.
+
 const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;

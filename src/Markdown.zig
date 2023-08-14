@@ -1,5 +1,24 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module implements Markdown to HTML rendering. It is designed for speed:
+//! it renders in a single pass and does not allocate any memory. Text that does
+//! not need to be altered is memcpy'd straight to the output.
+//!
+//! To render a string, you also need a Context. You can obtain this by calling
+//! parse, which just extracts the link reference definitions from the bottom.
+//! You can then reuse this context to render different substrings in the file.
+//!
+//! It is not CommonMark compliant. It lacks a few regular Markdown features:
+//! no hard wrapping (a single newline ends a paragraph), no nesting in lists,
+//! and no loose lists. It treats ![Foo](foo.jpg) syntax as a block <figure>,
+//! not an inline <img>. It allows Markdown within raw HTML. It supports smart
+//! typography, auto heading IDs, footnotes, code highlighting, (TODO!) tables,
+//! and (TODO!) TeX math in dollar signs (rendered to MathML).
+//!
+//! It is customizable with Options and with Hooks. The options are mostly
+//! flags, e.g. whether to enable code highlighting. The hooks allow you to
+//! rewrite URLs in links and to override how images are rendered.
+
 const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
@@ -125,7 +144,7 @@ const TokenValue = union(enum) {
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
     @"[^x]: ": []const u8,
-    // TODO: figures, tables
+    // TODO: tables
 
     // Inline tokens
     text: []const u8,

@@ -1,5 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module provides a function that generates all the files for the blog.
+//! This is the least reusable part of the codebase.
+
 const std = @import("std");
 const fs = std.fs;
 const Allocator = std.mem.Allocator;

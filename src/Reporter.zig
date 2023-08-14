@@ -1,5 +1,10 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module implements error reporting. When you report an error, it formats
+//! the message in a buffer and returns error.ErrorWasReported, which you can
+//! then handle farther up the call stack (for example, by logging the message).
+//! The failAt method makes it easy to associate errors with source locations.
+
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;

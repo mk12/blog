@@ -1,5 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module defines the structure of a blog post. Basically, it consists of
+//! a slug from the filename, metadata fields, and a Markdown body.
+
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;

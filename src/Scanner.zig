@@ -1,5 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module provides primitives useful for building parsers.
+//! It also keeps track of line and column numbers for you.
+
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;

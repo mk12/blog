@@ -1,5 +1,11 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module implements basic code highlighting, targeting HTML and CSS.
+//! When the highlighter is disabled or when the language is unsupported,
+//! it still does some work to escape special characters with HTML entities.
+//! It is driven one line at a time so that it can be used by the Markdown
+//! renderer (where code blocks can be nested in blockquotes, for example).
+
 const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;

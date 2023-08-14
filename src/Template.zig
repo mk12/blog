@@ -1,5 +1,35 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module implements a templating system inspired by Go's text/template.
+//! Templates must be parsed first, and then can be executed multiple times.
+//!
+//! The syntax is as follows:
+//!
+//!     {{ foo }}                              insert a variable
+//!     {{ if foo }}...{{ end }}               if statement
+//!     {{ if foo }}...{{ else }}...{{ end }}  if-else statement
+//!     {{ range foo }}...{{ end }}            range over a collection
+//!     {{ include "file.html" }}              include another template
+//!     {{ define foo }}...{{ end }}           define a variable as sub-template
+//!
+//! If-statements
+//!
+//! When {{ if }}, {{ range}}, {{ else }}, or {{ end }} are preceded on their
+//! line only by whitespace, all prior whitespace (even before the line) is
+//! trimmed, similar to {{- foo }} in Go templates.
+//!
+//! You can express Jinja-style inheritance like this:
+//!
+//!     <!-- base.html -->
+//!     This is the base.
+//!     {{ body }}
+//!
+//!     <!-- page.html -->
+//!     {{ include "base.html" }}
+//!     {{ define body }}...{{ end }}
+//!
+//! This works because definitions are hoisted and dynamically scoped.
+
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;

@@ -1,5 +1,8 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+//! This module defines the metadata fields for blog posts. It parses them from
+//! a restricted form of YAML at the top of each file, between "---" lines.
+
 const std = @import("std");
 const testing = std.testing;
 const Date = @import("Date.zig");
