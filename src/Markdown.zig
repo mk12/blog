@@ -763,13 +763,13 @@ fn maybeLookupUrl(tokenizer: *const Tokenizer, token: Token, links: LinkMap, url
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
-    var highlighter = Highlighter{ .enabled = options.highlight_code };
+    var highlighter = Highlighter{};
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
-        var token = try tokenizer.next(all_open and highlighter.active);
+        var token = try tokenizer.next(all_open and highlighter.in_code_block);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
@@ -783,10 +783,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
-            token = try tokenizer.next(all_open and highlighter.active);
+            token = try tokenizer.next(all_open and highlighter.in_code_block);
         }
         if (token.value == .eof) break;
-        if (highlighter.active) {
+        if (highlighter.in_code_block) {
             if (!all_open) return tokenizer.failOn(token, "missing closing ```", .{});
             switch (token.value) {
                 .stay_in_code_block => try highlighter.renderLine(writer, tokenizer.scanner),
@@ -810,7 +810,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
             switch (token.value) {
                 .eof, .@"\n" => break,
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
-                .@"```x\n" => |language| break try highlighter.begin(writer, Language.from(language)),
+                .@"```x\n" => |language_str| {
+                    const language = if (options.highlight_code) Language.from(language_str) else null;
+                    break try highlighter.begin(writer, language);
+                },
                 .stay_in_code_block, .@"```\n" => unreachable,
                 .@"#" => |level| {
                     const tag = BlockTag.heading(tokenizer.remaining(), level, options);
@@ -870,7 +873,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (highlighter.active) return tokenizer.fail("missing closing ```", .{});
+    if (highlighter.in_code_block) return tokenizer.fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
 
