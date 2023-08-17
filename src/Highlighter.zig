@@ -100,21 +100,24 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
         // NOT following the "find start after" text model, should be able to
         // identify each token one after the other. Unlike markdown where end
         // of text is purely defined as the start of nontext.
+
+        // NEW IDEA
+        // =========
+        // instead of calling next() which returns class (doesn't work for strings with entities, escapes)
+        // how about calling function which may write 1+ times, and do that in a loop
         switch (char) {
             '\n' => break,
             '<' => try self.write(writer, "&lt;", null),
             '&' => try self.write(writer, "&amp;", null),
             '0'...'9' => {
-                var i: usize = 0;
-                while (scanner.peek(i)) |ch| switch (ch) {
+                while (scanner.peek(0)) |ch| switch (ch) {
                     '0'...'9', '.', '_' => scanner.eat(ch),
                     else => break,
                 };
                 try self.write(writer, scanner.source[start..scanner.offset], .cn);
             },
             ' ' => {
-                var i: usize = 0;
-                while (scanner.peek(i)) |ch| switch (ch) {
+                while (scanner.peek(0)) |ch| switch (ch) {
                     ' ' => scanner.eat(ch),
                     else => break,
                 };
@@ -139,9 +142,33 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                 }
                 try self.write(writer, scanner.source[start..scanner.offset], .st);
             },
+            '\'' => {
+                // TODO scheme, don't do this
+                var escape = false;
+                while (scanner.next()) |ch| {
+                    if (escape) {
+                        escape = false;
+                        continue;
+                    }
+                    switch (ch) {
+                        '\\' => escape = true,
+                        '\'' => break,
+                        '&' => return scanner.fail("entity in string not handled", .{}),
+                        '<' => return scanner.fail("entity in string not handled", .{}),
+                        else => {},
+                    }
+                } else {
+                    return scanner.fail("unterminated string literal", .{});
+                }
+                try self.write(writer, scanner.source[start..scanner.offset], switch (language) {
+                    .ruby => .st,
+                    .c => .cn,
+                    // TODO remove
+                    .scheme => null,
+                });
+            },
             'a'...'z', 'A'...'Z' => {
-                var i: usize = 0;
-                while (scanner.peek(i)) |ch| switch (ch) {
+                while (scanner.peek(0)) |ch| switch (ch) {
                     'a'...'z', 'A'...'Z', '_' => scanner.eat(ch),
                     '-' => if (language == .scheme) scanner.eat(ch) else break,
                     else => break,
@@ -151,6 +178,18 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                     inline else => |lang| keywords(lang).has(text),
                 };
                 try self.write(writer, text, if (kw) .kw else null);
+            },
+            '/' => {
+                if (language == .c and scanner.peek(0) == '/') {
+                    while (scanner.peek(0)) |ch| switch (ch) {
+                        '\n' => break,
+                        else => scanner.eat(ch),
+                    };
+                    try self.write(writer, scanner.source[start..scanner.offset], .co);
+                } else {
+                    // TODO remove
+                    try self.write(writer, scanner.source[start..scanner.offset], null);
+                }
             },
             '#' => {
                 if (language == .ruby) {
@@ -162,10 +201,12 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                     _ = try scanner.consume(i);
                     try self.write(writer, scanner.source[start..scanner.offset], .co);
                 } else {
-                    unreachable;
+                    // TODO remove
+                    try self.write(writer, scanner.source[start..scanner.offset], null);
                 }
             },
-            '(', ')', ',' => try self.write(writer, scanner.source[start..scanner.offset], null),
+            // TODO handle @, : in ruby
+            '(', ')', ',', '*', '.', '-', '+', '=', ':', ';', '{', '}', '[', ']', '@', '?' => try self.write(writer, scanner.source[start..scanner.offset], null),
             else => return scanner.fail("highlighter encountered unexpected character: '{c}'", .{char}),
             // TODO one char at a time like this maybe not ideal?
             // maybe indicates actually text-in-between model is right?

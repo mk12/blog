@@ -392,16 +392,24 @@ pre code {
 
 /* Code highlighting */
 
-.op, .er { font-weight: bold; } /* operators (assertion arrows), errors */
-.cs { font-style: italic; } /* console output */
+.kw { color: #a626a4; }
+.cn { color: #307a06; }
+.co { color: #c0392b; }
+.st { color: #307a06; }
 
-.kw { color: #a626a4; } /* keywords (special forms) */
-.fu { color: #0060d5; } /* functions */
-.cn { color: #307a06; } /* constants */
-.at, .er { color: #c0392b; } /* attention (comments, escapes), errors */
-.qu { color: #986801; } /* quoted */
-.cs { color: #6d6d6d; } /* console output */
-.op { color: #888; } /* operators (assertion arrows) */
+/*
+.op, .er { font-weight: bold; }  operators (assertion arrows), errors 
+.cs { font-style: italic; }      console output 
+
+.kw { color: #a626a4; }        keywords (special forms) 
+.fu { color: #0060d5; }        functions 
+.cn { color: #307a06; }        constants 
+.at, .er { color: #c0392b; }   attention (comments, escapes), errors 
+.qu { color: #986801; }        quoted 
+.cs { color: #6d6d6d; }        console output 
+.op { color: #888; }           operators (assertion arrows) 
+*/
+
 /* 
 @media (prefers-color-scheme: dark) {
     .kw { color: #c678dd; }
@@ -412,4 +420,3 @@ pre code {
     .cs { color: #959595; }
     .op { color: #888; }
 } */
-
