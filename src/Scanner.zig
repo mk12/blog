@@ -26,6 +26,14 @@ location: Location = .{},
 // - functions that deal with a character
 // - functions that deal with a string
 
+// axes:
+// - kind: char or string
+// - conumption: expect, consuming, non-consuming
+// - extent: until (incl/excl), num bytes, eof or newline, while certain chars
+// - scanner.source[start..scanner.offset]
+// skipping whitespace (just ignore return)
+// remove choice
+
 pub const Span = struct {
     text: []const u8,
     location: Location,
@@ -200,7 +208,7 @@ test "single character" {
     try testing.expectEqual(@as(?u8, null), scanner.next());
 }
 
-// TODO consider doing "test peek" for stuff like this
+// TODO consider doing "test peek" without quotes for stuff like this
 test "peek" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
