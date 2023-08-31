@@ -187,7 +187,7 @@ const Tokenizer = struct {
     link_depth: u8 = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
-        while (scanner.peek(0)) |c| if (c == '\n') scanner.eat(c) else break;
+        _ = scanner.eatWhile('\n');
         return Tokenizer{ .scanner = scanner };
     }
 
@@ -220,13 +220,7 @@ const Tokenizer = struct {
         const start_location = scanner.location;
         if (in_code_block) {
             if (scanner.eof()) return .{ .value = .eof, .location = start_location };
-            if (scanner.peek(0) == '`' and scanner.peek(1) == '`' and scanner.peek(2) == '`' and (scanner.peek(3) == '\n' or scanner.peek(3) == null)) {
-                scanner.eat('`');
-                scanner.eat('`');
-                scanner.eat('`');
-                _ = scanner.next();
-                return .{ .value = .@"```\n", .location = start_location };
-            }
+            if (scanner.eatIfLine("```")) return .{ .value = .@"```\n", .location = start_location };
             return .{ .value = .stay_in_code_block, .location = start_location };
         }
         const text_and_token = while (true) {
@@ -275,9 +269,7 @@ const Tokenizer = struct {
                 self.block_allowed = true;
                 return .@">";
             },
-            '`' => if (scanner.peek(0) == '`' and scanner.peek(1) == '`') {
-                scanner.eat('`');
-                scanner.eat('`');
+            '`' => if (scanner.eatIfString("``")) {
                 var start = scanner.offset;
                 var end = start;
                 while (scanner.next()) |ch| if (ch == '\n') {
@@ -308,8 +300,7 @@ const Tokenizer = struct {
                     else => break,
                 };
             },
-            '*' => if (scanner.attempt(" * *") and (scanner.eof() or scanner.eatIf('\n')))
-                return .@"* * *\n",
+            '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
             '[' => if (scanner.eatIf('^')) {
                 const span = try scanner.until(']');
                 // TODO: maybe shouldn't be an error here.
@@ -439,7 +430,7 @@ const Tokenizer = struct {
                 }
                 return .@"--";
             },
-            '.' => if (scanner.attempt("..")) return .@"...",
+            '.' => if (scanner.eatIfString("..")) return .@"...",
             else => {},
         }
         return null;

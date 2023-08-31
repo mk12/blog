@@ -93,10 +93,43 @@ pub fn eatIf(self: *Scanner, char: u8) bool {
 }
 
 // TODO revisit, also test
+pub fn eatIfString(self: *Scanner, string: []const u8) bool {
+    // assert no newline
+    const end = self.offset + string.len;
+    if (end > self.source.len) return false;
+    if (!mem.eql(u8, self.source[self.offset..end], string)) return false;
+    self.offset += string.len;
+    self.location.column += @intCast(string.len);
+    return true;
+}
+
+// TODO revisit, also test
 pub fn eatWhile(self: *Scanner, char: u8) usize {
     const start = self.offset;
     while (self.peek(0)) |c| if (c == char) self.eat(c) else break;
     return self.offset - start;
+}
+
+pub fn eatUntil(self: *Scanner, char: u8) bool {
+    while (self.next()) |c| if (c == char) return true;
+    return false;
+}
+
+// TODO revisit, also test
+pub fn eatIfLine(self: *Scanner, line: []const u8) bool {
+    const end = self.offset + line.len;
+    if (end > self.source.len) return false;
+    if (!mem.eql(u8, self.source[self.offset..end], line)) return false;
+    if (end == self.source.len) {
+        self.offset += line.len;
+        self.location.column += @intCast(line.len);
+        return true;
+    }
+    if (self.source[end] != '\n') return false;
+    self.offset += line.len + 1;
+    self.location.line += 1;
+    self.location.column = 1;
+    return true;
 }
 
 pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
