@@ -1,7 +1,7 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
-//! This module provides primitives useful for building parsers.
-//! It also keeps track of line and column numbers for you.
+//! This module implements text scanning from a buffer (not a generic reader).
+//! It provides primitives useful for building tokenizers and parsers.
 
 const std = @import("std");
 const mem = std.mem;
@@ -33,6 +33,18 @@ location: Location = .{},
 // - scanner.source[start..scanner.offset]
 // skipping whitespace (just ignore return)
 // remove choice
+
+// unmanaged versions can have this state passed in and out:
+pub const State = struct { offset: usize, location: Location };
+
+// pub fn state(self: Scanner) State {
+//     return State{ .offset = self.offset, .location = self.location };
+// }
+
+// pub fn commit(self: *Scanner, state: State) void {
+//     self.offset = state.offset;
+//     self.location = state.location;
+// }
 
 pub const Span = struct {
     text: []const u8,

@@ -25,18 +25,7 @@ pub fn fail(self: *Reporter, comptime format: []const u8, args: anytype) Error {
     return error.ErrorWasReported;
 }
 
-pub const Location = struct {
-    line: u16 = 1,
-    column: u16 = 1,
-};
-
-pub fn failAt(
-    self: *Reporter,
-    filename: []const u8,
-    location: Location,
-    comptime format: []const u8,
-    args: anytype,
-) Error {
+pub fn failAt(self: *Reporter, filename: []const u8, location: Location, comptime format: []const u8, args: anytype) Error {
     return self.fail(
         "{s}:{}:{}: " ++ format,
         .{ filename, location.line, location.column } ++ args,
@@ -69,4 +58,31 @@ test "failAt" {
     var reporter = init(arena.allocator());
     const result = reporter.failAt("test.txt", .{ .line = 42, .column = 5 }, "foo: {s}", .{"bar"});
     try reporter.expectFailure("test.txt:42:5: foo: bar", @as(Error!void, result));
+}
+
+pub const Location = struct {
+    line: u16 = 1,
+    column: u16 = 1,
+
+    // Computes a location from an offset. The offset may be equal to source.len.
+    pub fn compute(source: []const u8, offset: usize) Location {
+        const start_of_line = if (std.mem.lastIndexOfScalar(u8, source[0..offset], '\n')) |i| i + 1 else 0;
+        const num_newlines = std.mem.count(u8, source[0..start_of_line], "\n");
+        return Location{
+            .line = @intCast(num_newlines + 1),
+            .column = @intCast(offset - start_of_line + 1),
+        };
+    }
+};
+
+test "Location" {
+    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("", 0));
+    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("x", 0));
+    try testing.expectEqualDeep(Location{ .line = 1, .column = 2 }, Location.compute("x", 1));
+    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("a\n\nbc", 0));
+    try testing.expectEqualDeep(Location{ .line = 1, .column = 2 }, Location.compute("a\n\nbc", 1));
+    try testing.expectEqualDeep(Location{ .line = 2, .column = 1 }, Location.compute("a\n\nbc", 2));
+    try testing.expectEqualDeep(Location{ .line = 3, .column = 1 }, Location.compute("a\n\nbc", 3));
+    try testing.expectEqualDeep(Location{ .line = 3, .column = 2 }, Location.compute("a\n\nbc", 4));
+    try testing.expectEqualDeep(Location{ .line = 3, .column = 3 }, Location.compute("a\n\nbc", 5));
 }
