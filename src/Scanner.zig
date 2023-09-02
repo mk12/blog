@@ -18,13 +18,6 @@ reporter: *Reporter,
 filename: []const u8 = "<input>",
 offset: usize = 0,
 
-// TODO test
-pub fn focus(self: *Scanner, span: []const u8) void {
-    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-    self.offset = @intFromPtr(span.ptr) - @intFromPtr(self.source.ptr);
-    self.source.len = self.offset + span.len;
-}
-
 pub fn eof(self: Scanner) bool {
     return self.offset == self.source.len;
 }

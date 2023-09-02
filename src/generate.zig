@@ -151,30 +151,30 @@ const Hooks = struct {
     linked_assets: std.StringHashMapUnmanaged(void) = .{},
     dirs: *const Directories,
 
-    pub fn writeUrl(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+    pub fn writeUrl(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
         if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
         // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
         const hash_idx = std.mem.indexOfScalar(u8, url, '#') orelse url.len;
-        if (hash_idx == 0) return handle.fail("direct #id links in same page not implemented yet", .{});
+        if (hash_idx == 0) return context.fail("direct #id links in same page not implemented yet", .{});
         const path = url[0..hash_idx];
         const fragment = url[hash_idx..];
-        const source_dir = fs.path.dirname(handle.filename()).?;
+        const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
         // TODO don't duplicate "posts/" in main.zig and here
         if (std.mem.startsWith(u8, dest, "posts/")) {
             const filename = dest["posts/".len..];
-            if (!std.mem.endsWith(u8, filename, ".md")) return handle.fail("{s}: expected .md extension", .{url});
+            if (!std.mem.endsWith(u8, filename, ".md")) return context.fail("{s}: expected .md extension", .{url});
             const slug = Post.parseSlug(filename);
             // TODO use base_url, make it support writer and allocator
             try std.fmt.format(writer, "{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
         } else {
-            return handle.fail("{s}: cannot resolve internal url", .{url});
+            return context.fail("{s}: cannot resolve internal url", .{url});
         }
     }
 
-    pub fn writeImage(self: *Hooks, writer: anytype, handle: Markdown.Handle, url: []const u8) !void {
+    pub fn writeImage(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
         // TODO: eliminate duplication with writeUrl
-        const source_dir = fs.path.dirname(handle.filename()).?;
+        const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, url });
         if (std.mem.startsWith(u8, dest, "assets/svg/")) {
             // TODO: make SVGs use CSS variables for dark/light mode
@@ -191,7 +191,7 @@ const Hooks = struct {
             if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", dest, filename);
             try std.fmt.format(writer, "<img src=\"/img/{s}\">", .{filename});
         } else {
-            return handle.fail("{s}: cannot resolve internal url", .{url});
+            return context.fail("{s}: cannot resolve internal url", .{url});
         }
     }
 };

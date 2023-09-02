@@ -201,10 +201,6 @@ const Tokenizer = struct {
         return self.scanner.failAt(token.offset, format, args);
     }
 
-    fn handle(self: *const Tokenizer, token: Token) Handle {
-        return Handle{ .tokenizer = self, .offset = token.offset };
-    }
-
     // Returns the remaining untokenized source.
     // This is inaccurate when there is a peeked token (i.e. after next() returns text).
     fn remaining(self: Tokenizer) []const u8 {
@@ -545,29 +541,32 @@ fn WithDefaultHooks(comptime Inner: type) type {
         };
         inner: Inner,
 
-        fn writeUrl(self: Self, writer: anytype, handle: Handle, url: []const u8) !void {
-            if (@hasDecl(Underlying, "writeUrl")) return self.inner.writeUrl(writer, handle, url);
+        fn writeUrl(self: Self, writer: anytype, context: HookContext, url: []const u8) !void {
+            if (@hasDecl(Underlying, "writeUrl")) return self.inner.writeUrl(writer, context, url);
             try writer.writeAll(url);
         }
 
-        fn writeImage(self: Self, writer: anytype, handle: Handle, url: []const u8) !void {
-            if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, handle, url);
+        fn writeImage(self: Self, writer: anytype, context: HookContext, url: []const u8) !void {
+            if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, context, url);
             try fmt.format(writer, "<img src=\"{s}\">", .{url});
         }
     };
 }
 
-// TODO maybe rename
-pub const Handle = struct {
-    tokenizer: *const Tokenizer,
-    offset: usize,
+pub const HookContext = struct {
+    reporter: *Reporter,
+    source: []const u8,
+    filename: []const u8,
+    offset: usize = undefined,
 
-    pub fn filename(self: Handle) []const u8 {
-        return self.tokenizer.scanner.filename;
+    fn at(self: HookContext, ptr: [*]const u8) HookContext {
+        // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
+        const offset = @intFromPtr(ptr) - @intFromPtr(self.source.ptr);
+        return HookContext{ .reporter = self.reporter, .source = self.source, .filename = self.filename, .offset = offset };
     }
 
-    pub fn fail(self: Handle, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.tokenizer.scanner.failAt(self.offset, format, args);
+    pub fn fail(self: HookContext, comptime format: []const u8, args: anytype) Reporter.Error {
+        return self.reporter.failAt(self.filename, Location.compute(self.source, self.offset), format, args);
     }
 };
 
@@ -578,15 +577,18 @@ pub fn render(
     hooks: anytype,
     options: Options,
 ) !void {
+    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
+    const offset = @intFromPtr(self.text.ptr) - @intFromPtr(self.context.source.ptr);
     var scanner = Scanner{
-        .source = self.context.source,
+        .source = self.context.source[0 .. offset + self.text.len],
         .reporter = reporter,
         .filename = self.context.filename,
+        .offset = offset,
     };
-    scanner.focus(self.text);
     var tokenizer = try Tokenizer.init(&scanner);
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
-    return renderImpl(&tokenizer, writer, full_hooks, self.context.links, options) catch |err| switch (err) {
+    const hook_ctx = HookContext{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename };
+    return renderImpl(&tokenizer, writer, full_hooks, hook_ctx, self.context.links, options) catch |err| switch (err) {
         error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
         else => return err,
     };
@@ -743,7 +745,7 @@ fn maybeLookupUrl(tokenizer: *const Tokenizer, token: Token, links: LinkMap, url
     };
 }
 
-fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: LinkMap, options: Options) !void {
+fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: HookContext, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var highlighter = Highlighter{};
@@ -808,7 +810,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
                     try blocks.push(writer, .figure);
-                    try hooks.writeImage(writer, tokenizer.handle(token), url);
+                    try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeByte('\n');
                     try blocks.push(writer, .figcaption);
                 },
@@ -830,7 +832,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, links: Lin
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer, token, links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, tokenizer.handle(token), url);
+                    try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeAll("\">");
                     try inlines.pushWithoutWriting(.a);
                 },
@@ -1419,8 +1421,8 @@ test "unexpected right bracket" {
 test "writeUrl hook" {
     const hooks = struct {
         data: []const u8 = "data",
-        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
-            try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, handle.filename(), self.data });
+        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
+            try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, context.filename, self.data });
         }
     }{};
     try expectRenderSuccessWithHooks(
@@ -1432,10 +1434,10 @@ test "writeUrl hook" {
 
 test "failure in writeUrl hook (inline)" {
     const hooks = struct {
-        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
             _ = writer;
             _ = self;
-            return handle.fail("{s}: bad url", .{url});
+            return context.fail("{s}: bad url", .{url});
         }
     }{};
     try expectRenderFailureWithHooks(
@@ -1448,19 +1450,14 @@ test "failure in writeUrl hook (inline)" {
 
 test "failure in writeUrl hook (reference)" {
     const hooks = struct {
-        fn writeUrl(self: @This(), writer: anytype, handle: Handle, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
             _ = writer;
             _ = self;
-            return handle.fail("{s}: bad url", .{url});
+            return context.fail("{s}: bad url", .{url});
         }
     }{};
-    // It would be nicer to point to the actual "xyz", not the "ref".
-    // We could do that by storing Span in LinkMap, but that would require a
-    // full extra traversal to count newlines, which I don't want to do.
-
-    // TODO: can do this now
     try expectRenderFailureWithHooks(
-        \\<input>:2:12: xyz: bad url
+        \\<input>:3:8: xyz: bad url
     ,
         \\[some
         \\link text][ref]
