@@ -63,6 +63,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
 test "draft" {
     try expectSuccess(Metadata{
         .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
+        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
         .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
         .category = "Category",
         .status = .draft,

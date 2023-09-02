@@ -76,13 +76,13 @@ pub const Location = struct {
 };
 
 test "Location" {
-    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("", 0));
-    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("x", 0));
-    try testing.expectEqualDeep(Location{ .line = 1, .column = 2 }, Location.compute("x", 1));
-    try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.compute("a\n\nbc", 0));
-    try testing.expectEqualDeep(Location{ .line = 1, .column = 2 }, Location.compute("a\n\nbc", 1));
-    try testing.expectEqualDeep(Location{ .line = 2, .column = 1 }, Location.compute("a\n\nbc", 2));
-    try testing.expectEqualDeep(Location{ .line = 3, .column = 1 }, Location.compute("a\n\nbc", 3));
-    try testing.expectEqualDeep(Location{ .line = 3, .column = 2 }, Location.compute("a\n\nbc", 4));
-    try testing.expectEqualDeep(Location{ .line = 3, .column = 3 }, Location.compute("a\n\nbc", 5));
+    try testing.expectEqual(Location{ .line = 1, .column = 1 }, Location.compute("", 0));
+    try testing.expectEqual(Location{ .line = 1, .column = 1 }, Location.compute("x", 0));
+    try testing.expectEqual(Location{ .line = 1, .column = 2 }, Location.compute("x", 1));
+    try testing.expectEqual(Location{ .line = 1, .column = 1 }, Location.compute("a\n\nbc", 0));
+    try testing.expectEqual(Location{ .line = 1, .column = 2 }, Location.compute("a\n\nbc", 1));
+    try testing.expectEqual(Location{ .line = 2, .column = 1 }, Location.compute("a\n\nbc", 2));
+    try testing.expectEqual(Location{ .line = 3, .column = 1 }, Location.compute("a\n\nbc", 3));
+    try testing.expectEqual(Location{ .line = 3, .column = 2 }, Location.compute("a\n\nbc", 4));
+    try testing.expectEqual(Location{ .line = 3, .column = 3 }, Location.compute("a\n\nbc", 5));
 }

@@ -17,38 +17,10 @@ source: []const u8,
 reporter: *Reporter,
 filename: []const u8 = "<input>",
 offset: usize = 0,
-location: Location = .{},
-
-// TODO: redesign this
-// Needed features:
-// - functions that consume
-// - functions that peek ("unmanaged" index passed in)
-// - functions that deal with a character
-// - functions that deal with a string
-
-// axes:
-// - kind: char or string
-// - conumption: expect, consuming, non-consuming
-// - extent: until (incl/excl), num bytes, eof or newline, while certain chars
-// - scanner.source[start..scanner.offset]
-// skipping whitespace (just ignore return)
-// remove choice
-
-// unmanaged versions can have this state passed in and out:
-pub const State = struct { offset: usize, location: Location };
-
-// pub fn state(self: Scanner) State {
-//     return State{ .offset = self.offset, .location = self.location };
-// }
-
-// pub fn commit(self: *Scanner, state: State) void {
-//     self.offset = state.offset;
-//     self.location = state.location;
-// }
 
 pub const Span = struct {
-    text: []const u8,
-    location: Location,
+    offset: usize,
+    length: usize,
 };
 
 pub fn eof(self: Scanner) bool {
@@ -65,18 +37,6 @@ pub fn behind(self: Scanner, bytes_behind: usize) ?u8 {
     return if (self.offset < bytes_behind) null else self.source[self.offset - bytes_behind];
 }
 
-// TODO revisit, also test
-pub fn peekLocation(self: Scanner, bytes_ahead: usize) Location {
-    const upcoming = self.slice(bytes_ahead);
-    return Location{
-        .line = self.location.line + @as(u16, @intCast(mem.count(u8, upcoming, "\n"))),
-        .column = if (mem.lastIndexOfScalar(u8, upcoming, '\n')) |idx|
-            @intCast(upcoming.len - idx)
-        else
-            self.location.column + @as(u16, @intCast(upcoming.len)),
-    };
-}
-
 pub fn next(self: *Scanner) ?u8 {
     if (self.eof()) return null;
     const char = self.source[self.offset];
@@ -87,12 +47,6 @@ pub fn next(self: *Scanner) ?u8 {
 pub fn eat(self: *Scanner, char: u8) void {
     assert(char == self.peek(0));
     self.offset += 1;
-    if (char == '\n') {
-        self.location.line += 1;
-        self.location.column = 1;
-    } else {
-        self.location.column += 1;
-    }
 }
 
 // TODO revisit, also test
@@ -134,24 +88,19 @@ pub fn eatIfLine(self: *Scanner, line: []const u8) bool {
     if (!mem.eql(u8, self.source[self.offset..end], line)) return false;
     if (end == self.source.len) {
         self.offset += line.len;
-        self.location.column += @intCast(line.len);
         return true;
     }
     if (self.source[end] != '\n') return false;
     self.offset += line.len + 1;
-    self.location.line += 1;
-    self.location.column = 1;
     return true;
 }
 
 pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
-    assert(byte_count > 0);
-    const location = self.location;
+    assert(byte_count > 0); // TODO remove?
     const start = self.offset;
-    for (0..byte_count) |_|
-        _ = self.next() orelse return self.fail("unexpected EOF", .{});
-    const text = self.source[start..self.offset];
-    return Span{ .text = text, .location = location };
+    if (start + byte_count > self.source.len) return self.fail("unexpected EOF", .{});
+    self.offset += byte_count;
+    return Span{ .offset = start, .length = byte_count };
 }
 
 fn slice(self: Scanner, length: usize) []const u8 {
@@ -163,11 +112,6 @@ pub fn attempt(self: *Scanner, comptime string: []const u8) bool {
     comptime assert(string.len > 0);
     if (!mem.eql(u8, self.slice(string.len), string)) return false;
     self.offset += @intCast(string.len);
-    self.location.line += @intCast(comptime mem.count(u8, string, "\n"));
-    self.location.column = if (comptime mem.lastIndexOfScalar(u8, string, '\n')) |idx|
-        string.len - idx
-    else
-        self.location.column + @as(u16, @intCast(string.len));
     return true;
 }
 
@@ -179,14 +123,9 @@ pub fn expect(self: *Scanner, comptime expected: []const u8) Error!void {
 }
 
 pub fn until(self: *Scanner, end: u8) Error!Span {
-    const location = self.location;
     const start = self.offset;
-    while (self.next()) |char| {
-        if (char == end) {
-            const text = self.source[start .. self.offset - 1];
-            return Span{ .text = text, .location = location };
-        }
-    }
+    while (self.next()) |char|
+        if (char == end) return Span{ .offset = start, .length = self.offset - start - 1 };
     return self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(&.{end})});
 }
 
@@ -220,15 +159,16 @@ pub fn skipWhitespace(self: *Scanner) void {
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, self.location, format, args);
-}
-
-pub fn failAt(self: *Scanner, location: Location, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, location, format, args);
+    return self.failAt(self.offset, format, args);
 }
 
 pub fn failOn(self: *Scanner, span: Span, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, span.location, "\"{s}\": " ++ format, .{span.text} ++ args);
+    const text = self.source[span.offset][0..span.length];
+    return self.failAt(span.offset, "\"{s}\": " ++ format, .{text} ++ args);
+}
+
+pub fn failAt(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
+    return self.reporter.failAt(self.filename, Location.compute(self.source, offset), format, args);
 }
 
 test "empty input" {
@@ -275,16 +215,8 @@ test "consume" {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "a\nbc", .reporter = &reporter };
-    {
-        const span = try scanner.consume(3);
-        try testing.expectEqualStrings("a\nb", span.text);
-        try testing.expectEqual(Location{ .line = 1, .column = 1 }, span.location);
-    }
-    {
-        const span = try scanner.consume(1);
-        try testing.expectEqualStrings("c", span.text);
-        try testing.expectEqual(Location{ .line = 2, .column = 2 }, span.location);
-    }
+    try testing.expectEqual(Span{ .offset = 0, .length = 3 }, try scanner.consume(3));
+    try testing.expectEqual(Span{ .offset = 3, .length = 1 }, try scanner.consume(1));
     try testing.expect(scanner.eof());
 }
 
@@ -320,16 +252,8 @@ test "until" {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "one\ntwo\n", .reporter = &reporter };
-    {
-        const span = try scanner.until('\n');
-        try testing.expectEqualStrings("one", span.text);
-        try testing.expectEqual(Location{ .line = 1, .column = 1 }, span.location);
-    }
-    {
-        const span = try scanner.until('\n');
-        try testing.expectEqualStrings("two", span.text);
-        try testing.expectEqual(Location{ .line = 2, .column = 1 }, span.location);
-    }
+    try testing.expectEqual(Span{ .offset = 0, .length = 3 }, try scanner.until('\n'));
+    try testing.expectEqual(Span{ .offset = 4, .length = 3 }, try scanner.until('\n'));
     try testing.expect(scanner.eof());
 }
 

@@ -38,6 +38,7 @@ span: Span,
 context: Context,
 
 pub const Context = struct {
+    source: []const u8,
     filename: []const u8,
     links: LinkMap,
 };
@@ -46,32 +47,33 @@ pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     var links = LinkMap{};
-    var source = scanner.source[scanner.offset..];
+    var text = scanner.source[scanner.offset..];
     outer: while (true) {
-        source = std.mem.trimRight(u8, source, "\n");
-        const newline_index = std.mem.lastIndexOfScalar(u8, source, '\n') orelse break;
+        text = std.mem.trimRight(u8, text, "\n");
+        const newline_index = std.mem.lastIndexOfScalar(u8, text, '\n') orelse break;
         var i = newline_index + 1;
-        if (i == source.len or source[i] != '[') break;
+        if (i == text.len or text[i] != '[') break;
         i += 1;
-        if (i == source.len or source[i] == '^') break;
+        if (i == text.len or text[i] == '^') break;
         const label_start = i;
-        while (i < source.len) : (i += 1) switch (source[i]) {
+        while (i < text.len) : (i += 1) switch (text[i]) {
             '\n' => break :outer,
             ']' => break,
             else => {},
         };
         const label_end = i;
         i += 1;
-        if (i == source.len or source[i] != ':') break;
+        if (i == text.len or text[i] != ':') break;
         i += 1;
-        if (i == source.len or source[i] != ' ') break;
+        if (i == text.len or text[i] != ' ') break;
         i += 1;
-        try links.put(allocator, source[label_start..label_end], source[i..]);
-        source.len = newline_index;
+        try links.put(allocator, text[label_start..label_end], text[i..]);
+        // try links.put(allocator, text[label_start..label_end], Span{ .offset = scanner.offset + i, .length = text.len - i });
+        text.len = newline_index;
     }
     return Markdown{
-        .span = Span{ .text = source, .location = scanner.location },
-        .context = Context{ .filename = scanner.filename, .links = links },
+        .span = Span{ .offset = scanner.offset, .length = text.len },
+        .context = Context{ .source = scanner.source, .filename = scanner.filename, .links = links },
     };
 }
 
@@ -587,11 +589,12 @@ pub fn render(
     options: Options,
 ) !void {
     var scanner = Scanner{
-        .source = self.span.text,
+        .source = self.context.source[0 .. self.span.offset + self.span.length],
         .reporter = reporter,
         .filename = self.context.filename,
-        .location = self.span.location,
+        .offset = self.span.offset,
     };
+    // or: scanner.restrict(self.span) // jumps, restricts to that window
     var tokenizer = try Tokenizer.init(&scanner);
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
     return renderImpl(&tokenizer, writer, full_hooks, self.context.links, options) catch |err| switch (err) {
