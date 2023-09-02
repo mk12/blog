@@ -207,221 +207,224 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer, in_code_block: bool) !Token {
+    fn next(self: *Tokenizer) !Token {
         if (self.peeked) |token| {
             self.peeked = null;
             return token;
         }
-        const scanner = self.scanner;
-        const start = scanner.offset;
-        if (in_code_block) {
-            if (scanner.eof()) return .{ .value = .eof, .offset = start };
-            if (scanner.eatIfLine("```")) return .{ .value = .@"```\n", .offset = start };
-            return .{ .value = .stay_in_code_block, .offset = start };
-        }
-        const text_and_token = while (true) {
-            var offset = scanner.offset;
-            var location_offset: ?usize = null;
-            if (try self.recognize(&offset, &location_offset)) |value| break .{
-                scanner.source[start..offset],
-                Token{ .value = value, .offset = location_offset orelse offset },
-            };
-        };
-        const text = text_and_token[0];
-        const token = text_and_token[1];
+        const start = self.scanner.offset;
+        const token = while (true) if (try self.recognize()) |token| break token;
+        const text = self.scanner.source[start..token.offset];
         if (text.len == 0) return token;
         self.peeked = token;
         return Token{ .value = .{ .text = text }, .offset = start };
     }
 
-    fn recognize(self: *Tokenizer, offset: *usize, location_offset: *?usize) !?TokenValue {
+    fn nextInCodeBlock(self: *Tokenizer) Token {
+        assert(self.peeked == null);
         const scanner = self.scanner;
-        const char = scanner.next() orelse return .eof;
-        if (self.block_allowed) switch (char) {
-            '#' => {
-                const level: u8 = @intCast(1 + scanner.eatWhile('#'));
-                if (level <= 6 and scanner.eatIf(' ')) return .{ .@"#" = level };
-            },
-            '<' => if (scanner.peek(0)) |c| switch (c) {
-                '/', 'a'...'z' => {
-                    var i: usize = 1;
-                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == '>') break;
-                    if (scanner.peek(i) == '>') {
-                        i += 1;
-                        const ch = scanner.peek(i);
-                        if (ch == null or ch == '\n') {
-                            _ = try scanner.consume(i);
-                            self.in_raw_html_block = true;
-                            // Need to make a separate text token, rather than just
-                            // `return` as we do for inline HTML, so that when the
-                            // user checks `in_raw_html_block` it's accurate.
-                            return .{ .text = scanner.source[offset.*..scanner.offset] };
+        const start = scanner.offset;
+        return Token{
+            .value = if (scanner.eof()) .eof else if (scanner.eatIfLine("```")) .@"```\n" else .stay_in_code_block,
+            .offset = start,
+        };
+    }
+
+    fn recognize(self: *Tokenizer) !?Token {
+        const scanner = self.scanner;
+        const start = scanner.offset;
+        const value: TokenValue = blk: {
+            const char = scanner.next() orelse break :blk .eof;
+            if (self.block_allowed) switch (char) {
+                '#' => {
+                    const level: u8 = @intCast(1 + scanner.eatWhile('#'));
+                    if (level <= 6 and scanner.eatIf(' ')) break :blk .{ .@"#" = level };
+                },
+                '<' => if (scanner.peek(0)) |c| switch (c) {
+                    '/', 'a'...'z' => {
+                        var i: usize = 1;
+                        while (scanner.peek(i)) |ch| : (i += 1) if (ch == '>') break;
+                        if (scanner.peek(i) == '>') {
+                            i += 1;
+                            const ch = scanner.peek(i);
+                            if (ch == null or ch == '\n') {
+                                _ = try scanner.consume(i);
+                                self.in_raw_html_block = true;
+                                // Need to make a separate text token, rather than just
+                                // `return` as we do for inline HTML, so that when the
+                                // user checks `in_raw_html_block` it's accurate.
+                                break :blk .{ .text = scanner.source[start..scanner.offset] };
+                            }
                         }
-                    }
+                    },
+                    else => {},
+                },
+                '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n' or scanner.eof()) {
+                    self.block_allowed = true;
+                    break :blk .@">";
+                },
+                '`' => if (scanner.eatIfString("``")) {
+                    var lang_start = scanner.offset;
+                    var lang_end = scanner.offset;
+                    while (scanner.next()) |ch| if (ch == '\n') {
+                        break;
+                    } else {
+                        lang_end += 1;
+                    };
+                    break :blk .{ .@"```x\n" = scanner.source[lang_start..lang_end] };
+                },
+                '$' => if (scanner.eatIf('$')) {
+                    // TODO: This is temporary, to avoid interpreting math as Markdown.
+                    _ = try scanner.until('$');
+                    try scanner.expect("$");
+                    break :blk .{ .text = scanner.source[start..scanner.offset] };
+                },
+                '-' => if (scanner.eatIf(' ')) break :blk .@"-",
+                '1'...'9' => {
+                    var i: usize = 0;
+                    while (scanner.peek(i)) |c| : (i += 1) switch (c) {
+                        '0'...'9' => {},
+                        '.' => {
+                            i += 1;
+                            if (scanner.peek(i) == ' ') {
+                                _ = try scanner.consume(i + 1);
+                                break :blk .@"1.";
+                            }
+                        },
+                        else => break,
+                    };
+                },
+                '*' => if (scanner.eatIfLine(" * *")) break :blk .@"* * *\n",
+                '[' => if (scanner.eatIf('^')) {
+                    const label = try scanner.until(']');
+                    // TODO: maybe shouldn't be an error here.
+                    try scanner.expect(": ");
+                    break :blk .{ .@"[^x]: " = label };
                 },
                 else => {},
-            },
-            '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n' or scanner.eof()) {
-                self.block_allowed = true;
-                return .@">";
-            },
-            '`' => if (scanner.eatIfString("``")) {
-                var start = scanner.offset;
-                var end = start;
-                while (scanner.next()) |ch| if (ch == '\n') {
-                    break;
-                } else {
-                    end += 1;
-                };
-                return .{ .@"```x\n" = scanner.source[start..end] };
-            },
-            '$' => if (scanner.eatIf('$')) {
-                // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = try scanner.until('$');
-                try scanner.expect("$");
-                return .{ .text = scanner.source[offset.*..scanner.offset] };
-            },
-            '-' => if (scanner.eatIf(' ')) return .@"-",
-            '1'...'9' => {
-                var i: usize = 0;
-                while (scanner.peek(i)) |c| : (i += 1) switch (c) {
-                    '0'...'9' => {},
-                    '.' => {
-                        i += 1;
-                        if (scanner.peek(i) == ' ') {
-                            _ = try scanner.consume(i + 1);
-                            return .@"1.";
-                        }
-                    },
-                    else => break,
-                };
-            },
-            '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
-            '[' => if (scanner.eatIf('^')) {
-                const label = try scanner.until(']');
-                // TODO: maybe shouldn't be an error here.
-                try scanner.expect(": ");
-                return .{ .@"[^x]: " = label };
-            },
-            else => {},
-        };
-        self.block_allowed = false;
-        switch (char) {
-            '\n' => {
-                if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
-                self.block_allowed = true;
-                return .@"\n";
-            },
-            '`' => {
-                self.in_inline_code = !self.in_inline_code;
-                return .@"`";
-            },
-            '<' => {
-                if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
-                    '/', 'a'...'z' => {
-                        _ = try scanner.until('>');
-                        return null;
-                    },
-                    else => {},
-                };
-                return .@"<";
-            },
-            // Only escape ampersands in inline code. If regular text contains something
-            // that parses as an entity, you probably actually wanted an entity.
-            '&' => if (self.in_inline_code) return .@"&",
-            else => if (self.in_inline_code) return null,
-        }
-        switch (char) {
-            '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
-            '$' => {
-                // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = try scanner.until('$');
-                return .{ .text = scanner.source[offset.*..scanner.offset] };
-            },
-            '[' => link: {
-                if (scanner.eatIf('^')) return .{ .@"[^x]" = try scanner.until(']') };
-                const after_lbracket = offset.*;
-                const is_image = scanner.behind(2) == '!';
-                if (is_image) offset.* -= 1;
-                var i: usize = 0;
-                var escaped = false;
-                var in_code = false;
-                var depth: usize = 1;
-                while (true) : (i += 1) {
-                    const ch = scanner.peek(i) orelse break :link;
-                    if (escaped) {
-                        escaped = false;
-                    } else if (in_code) {
-                        if (ch == '`') in_code = false;
-                    } else switch (ch) {
-                        '[' => depth += 1,
-                        ']' => {
-                            depth -= 1;
-                            if (depth == 0) break;
+            };
+            self.block_allowed = false;
+            switch (char) {
+                '\n' => {
+                    if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
+                    self.block_allowed = true;
+                    break :blk .@"\n";
+                },
+                '`' => {
+                    self.in_inline_code = !self.in_inline_code;
+                    break :blk .@"`";
+                },
+                '<' => {
+                    if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
+                        '/', 'a'...'z' => {
+                            _ = try scanner.until('>');
+                            return null;
                         },
-                        '\\' => escaped = true,
-                        '`' => in_code = true,
                         else => {},
+                    };
+                    break :blk .@"<";
+                },
+                // Only escape ampersands in inline code. If regular text contains something
+                // that parses as an entity, you probably actually wanted an entity.
+                '&' => if (self.in_inline_code) break :blk .@"&",
+                else => if (self.in_inline_code) return null,
+            }
+            switch (char) {
+                '\\' => if (scanner.next()) |c| break :blk .{ .@"\\x" = c },
+                '$' => {
+                    // TODO: This is temporary, to avoid interpreting math as Markdown.
+                    _ = try scanner.until('$');
+                    break :blk .{ .text = scanner.source[start..scanner.offset] };
+                },
+                '[' => link: {
+                    if (scanner.eatIf('^')) break :blk .{ .@"[^x]" = try scanner.until(']') };
+                    const after_lbracket = start;
+                    const is_image = scanner.behind(2) == '!';
+                    var i: usize = 0;
+                    var escaped = false;
+                    var in_code = false;
+                    var depth: usize = 1;
+                    while (true) : (i += 1) {
+                        const ch = scanner.peek(i) orelse break :link;
+                        if (escaped) {
+                            escaped = false;
+                        } else if (in_code) {
+                            if (ch == '`') in_code = false;
+                        } else switch (ch) {
+                            '[' => depth += 1,
+                            ']' => {
+                                depth -= 1;
+                                if (depth == 0) break;
+                            },
+                            '\\' => escaped = true,
+                            '`' => in_code = true,
+                            else => {},
+                        }
                     }
-                }
-                const closing_char: u8 = switch (scanner.peek(i + 1) orelse 0) {
-                    '(' => ')',
-                    '[' => ']',
-                    else => {
-                        const end_of_text = scanner.offset + i;
-                        const label = scanner.source[after_lbracket + 1 .. end_of_text];
-                        self.link_depth += 1;
-                        return if (is_image) .{ .@"![...][x]" = label } else .{ .@"[...][x]" = label };
-                    },
-                };
-                i += 2;
-                const start_of_url = scanner.offset + i;
-                while (scanner.peek(i)) |ch| : (i += 1) if (ch == closing_char) break;
-                if (scanner.peek(i) != closing_char) break :link;
-                const closing_paren = scanner.offset + i;
-                i += 1;
-                location_offset.* = start_of_url;
-                const url_or_label = scanner.source[start_of_url..closing_paren];
-                self.link_depth += 1;
-                return switch (closing_char) {
-                    ')' => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
-                    ']' => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
-                    else => unreachable,
-                };
-            },
-            ']' => {
-                if (self.link_depth == 0) return scanner.failAt(offset.*, "unexpected ']'", .{});
-                self.link_depth -= 1;
-                if (scanner.peek(0)) |c| switch (c) {
-                    '(' => _ = try scanner.until(')'),
-                    '[' => _ = try scanner.until(']'),
-                    else => {},
-                };
-                return .@"]";
-            },
-            '*' => if (scanner.eatIf('*')) return .@"**",
-            '_' => return ._,
-            '\'' => {
-                const prev = scanner.behind(2);
-                return if (prev == null or prev == ' ' or prev == '\n') .lsquo else .rsquo;
-            },
-            '"' => {
-                const prev = scanner.behind(2);
-                return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
-            },
-            '-' => if (scanner.eatIf('-')) {
-                // Look backwards for the space in " -- " instead of checking for
-                // "-- " after any space, because spaces are much more common.
-                if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
-                    offset.* -= 1;
-                    return .@" -- ";
-                }
-                return .@"--";
-            },
-            '.' => if (scanner.eatIfString("..")) return .@"...",
-            else => {},
-        }
-        return null;
+                    const closing_char: u8 = switch (scanner.peek(i + 1) orelse 0) {
+                        '(' => ')',
+                        '[' => ']',
+                        else => {
+                            // Shortcut reference link.
+                            const end_of_text = scanner.offset + i;
+                            const label = scanner.source[after_lbracket + 1 .. end_of_text];
+                            self.link_depth += 1;
+                            if (is_image) return Token{ .value = .{ .@"![...][x]" = label }, .offset = start - 1 };
+                            break :blk .{ .@"[...][x]" = label };
+                        },
+                    };
+                    i += 2;
+                    const start_of_url = scanner.offset + i;
+                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == closing_char) break;
+                    if (scanner.peek(i) != closing_char) break :link;
+                    const closing_paren = scanner.offset + i;
+                    i += 1;
+                    const url_or_label = scanner.source[start_of_url..closing_paren];
+                    self.link_depth += 1;
+                    const value: TokenValue = switch (closing_char) {
+                        ')' => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+                        ']' => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
+                        else => unreachable,
+                    };
+                    // FIXME changing to offset for text correctness instead of location reporting
+                    if (is_image) return Token{ .value = value, .offset = start - 1 };
+                    break :blk value;
+                    // return Token{ .value = value, .offset = start_of_url };
+                },
+                ']' => {
+                    if (self.link_depth == 0) return scanner.failAt(start, "unexpected ']'", .{});
+                    self.link_depth -= 1;
+                    if (scanner.peek(0)) |c| switch (c) {
+                        '(' => _ = try scanner.until(')'),
+                        '[' => _ = try scanner.until(']'),
+                        else => {},
+                    };
+                    break :blk .@"]";
+                },
+                '*' => if (scanner.eatIf('*')) break :blk .@"**",
+                '_' => break :blk ._,
+                '\'' => {
+                    const prev = scanner.behind(2);
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .lsquo else .rsquo;
+                },
+                '"' => {
+                    const prev = scanner.behind(2);
+                    break :blk if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
+                },
+                '-' => if (scanner.eatIf('-')) {
+                    // Look backwards for the space in " -- " instead of checking for
+                    // "-- " after any space, because spaces are much more common.
+                    if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
+                        return Token{ .value = .@" -- ", .offset = start - 1 };
+                    }
+                    break :blk .@"--";
+                },
+                '.' => if (scanner.eatIfString("..")) break :blk .@"...",
+                else => {},
+            }
+            return null;
+        };
+        return Token{ .value = value, .offset = start };
     }
 };
 
@@ -435,7 +438,7 @@ fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(TokenValue).init(allocator);
     while (true) {
-        const token = try tokenizer.next(false);
+        const token = try tokenizer.next();
         try actual.append(token.value);
         if (token.value == .eof) break;
     }
@@ -754,7 +757,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
-        var token = try tokenizer.next(all_open and highlighter.in_code_block);
+        var token = try if (all_open and highlighter.active) tokenizer.nextInCodeBlock() else tokenizer.next();
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
@@ -768,10 +771,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
-            token = try tokenizer.next(all_open and highlighter.in_code_block);
+            token = try if (all_open and highlighter.active) tokenizer.nextInCodeBlock() else tokenizer.next();
         }
         if (token.value == .eof) break;
-        if (highlighter.in_code_block) {
+        if (highlighter.active) {
             if (!all_open) return tokenizer.failOn(token, "missing closing ```", .{});
             switch (token.value) {
                 .stay_in_code_block => try highlighter.renderLine(writer, tokenizer.scanner),
@@ -852,13 +855,13 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next(false);
+            token = try tokenizer.next();
         }
         if (inlines.top()) |tag| return tokenizer.failOn(token, "unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (highlighter.in_code_block) return tokenizer.fail("missing closing ```", .{});
+    if (highlighter.active) return tokenizer.fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
 

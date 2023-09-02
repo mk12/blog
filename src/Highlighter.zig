@@ -13,7 +13,7 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Highlighter = @This();
 
-in_code_block: bool = false,
+active: bool = false,
 language: ?Language = null,
 first_line: bool = false,
 current_class: ?Class = null,
@@ -56,7 +56,7 @@ fn keywords(comptime language: Language) type {
 
 pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
     try writer.writeAll("<pre>\n<code>");
-    self.in_code_block = true;
+    self.active = true;
     self.first_line = true;
     self.language = language;
 }
@@ -64,7 +64,7 @@ pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
 pub fn end(self: *Highlighter, writer: anytype) !void {
     try self.flush(writer);
     try writer.writeAll("</code>\n</pre>");
-    self.in_code_block = false;
+    self.active = false;
 }
 
 pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
