@@ -190,14 +190,7 @@ const Tokenizer = struct {
     }
 
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.scanner.failAt(self.last_token_start, format, args);
-    }
-
-    // TODO: add scanner.failAtPtr ?
-    fn failAt(self: Tokenizer, ptr: [*]const u8, comptime format: []const u8, args: anytype) Reporter.Error {
-        // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-        const offset = @intFromPtr(ptr) - @intFromPtr(self.scanner.source.ptr);
-        return self.scanner.failAt(offset, format, args);
+        return self.scanner.failAtOffset(self.last_token_start, format, args);
     }
 
     // Returns the remaining untokenized source.
@@ -390,7 +383,7 @@ const Tokenizer = struct {
                 };
             },
             ']' => {
-                if (self.link_depth == 0) return scanner.failAt(start, "unexpected ']'", .{});
+                if (self.link_depth == 0) return scanner.failAtOffset(start, "unexpected ']'", .{});
                 self.link_depth -= 1;
                 if (scanner.peek(0)) |c| switch (c) {
                     '(' => _ = try scanner.until(')'),
@@ -557,16 +550,14 @@ pub const HookContext = struct {
     reporter: *Reporter,
     source: []const u8,
     filename: []const u8,
-    offset: usize = undefined,
+    ptr: [*]const u8 = undefined,
 
     fn at(self: HookContext, ptr: [*]const u8) HookContext {
-        // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-        const offset = @intFromPtr(ptr) - @intFromPtr(self.source.ptr);
-        return HookContext{ .reporter = self.reporter, .source = self.source, .filename = self.filename, .offset = offset };
+        return HookContext{ .reporter = self.reporter, .source = self.source, .filename = self.filename, .ptr = ptr };
     }
 
     pub fn fail(self: HookContext, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.reporter.failAt(self.filename, Location.compute(self.source, self.offset), format, args);
+        return self.reporter.failAt(self.filename, Location.fromPtr(self.source, self.ptr), format, args);
     }
 };
 
@@ -736,11 +727,11 @@ fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
     };
 }
 
-fn maybeLookupUrl(tokenizer: *const Tokenizer, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
+fn maybeLookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
     return switch (tag) {
         .@"[...](x)", .@"![...](x)" => url_or_label,
         .@"[...][x]", .@"![...][x]" => links.get(url_or_label) orelse
-            tokenizer.failAt(url_or_label.ptr, "link label '{s}' is not defined", .{url_or_label}),
+            scanner.failAtPtr(url_or_label.ptr, "link label '{s}' is not defined", .{url_or_label}),
         else => unreachable,
     };
 }
@@ -808,7 +799,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer, links, url_or_label, tag);
+                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try blocks.push(writer, .figure);
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeByte('\n');
@@ -830,7 +821,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer, links, url_or_label, tag);
+                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
                     try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeAll("\">");

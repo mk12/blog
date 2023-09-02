@@ -57,12 +57,7 @@ commands: std.ArrayListUnmanaged(Command) = .{},
 
 const Variable = []const u8;
 
-const Token = struct {
-    value: TokenValue,
-    offset: usize,
-};
-
-const TokenValue = union(enum) {
+const Token = union(enum) {
     text: []const u8,
     include: []const u8, // template path
     variable: Variable,
@@ -79,10 +74,8 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         const char1 = scanner.peek(0);
         const char2 = scanner.peek(1);
         if (char1 == null or (char1 == brace and char2 == brace)) {
-            if (scanner.offset != start) {
-                const text = scanner.source[start..scanner.offset];
-                return .{ .value = .{ .text = text }, .offset = start };
-            }
+            const text = scanner.source[start..scanner.offset];
+            if (text.len != 0) return .{ .text = text };
             break;
         }
         scanner.eat(char1.?);
@@ -94,7 +87,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
     scanner.skipWhitespace();
     const Kind = enum { variable, include, define, @"if", range, @"else", end };
     const kind = std.meta.stringToEnum(Kind, word) orelse .variable;
-    const value: TokenValue = switch (kind) {
+    const token: Token = switch (kind) {
         .variable => .{ .variable = word },
         .include => .{
             .include = blk: {
@@ -122,7 +115,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         .end => .end,
     };
     try scanner.expect("}}");
-    return Token{ .value = value, .offset = start };
+    return token;
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
@@ -135,28 +128,28 @@ fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     return scanner.source[start..scanner.offset];
 }
 
-fn expectTokens(expected: []const TokenValue, source: []const u8) !void {
+fn expectTokens(expected: []const Token, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var actual = std.ArrayList(TokenValue).init(allocator);
-    while (try scan(&scanner)) |token| try actual.append(token.value);
+    var actual = std.ArrayList(Token).init(allocator);
+    while (try scan(&scanner)) |token| try actual.append(token);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
 test "scan empty string" {
-    try expectTokens(&[_]TokenValue{}, "");
+    try expectTokens(&[_]Token{}, "");
 }
 
 test "scan text" {
-    try expectTokens(&[_]TokenValue{.{ .text = "foo\n" }}, "foo\n");
+    try expectTokens(&[_]Token{.{ .text = "foo\n" }}, "foo\n");
 }
 
 test "scan text and variable" {
-    try expectTokens(&[_]TokenValue{
+    try expectTokens(&[_]Token{
         .{ .text = "Hello " },
         .{ .variable = "name" },
         .{ .text = "!" },
@@ -166,7 +159,7 @@ test "scan text and variable" {
 }
 
 test "scan everything" {
-    try expectTokens(&[_]TokenValue{
+    try expectTokens(&[_]Token{
         .{ .include = "base.html" },
         .{ .text = "\n" },
         .{ .define = "var" },
@@ -197,12 +190,7 @@ const Definition = struct {
     body: Template,
 };
 
-const Command = struct {
-    value: CommandValue,
-    offset: usize,
-};
-
-const CommandValue = union(enum) {
+const Command = union(enum) {
     text: []const u8,
     variable: Variable,
     include: *const Template,
@@ -243,10 +231,11 @@ const ParseResult = ParseError!struct { template: Template, terminator: Terminat
 fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .source = scanner.source, .filename = scanner.filename };
-    var terminator = Terminator.eof;
-    var terminator_offset: ?usize = null;
-    while (try scan(scanner)) |token| {
-        const command_value: CommandValue = switch (token.value) {
+    var terminator_offset: usize = undefined;
+    const terminator: Terminator = while (true) {
+        terminator_offset = scanner.offset;
+        const token = try scan(scanner) orelse break .eof;
+        const command: Command = switch (token) {
             .define => |variable| {
                 template.trimLastIfText();
                 try template.definitions.append(ctx.allocator, Definition{
@@ -255,16 +244,8 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 });
                 continue;
             },
-            .end => {
-                terminator = .end;
-                terminator_offset = token.offset;
-                break;
-            },
-            .@"else" => {
-                terminator = .@"else";
-                terminator_offset = token.offset;
-                break;
-            },
+            .end => break .end,
+            .@"else" => break .@"else",
             .text => |text| blk: {
                 if (trim == .trim_start and template.commands.items.len == 0) {
                     const trimmed = trimStart(text);
@@ -276,7 +257,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
             .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.getPtr(path) orelse
-                    return scanner.failAt(token.offset, "{s}: template not found", .{path}),
+                    return scanner.failAtPtr(path.ptr, "{s}: template not found", .{path}),
             },
             .start => |variable| blk: {
                 template.trimLastIfText();
@@ -294,15 +275,11 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 };
             },
         };
-        try template.commands.append(ctx.allocator, Command{
-            .value = command_value,
-            .offset = token.offset,
-        });
-    }
+        try template.commands.append(ctx.allocator, command);
+    };
     template.trimLastIfText();
     if (!allowed_terminators.contains(terminator)) {
-        const offset = terminator_offset orelse scanner.offset;
-        return scanner.failAt(offset, "unexpected {s}", .{
+        return scanner.failAtOffset(terminator_offset, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
@@ -315,7 +292,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
 
 fn trimLastIfText(template: *Template) void {
     if (template.commands.items.len == 0) return;
-    switch (template.commands.items[template.commands.items.len - 1].value) {
+    switch (template.commands.items[template.commands.items.len - 1]) {
         .text => |*text| {
             const trimmed = trimEnd(text.*);
             if (trimmed.len > 0) text.* = trimmed else _ = template.commands.pop();
@@ -361,9 +338,7 @@ test "parse text" {
     var include_map = std.StringHashMap(Template).init(allocator);
     var template = try expectParseSuccess(allocator, source, include_map);
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
-    try testing.expectEqualSlices(Command, &[_]Command{
-        .{ .value = .{ .text = source }, .offset = 0 },
-    }, template.commands.items);
+    try testing.expectEqualSlices(Command, &.{Command{ .text = source }}, template.commands.items);
 }
 
 test "parse everything" {
@@ -392,27 +367,27 @@ test "parse everything" {
     try testing.expectEqual(@as(usize, 0), define_var.body.definitions.items.len);
     const var_body = define_var.body.commands.items;
     try testing.expectEqual(@as(usize, 1), var_body.len);
-    const range_thing = var_body[0].value.control;
+    const range_thing = var_body[0].control;
     try testing.expectEqualStrings("thing", range_thing.variable);
     try testing.expectEqual(@as(usize, 0), range_thing.body.definitions.items.len);
     const range_body = range_thing.body.commands.items;
     try testing.expectEqual(@as(usize, 3), range_body.len);
     try testing.expectEqual(@as(?Template, null), range_thing.else_body);
-    try testing.expectEqualStrings("\n        Value: ", range_body[0].value.text);
-    const if_bar = range_body[1].value.control;
-    try testing.expectEqualStrings(",", range_body[2].value.text);
+    try testing.expectEqualStrings("\n        Value: ", range_body[0].text);
+    const if_bar = range_body[1].control;
+    try testing.expectEqualStrings(",", range_body[2].text);
     try testing.expectEqual(@as(usize, 0), if_bar.body.definitions.items.len);
     try testing.expectEqual(@as(usize, 0), if_bar.else_body.?.definitions.items.len);
     const if_body = if_bar.body.commands.items;
     try testing.expectEqual(@as(usize, 1), if_body.len);
-    try testing.expectEqualStrings(".", if_body[0].value.variable);
+    try testing.expectEqualStrings(".", if_body[0].variable);
     const else_body = if_bar.else_body.?.commands.items;
     try testing.expectEqual(@as(usize, 1), else_body.len);
-    try testing.expectEqualStrings("Fallback", else_body[0].value.text);
+    try testing.expectEqualStrings("Fallback", else_body[0].text);
 
     const commands = template.commands.items;
     try testing.expectEqual(@as(usize, 1), commands.len);
-    try testing.expectEqual(base_template, commands[0].value.include);
+    try testing.expectEqual(base_template, commands[0].include);
 }
 
 test "invalid command" {
@@ -450,7 +425,7 @@ test "unexpected end" {
 
 test "invalid include" {
     try expectParseFailure(
-        \\<input>:2:1: does_not_exist: template not found
+        \\<input>:2:13: does_not_exist: template not found
     ,
         \\Some text before.
         \\{{ include "does_not_exist" }}
@@ -576,10 +551,10 @@ pub const Scope = struct {
     }
 };
 
-fn lookup(self: Template, ctx: anytype, scope: *const Scope, command: Command, variable: Variable) !Value {
+fn lookup(self: Template, ctx: anytype, scope: *const Scope, variable: Variable) !Value {
     return scope.lookup(variable) orelse ctx.reporter.failAt(
         self.filename,
-        Location.compute(self.source, command.offset),
+        Location.fromPtr(self.source, variable.ptr),
         "{s}: variable not found",
         .{variable},
     );
@@ -588,17 +563,17 @@ fn lookup(self: Template, ctx: anytype, scope: *const Scope, command: Command, v
 fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
     for (self.definitions.items) |definition|
         try scope.definitions.put(ctx.allocator, definition.variable, &definition.body);
-    for (self.commands.items) |command| switch (command.value) {
+    for (self.commands.items) |command| switch (command) {
         .text => |text| try ctx.writer.writeAll(text),
         .include => |template| try template.exec(ctx, scope),
-        .variable => |variable| switch (try self.lookup(ctx, scope, command, variable)) {
+        .variable => |variable| switch (try self.lookup(ctx, scope, variable)) {
             .string => |string| try ctx.writer.writeAll(string),
             .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(ctx.writer, args.style),
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
-                Location.compute(self.source, command.offset),
+                Location.fromPtr(self.source, variable.ptr),
                 "{s}: expected string variable, got {s}",
                 .{ variable, @tagName(value) },
             ),
@@ -606,7 +581,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
         .control => |control| blk: {
             const body = control.body;
             var child = scope.initChild(undefined);
-            switch (try self.lookup(ctx, scope, command, control.variable)) {
+            switch (try self.lookup(ctx, scope, control.variable)) {
                 .null => {},
                 .bool => |value| if (value) break :blk try body.exec(ctx, scope),
                 .string => |string| if (string.len > 0) break :blk try body.exec(ctx, child.reset(Value{ .string = string })),
@@ -704,11 +679,11 @@ test "execute range-else" {
 }
 
 test "execute not a string" {
-    try expectExecuteFailure("<input>:1:1: .: expected string variable, got array", "{{ . }}", .{});
+    try expectExecuteFailure("<input>:1:4: .: expected string variable, got array", "{{ . }}", .{});
 }
 
 test "execute variable not found" {
-    try expectExecuteFailure("<input>:1:7: foo: variable not found", "Hello {{ foo }}!", .{});
+    try expectExecuteFailure("<input>:1:10: foo: variable not found", "Hello {{ foo }}!", .{});
 }
 
 test "execute everything" {

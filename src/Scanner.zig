@@ -152,17 +152,19 @@ pub fn skipWhitespace(self: *Scanner) void {
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
-    return self.failAt(self.offset, format, args);
+    return self.failAtOffset(self.offset, format, args);
 }
 
-pub fn failOn(self: *Scanner, span: []const u8, comptime format: []const u8, args: anytype) Error {
-    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-    const offset = @intFromPtr(span.ptr) - @intFromPtr(self.source.ptr);
-    return self.failAt(offset, "\"{s}\": " ++ format, .{span} ++ args);
+pub fn failOn(self: *Scanner, token: []const u8, comptime format: []const u8, args: anytype) Error {
+    return self.failAtPtr(token.ptr, "\"{}\": " ++ format, .{fmtEscapes(token)} ++ args);
 }
 
-pub fn failAt(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, Location.compute(self.source, offset), format, args);
+pub fn failAtOffset(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
+    return self.reporter.failAt(self.filename, Location.fromOffset(self.source, offset), format, args);
+}
+
+pub fn failAtPtr(self: *Scanner, ptr: [*]const u8, comptime format: []const u8, args: anytype) Error {
+    return self.reporter.failAt(self.filename, Location.fromPtr(self.source, ptr), format, args);
 }
 
 test "empty input" {
