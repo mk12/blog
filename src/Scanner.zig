@@ -18,10 +18,12 @@ reporter: *Reporter,
 filename: []const u8 = "<input>",
 offset: usize = 0,
 
-pub const Span = struct {
-    offset: usize,
-    length: usize,
-};
+// TODO test
+pub fn focus(self: *Scanner, span: []const u8) void {
+    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
+    self.offset = @intFromPtr(span.ptr) - @intFromPtr(self.source.ptr);
+    self.source.len = self.offset + span.len;
+}
 
 pub fn eof(self: Scanner) bool {
     return self.offset == self.source.len;
@@ -65,7 +67,6 @@ pub fn eatIfString(self: *Scanner, string: []const u8) bool {
     if (end > self.source.len) return false;
     if (!mem.eql(u8, self.source[self.offset..end], string)) return false;
     self.offset += string.len;
-    self.location.column += @intCast(string.len);
     return true;
 }
 
@@ -95,12 +96,12 @@ pub fn eatIfLine(self: *Scanner, line: []const u8) bool {
     return true;
 }
 
-pub fn consume(self: *Scanner, byte_count: usize) Error!Span {
+pub fn consume(self: *Scanner, byte_count: usize) Error![]const u8 {
     assert(byte_count > 0); // TODO remove?
     const start = self.offset;
     if (start + byte_count > self.source.len) return self.fail("unexpected EOF", .{});
     self.offset += byte_count;
-    return Span{ .offset = start, .length = byte_count };
+    return self.source[start..self.offset];
 }
 
 fn slice(self: Scanner, length: usize) []const u8 {
@@ -122,10 +123,9 @@ pub fn expect(self: *Scanner, comptime expected: []const u8) Error!void {
     return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(expected), fmtEscapes(actual) });
 }
 
-pub fn until(self: *Scanner, end: u8) Error!Span {
+pub fn until(self: *Scanner, end: u8) Error![]const u8 {
     const start = self.offset;
-    while (self.next()) |char|
-        if (char == end) return Span{ .offset = start, .length = self.offset - start - 1 };
+    while (self.next()) |char| if (char == end) return self.source[start .. self.offset - 1];
     return self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(&.{end})});
 }
 
@@ -162,9 +162,10 @@ pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
     return self.failAt(self.offset, format, args);
 }
 
-pub fn failOn(self: *Scanner, span: Span, comptime format: []const u8, args: anytype) Error {
-    const text = self.source[span.offset][0..span.length];
-    return self.failAt(span.offset, "\"{s}\": " ++ format, .{text} ++ args);
+pub fn failOn(self: *Scanner, span: []const u8, comptime format: []const u8, args: anytype) Error {
+    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
+    const offset = @intFromPtr(span.ptr) - @intFromPtr(self.source.ptr);
+    return self.failAt(offset, "\"{s}\": " ++ format, .{span} ++ args);
 }
 
 pub fn failAt(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
@@ -193,7 +194,7 @@ test "single character" {
     try testing.expectEqual(@as(?u8, null), scanner.next());
 }
 
-// TODO consider doing "test peek" without quotes for stuff like this
+// TODO consider doing `test peek { ... }` instead of `test "peek" { ... }`
 test "peek" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -215,8 +216,8 @@ test "consume" {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "a\nbc", .reporter = &reporter };
-    try testing.expectEqual(Span{ .offset = 0, .length = 3 }, try scanner.consume(3));
-    try testing.expectEqual(Span{ .offset = 3, .length = 1 }, try scanner.consume(1));
+    try testing.expectEqualStrings("a\nb", try scanner.consume(3));
+    try testing.expectEqualStrings("c", try scanner.consume(1));
     try testing.expect(scanner.eof());
 }
 
@@ -252,8 +253,8 @@ test "until" {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "one\ntwo\n", .reporter = &reporter };
-    try testing.expectEqual(Span{ .offset = 0, .length = 3 }, try scanner.until('\n'));
-    try testing.expectEqual(Span{ .offset = 4, .length = 3 }, try scanner.until('\n'));
+    try testing.expectEqualStrings("one", try scanner.until('\n'));
+    try testing.expectEqualStrings("two", try scanner.until('\n'));
     try testing.expect(scanner.eof());
 }
 

@@ -56,15 +56,15 @@ fn parseField(
     max: @TypeOf(@field(date, name)),
 ) !void {
     const FieldType = @TypeOf(@field(date, name));
-    const span = try scanner.consume(length);
+    const field = try scanner.consume(length);
     const parseNumber = switch (@typeInfo(FieldType).Int.signedness) {
         .signed => std.fmt.parseInt,
         .unsigned => std.fmt.parseUnsigned,
     };
-    const value = parseNumber(FieldType, span.text, 10) catch
-        return scanner.failOn(span, "invalid {s}", .{name});
+    const value = parseNumber(FieldType, field, 10) catch
+        return scanner.failOn(field, "invalid {s}", .{name});
     if (value < min or value > max)
-        return scanner.failOn(span, "{s} must be from {} to {}", .{ name, min, max });
+        return scanner.failOn(field, "{s} must be from {} to {}", .{ name, min, max });
     @field(date, name) = value;
 }
 

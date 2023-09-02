@@ -50,6 +50,7 @@ const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
 const Template = @This();
 
+source: []const u8,
 filename: []const u8,
 definitions: std.ArrayListUnmanaged(Definition) = .{},
 commands: std.ArrayListUnmanaged(Command) = .{},
@@ -58,7 +59,7 @@ const Variable = []const u8;
 
 const Token = struct {
     value: TokenValue,
-    location: Location,
+    offset: usize,
 };
 
 const TokenValue = union(enum) {
@@ -72,7 +73,6 @@ const TokenValue = union(enum) {
 };
 
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
-    const location = scanner.location;
     const start = scanner.offset;
     const brace: u8 = '{';
     while (true) {
@@ -81,7 +81,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         if (char1 == null or (char1 == brace and char2 == brace)) {
             if (scanner.offset != start) {
                 const text = scanner.source[start..scanner.offset];
-                return .{ .value = .{ .text = text }, .location = location };
+                return .{ .value = .{ .text = text }, .offset = start };
             }
             break;
         }
@@ -101,7 +101,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
                 try scanner.expect("\"");
                 const path = try scanner.until('"');
                 scanner.skipWhitespace();
-                break :blk path.text;
+                break :blk path;
             },
         },
         .define => .{
@@ -122,7 +122,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         .end => .end,
     };
     try scanner.expect("}}");
-    return Token{ .location = location, .value = value };
+    return Token{ .value = value, .offset = start };
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
@@ -199,7 +199,7 @@ const Definition = struct {
 
 const Command = struct {
     value: CommandValue,
-    location: Location,
+    offset: usize,
 };
 
 const CommandValue = union(enum) {
@@ -242,9 +242,9 @@ const ParseResult = ParseError!struct { template: Template, terminator: Terminat
 
 fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
     const scanner = ctx.scanner;
-    var template = Template{ .filename = scanner.filename };
+    var template = Template{ .source = scanner.source, .filename = scanner.filename };
     var terminator = Terminator.eof;
-    var terminator_pos: ?Location = null;
+    var terminator_offset: ?usize = null;
     while (try scan(scanner)) |token| {
         const command_value: CommandValue = switch (token.value) {
             .define => |variable| {
@@ -257,12 +257,12 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
             },
             .end => {
                 terminator = .end;
-                terminator_pos = token.location;
+                terminator_offset = token.offset;
                 break;
             },
             .@"else" => {
                 terminator = .@"else";
-                terminator_pos = token.location;
+                terminator_offset = token.offset;
                 break;
             },
             .text => |text| blk: {
@@ -276,7 +276,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
             .variable => |variable| .{ .variable = variable },
             .include => |path| .{
                 .include = ctx.include_map.getPtr(path) orelse
-                    return scanner.failAt(token.location, "{s}: template not found", .{path}),
+                    return scanner.failAt(token.offset, "{s}: template not found", .{path}),
             },
             .start => |variable| blk: {
                 template.trimLastIfText();
@@ -295,14 +295,14 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
             },
         };
         try template.commands.append(ctx.allocator, Command{
-            .location = token.location,
             .value = command_value,
+            .offset = token.offset,
         });
     }
     template.trimLastIfText();
     if (!allowed_terminators.contains(terminator)) {
-        const location = terminator_pos orelse scanner.location;
-        return scanner.failAt(location, "unexpected {s}", .{
+        const offset = terminator_offset orelse scanner.offset;
+        return scanner.failAt(offset, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
@@ -362,10 +362,7 @@ test "parse text" {
     var template = try expectParseSuccess(allocator, source, include_map);
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
     try testing.expectEqualSlices(Command, &[_]Command{
-        .{
-            .value = .{ .text = source },
-            .location = .{ .line = 1, .column = 1 },
-        },
+        .{ .value = .{ .text = source }, .offset = 0 },
     }, template.commands.items);
 }
 
@@ -580,8 +577,12 @@ pub const Scope = struct {
 };
 
 fn lookup(self: Template, ctx: anytype, scope: *const Scope, command: Command, variable: Variable) !Value {
-    return scope.lookup(variable) orelse
-        ctx.reporter.failAt(self.filename, command.location, "{s}: variable not found", .{variable});
+    return scope.lookup(variable) orelse ctx.reporter.failAt(
+        self.filename,
+        Location.compute(self.source, command.offset),
+        "{s}: variable not found",
+        .{variable},
+    );
 }
 
 fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
@@ -597,7 +598,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
             else => |value| return ctx.reporter.failAt(
                 self.filename,
-                command.location,
+                Location.compute(self.source, command.offset),
                 "{s}: expected string variable, got {s}",
                 .{ variable, @tagName(value) },
             ),

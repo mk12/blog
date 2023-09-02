@@ -8,11 +8,10 @@ const testing = std.testing;
 const Date = @import("Date.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
-const Span = Scanner.Span;
 const Metadata = @This();
 
-title: Span,
-subtitle: Span,
+title: []const u8,
+subtitle: []const u8,
 category: []const u8,
 status: Status,
 
@@ -25,12 +24,10 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var meta: Metadata = undefined;
     const separator = "---\n";
     try scanner.expect(separator);
-    inline for (.{ "title", "subtitle" }) |key| {
+    inline for (.{ "title", "subtitle", "category" }) |key| {
         try scanner.expect(key ++ ": ");
         @field(meta, key) = try scanner.until('\n');
     }
-    try scanner.expect("category: ");
-    meta.category = (try scanner.until('\n')).text;
     switch (try scanner.choice(.{ .date = "date: ", .end = separator })) {
         .date => {
             const date = try Date.parse(scanner);
@@ -62,9 +59,8 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
 
 test "draft" {
     try expectSuccess(Metadata{
-        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
-        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
-        .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
+        .title = "The title",
+        .subtitle = "The subtitle",
         .category = "Category",
         .status = .draft,
     },
@@ -79,8 +75,8 @@ test "draft" {
 
 test "published" {
     try expectSuccess(Metadata{
-        .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
-        .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
+        .title = "The title",
+        .subtitle = "The subtitle",
         .category = "Category",
         .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
     },

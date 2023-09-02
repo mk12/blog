@@ -15,7 +15,7 @@
 //! It treats ![Foo](foo.jpg) syntax as a block <figure>, not an inline <img>.
 //! It allows Markdown within raw HTML. It supports smart typography, auto
 //! heading IDs, footnotes, code highlighting, (TODO!) tables, and (TODO!) TeX
-//! math in dollar signs (rendered to MathML).
+//! math in dollar signs rendered to MathML.
 //!
 //! It is customizable with Options and with Hooks. The options are mostly
 //! flags, e.g. whether to enable code highlighting. The hooks allow you to
@@ -31,10 +31,9 @@ const Language = Highlighter.Language;
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
-const Span = Scanner.Span;
 const Markdown = @This();
 
-span: Span,
+text: []const u8,
 context: Context,
 
 pub const Context = struct {
@@ -68,11 +67,10 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         if (i == text.len or text[i] != ' ') break;
         i += 1;
         try links.put(allocator, text[label_start..label_end], text[i..]);
-        // try links.put(allocator, text[label_start..label_end], Span{ .offset = scanner.offset + i, .length = text.len - i });
         text.len = newline_index;
     }
     return Markdown{
-        .span = Span{ .offset = scanner.offset, .length = text.len },
+        .text = text,
         .context = Context{ .source = scanner.source, .filename = scanner.filename, .links = links },
     };
 }
@@ -90,14 +88,15 @@ test "parse" {
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    var scanner = Scanner{ .source = source, .reporter = &reporter, .filename = "test.md" };
     const md = try parse(allocator, &scanner);
     try testing.expectEqualStrings(
         \\This is the body.
         \\
         \\[This is not a link]
-    , md.span.text);
-    try testing.expectEqualDeep(Location{}, md.span.location);
+    , md.text);
+    try testing.expectEqualStrings(source, md.context.source);
+    try testing.expectEqualStrings("test.md", md.context.filename);
     try testing.expectEqual(@as(usize, 2), md.context.links.size);
     try testing.expectEqualStrings("foo link", md.context.links.get("foo").?);
     try testing.expectEqualStrings("bar baz link", md.context.links.get("bar baz").?);
@@ -119,7 +118,7 @@ test "parse with gaps between link definitions" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const md = try parse(allocator, &scanner);
-    try testing.expectEqualStrings("This is the body.", md.span.text);
+    try testing.expectEqualStrings("This is the body.", md.text);
     try testing.expectEqual(@as(usize, 2), md.context.links.size);
     try testing.expectEqualStrings("foo link", md.context.links.get("foo").?);
     try testing.expectEqualStrings("bar baz link", md.context.links.get("bar baz").?);
@@ -127,7 +126,7 @@ test "parse with gaps between link definitions" {
 
 const Token = struct {
     value: TokenValue,
-    location: Location,
+    offset: usize,
 };
 
 const TokenValue = union(enum) {
@@ -194,16 +193,16 @@ const Tokenizer = struct {
     }
 
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
-        const location = if (self.peeked) |token| token.location else self.scanner.location;
-        return self.scanner.failAt(location, format, args);
+        const offset = if (self.peeked) |token| token.offset else self.scanner.offset;
+        return self.scanner.failAt(offset, format, args);
     }
 
     fn failOn(self: Tokenizer, token: Token, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.scanner.failAt(token.location, format, args);
+        return self.scanner.failAt(token.offset, format, args);
     }
 
     fn handle(self: *const Tokenizer, token: Token) Handle {
-        return Handle{ .tokenizer = self, .location = token.location };
+        return Handle{ .tokenizer = self, .offset = token.offset };
     }
 
     // Returns the remaining untokenized source.
@@ -218,29 +217,28 @@ const Tokenizer = struct {
             return token;
         }
         const scanner = self.scanner;
-        const start_offset = scanner.offset;
-        const start_location = scanner.location;
+        const start = scanner.offset;
         if (in_code_block) {
-            if (scanner.eof()) return .{ .value = .eof, .location = start_location };
-            if (scanner.eatIfLine("```")) return .{ .value = .@"```\n", .location = start_location };
-            return .{ .value = .stay_in_code_block, .location = start_location };
+            if (scanner.eof()) return .{ .value = .eof, .offset = start };
+            if (scanner.eatIfLine("```")) return .{ .value = .@"```\n", .offset = start };
+            return .{ .value = .stay_in_code_block, .offset = start };
         }
         const text_and_token = while (true) {
             var offset = scanner.offset;
-            var location = scanner.location;
-            if (try self.recognize(&offset, &location)) |value| break .{
-                scanner.source[start_offset..offset],
-                Token{ .value = value, .location = location },
+            var location_offset: ?usize = null;
+            if (try self.recognize(&offset, &location_offset)) |value| break .{
+                scanner.source[start..offset],
+                Token{ .value = value, .offset = location_offset orelse offset },
             };
         };
         const text = text_and_token[0];
         const token = text_and_token[1];
         if (text.len == 0) return token;
         self.peeked = token;
-        return Token{ .value = .{ .text = text }, .location = start_location };
+        return Token{ .value = .{ .text = text }, .offset = start };
     }
 
-    fn recognize(self: *Tokenizer, offset: *usize, location: *Location) !?TokenValue {
+    fn recognize(self: *Tokenizer, offset: *usize, location_offset: *?usize) !?TokenValue {
         const scanner = self.scanner;
         const char = scanner.next() orelse return .eof;
         if (self.block_allowed) switch (char) {
@@ -304,10 +302,10 @@ const Tokenizer = struct {
             },
             '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
             '[' => if (scanner.eatIf('^')) {
-                const span = try scanner.until(']');
+                const label = try scanner.until(']');
                 // TODO: maybe shouldn't be an error here.
                 try scanner.expect(": ");
-                return .{ .@"[^x]: " = span.text };
+                return .{ .@"[^x]: " = label };
             },
             else => {},
         };
@@ -345,16 +343,10 @@ const Tokenizer = struct {
                 return .{ .text = scanner.source[offset.*..scanner.offset] };
             },
             '[' => link: {
-                if (scanner.eatIf('^')) {
-                    const span = try scanner.until(']');
-                    return .{ .@"[^x]" = span.text };
-                }
+                if (scanner.eatIf('^')) return .{ .@"[^x]" = try scanner.until(']') };
                 const after_lbracket = offset.*;
                 const is_image = scanner.behind(2) == '!';
-                if (is_image) {
-                    offset.* -= 1;
-                    location.column -= 1;
-                }
+                if (is_image) offset.* -= 1;
                 var i: usize = 0;
                 var escaped = false;
                 var in_code = false;
@@ -388,12 +380,11 @@ const Tokenizer = struct {
                 };
                 i += 2;
                 const start_of_url = scanner.offset + i;
-                const start_of_url_location = scanner.peekLocation(i);
                 while (scanner.peek(i)) |ch| : (i += 1) if (ch == closing_char) break;
                 if (scanner.peek(i) != closing_char) break :link;
                 const closing_paren = scanner.offset + i;
                 i += 1;
-                location.* = start_of_url_location;
+                location_offset.* = start_of_url;
                 const url_or_label = scanner.source[start_of_url..closing_paren];
                 self.link_depth += 1;
                 return switch (closing_char) {
@@ -403,7 +394,7 @@ const Tokenizer = struct {
                 };
             },
             ']' => {
-                if (self.link_depth == 0) return scanner.failAt(location.*, "unexpected ']'", .{});
+                if (self.link_depth == 0) return scanner.failAt(offset.*, "unexpected ']'", .{});
                 self.link_depth -= 1;
                 if (scanner.peek(0)) |c| switch (c) {
                     '(' => _ = try scanner.until(')'),
@@ -427,7 +418,6 @@ const Tokenizer = struct {
                 // "-- " after any space, because spaces are much more common.
                 if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
                     offset.* -= 1;
-                    location.column -= 1;
                     return .@" -- ";
                 }
                 return .@"--";
@@ -570,14 +560,14 @@ fn WithDefaultHooks(comptime Inner: type) type {
 // TODO maybe rename
 pub const Handle = struct {
     tokenizer: *const Tokenizer,
-    location: Location,
+    offset: usize,
 
     pub fn filename(self: Handle) []const u8 {
         return self.tokenizer.scanner.filename;
     }
 
     pub fn fail(self: Handle, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.tokenizer.scanner.failAt(self.location, format, args);
+        return self.tokenizer.scanner.failAt(self.offset, format, args);
     }
 };
 
@@ -589,12 +579,11 @@ pub fn render(
     options: Options,
 ) !void {
     var scanner = Scanner{
-        .source = self.context.source[0 .. self.span.offset + self.span.length],
+        .source = self.context.source,
         .reporter = reporter,
         .filename = self.context.filename,
-        .offset = self.span.offset,
     };
-    // or: scanner.restrict(self.span) // jumps, restricts to that window
+    scanner.focus(self.text);
     var tokenizer = try Tokenizer.init(&scanner);
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
     return renderImpl(&tokenizer, writer, full_hooks, self.context.links, options) catch |err| switch (err) {
@@ -1468,6 +1457,8 @@ test "failure in writeUrl hook (reference)" {
     // It would be nicer to point to the actual "xyz", not the "ref".
     // We could do that by storing Span in LinkMap, but that would require a
     // full extra traversal to count newlines, which I don't want to do.
+
+    // TODO: can do this now
     try expectRenderFailureWithHooks(
         \\<input>:2:12: xyz: bad url
     ,

@@ -11,19 +11,18 @@ const Markdown = @import("Markdown.zig");
 const Metadata = @import("Metadata.zig");
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
-const Span = Scanner.Span;
 const Post = @This();
 
 slug: []const u8,
 meta: Metadata,
-body: Span,
+body: []const u8,
 context: Markdown.Context,
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Post {
     const slug = parseSlug(scanner.filename);
     const meta = try Metadata.parse(scanner);
     const markdown = try Markdown.parse(allocator, scanner);
-    return Post{ .slug = slug, .meta = meta, .body = markdown.span, .context = markdown.context };
+    return Post{ .slug = slug, .meta = meta, .body = markdown.text, .context = markdown.context };
 }
 
 pub fn parseSlug(filename: []const u8) []const u8 {
@@ -45,13 +44,13 @@ test "parse" {
     const expected = Post{
         .slug = "foo",
         .meta = Metadata{
-            .title = .{ .text = "The title", .location = .{ .line = 2, .column = 8 } },
-            .subtitle = .{ .text = "The subtitle", .location = .{ .line = 3, .column = 11 } },
+            .title = "The title",
+            .subtitle = "The subtitle",
             .category = "Category",
             .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
         },
-        .body = .{ .text = source[99..], .location = .{ .line = 7, .column = 1 } },
-        .context = .{ .filename = filename, .links = .{} },
+        .body = "\nHello world!",
+        .context = .{ .source = source, .filename = filename, .links = .{} },
     };
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -60,7 +59,6 @@ test "parse" {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .filename = filename, .reporter = &reporter };
     const post = try parse(allocator, &scanner);
-    try testing.expectEqualStrings(expected.body.text, post.body.text);
     try testing.expectEqualDeep(expected, post);
 }
 

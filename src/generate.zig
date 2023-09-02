@@ -12,7 +12,6 @@ const Markdown = @import("Markdown.zig");
 const Status = @import("Metadata.zig").Status;
 const Post = @import("Post.zig");
 const Scanner = @import("Scanner.zig");
-const Span = Scanner.Span;
 const Reporter = @import("Reporter.zig");
 const Template = @import("Template.zig");
 const Scope = Template.Scope;
@@ -375,10 +374,10 @@ fn date(status: Status, style: Date.Style) Value {
     };
 }
 
-fn markdown(span: Span, context: Markdown.Context, options: Markdown.Options) Value {
+fn markdown(text: []const u8, context: Markdown.Context, options: Markdown.Options) Value {
     return Value{
         .markdown = .{
-            .markdown = Markdown{ .span = span, .context = context },
+            .markdown = Markdown{ .text = text, .context = context },
             .options = options,
         },
     };
