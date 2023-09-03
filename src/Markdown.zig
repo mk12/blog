@@ -46,31 +46,23 @@ pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     var links = LinkMap{};
-    var text = scanner.source[scanner.offset..];
-    outer: while (true) {
-        text = std.mem.trimRight(u8, text, "\n");
-        const newline_index = std.mem.lastIndexOfScalar(u8, text, '\n') orelse break;
-        var i = newline_index + 1;
-        if (i == text.len or text[i] != '[') break;
-        i += 1;
-        if (i == text.len or text[i] == '^') break;
-        const label_start = i;
-        while (i < text.len) : (i += 1) switch (text[i]) {
-            '\n' => break :outer,
-            ']' => break,
-            else => {},
-        };
-        const label_end = i;
-        i += 1;
-        if (i == text.len or text[i] != ':') break;
-        i += 1;
-        if (i == text.len or text[i] != ' ') break;
-        i += 1;
-        try links.put(allocator, text[label_start..label_end], text[i..]);
-        text.len = newline_index;
+    const start = scanner.offset;
+    var end = scanner.source.len;
+    while (true) {
+        scanner.offset = end;
+        scanner.skipReverse('\n', start);
+        end = scanner.offset;
+        if (scanner.untilReverse('\n', start)) scanner.eat();
+        const start_of_line = scanner.offset;
+        if (!scanner.eatIf('[')) break;
+        if (scanner.eatIf('^')) break;
+        const label = scanner.untilOnLine(']') orelse break;
+        if (!scanner.eatIfString(": ")) break;
+        try links.put(allocator, label, scanner.source[scanner.offset..end]);
+        end = start_of_line;
     }
     return Markdown{
-        .text = text,
+        .text = scanner.source[start..end],
         .context = Context{ .source = scanner.source, .filename = scanner.filename, .links = links },
     };
 }
@@ -316,13 +308,7 @@ const Tokenizer = struct {
             },
             '<' => {
                 if (scanner.peek(0)) |c| switch (c) {
-                    '/', 'a'...'z' => {
-                        if (scanner.untilOnLine('>') == null) {
-                            scanner.offset = self.token_start + 1;
-                            return .@"<";
-                        }
-                        return null;
-                    },
+                    '/', 'a'...'z' => return if (scanner.untilOnLine('>')) |_| null else .@"<",
                     else => {},
                 };
                 return .@"<";

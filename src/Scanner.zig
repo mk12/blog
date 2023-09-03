@@ -28,12 +28,25 @@ pub fn at(self: Scanner, offset: usize) ?u8 {
     return if (offset >= self.source.len) null else self.source[offset];
 }
 
+pub fn skipReverse(self: *Scanner, char: u8, stop: usize) void {
+    while (self.offset > stop and self.source[self.offset - 1] == char) self.offset -= 1;
+}
+
+pub fn untilReverse(self: *Scanner, char: u8, stop: usize) bool {
+    while (self.offset > stop) {
+        self.offset -= 1;
+        if (self.source[self.offset] == char) return true;
+    }
+    return false;
+}
+
 pub fn untilOnLine(self: *Scanner, char: u8) ?[]const u8 {
     const start = self.offset;
     while (self.next()) |ch| {
         if (ch == char) return self.source[start .. self.offset - 1];
-        if (ch == '\n') return null;
+        if (ch == '\n') break;
     }
+    self.offset = start;
     return null;
 }
 
