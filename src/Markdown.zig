@@ -237,30 +237,21 @@ const Tokenizer = struct {
         const start = scanner.offset;
         self.token_start = start;
         const char = scanner.next() orelse return .eof;
-        // offset variable not ideal, could use and then reuse by accident when already partially advanced
-        var offset = scanner.offset;
         switch (char) {
             '#' => {
                 const level: u8 = @intCast(1 + scanner.eatWhile('#'));
                 if (level <= 6 and scanner.eatIf(' ')) return .{ .@"#" = level };
             },
-            '<' => if (scanner.at(offset)) |c| switch (c) {
+            '<' => if (scanner.next()) |c| switch (c) {
                 '/', 'a'...'z' => {
-                    offset += 1;
-                    // TODO stop at newline
-                    while (scanner.at(offset)) |ch| : (offset += 1) if (ch == '>') break;
-                    if (scanner.at(offset) == '>') {
-                        offset += 1;
-                        const ch = scanner.at(offset);
-                        if (ch == null or ch == '\n') {
-                            scanner.offset = offset;
-                            self.in_raw_html_block = true;
-                            // Need to make a separate text token, rather than just
-                            // `return` as we do for inline HTML, so that when the
-                            // user checks `in_raw_html_block` it's accurate.
-                            return .{ .text = scanner.source[start..scanner.offset] };
-                        }
-                    }
+                    if (scanner.untilOnLine('>') == null) return null;
+                    const ch = scanner.peek(0);
+                    if (!(ch == null or ch == '\n')) return null;
+                    self.in_raw_html_block = true;
+                    // Need to make a separate text token, rather than just
+                    // `return null` as we do for inline HTML, so that when the
+                    // user checks `in_raw_html_block` it's accurate.
+                    return .{ .text = scanner.source[start..scanner.offset] };
                 },
                 else => {},
             },
@@ -268,16 +259,7 @@ const Tokenizer = struct {
                 self.block_allowed = true;
                 return .@">";
             },
-            '`' => if (scanner.eatIfString("``")) {
-                var lang_start = scanner.offset;
-                var lang_end = scanner.offset;
-                while (scanner.next()) |ch| if (ch == '\n') {
-                    break;
-                } else {
-                    lang_end += 1;
-                };
-                return .{ .@"```x\n" = scanner.source[lang_start..lang_end] };
-            },
+            '`' => if (scanner.eatIfString("``")) return .{ .@"```x\n" = scanner.restOfLine() },
             '$' => if (scanner.eatIf('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
                 _ = scanner.until('$') catch unreachable;
@@ -285,26 +267,14 @@ const Tokenizer = struct {
                 return .{ .text = scanner.source[start..scanner.offset] };
             },
             '-' => if (scanner.eatIf(' ')) return .@"-",
-            '1'...'9' => {
-                var i: usize = 0;
-                while (scanner.peek(i)) |c| : (i += 1) switch (c) {
-                    '0'...'9' => {},
-                    '.' => {
-                        i += 1;
-                        if (scanner.peek(i) == ' ') {
-                            scanner.offset += i + 1;
-                            return .@"1.";
-                        }
-                    },
-                    else => break,
-                };
+            '1'...'9' => while (scanner.next()) |c| switch (c) {
+                '0'...'9' => {},
+                '.' => if (scanner.next() == ' ') return .@"1.",
+                else => break,
             },
             '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
-            '[' => if (scanner.eatIf('^')) {
-                const label = scanner.until(']') catch unreachable;
-                // TODO: maybe shouldn't be an error here.
-                scanner.expect(": ") catch unreachable;
-                return .{ .@"[^x]: " = label };
+            '[' => if (scanner.eatIf('^')) if (scanner.untilOnLine(']')) |label| {
+                if (scanner.eatIfString(": ")) return .{ .@"[^x]: " = label };
             },
             else => {},
         }
@@ -320,6 +290,7 @@ const Tokenizer = struct {
             '\n' => {
                 if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
                 self.block_allowed = true;
+                // TODO what if in inline code here
                 return .@"\n";
             },
             '`' => {
@@ -336,11 +307,11 @@ const Tokenizer = struct {
                 };
                 return .@"<";
             },
-            // Only escape ampersands in inline code. If regular text contains something
-            // that parses as an entity, you probably actually wanted an entity.
-            '&' => if (self.in_inline_code) return .@"&",
-            else => if (self.in_inline_code) return null,
+            else => {},
         }
+        // Only escape ampersands in inline code. Leave them alone in regular
+        // text so that you can use a raw entity if you want to.
+        if (self.in_inline_code) return if (char == '&') .@"&" else null;
         switch (char) {
             '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
             '$' => {

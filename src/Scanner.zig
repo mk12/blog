@@ -26,13 +26,19 @@ pub fn at(self: Scanner, offset: usize) ?u8 {
     return if (offset >= self.source.len) null else self.source[offset];
 }
 
-pub fn untilOnLineUnowned(self: Scanner, char: u8, offset: usize) ?usize {
-    var o = offset;
-    while (self.at(o)) |ch| : (o += 1) switch (ch) {
-        char => return offset,
-        '\n' => return null,
-    };
+pub fn untilOnLine(self: *Scanner, char: u8) ?[]const u8 {
+    const start = self.offset;
+    while (self.next()) |ch| {
+        if (ch == char) return self.source[start .. self.offset - 1];
+        if (ch == '\n') return null;
+    }
     return null;
+}
+
+pub fn restOfLine(self: *Scanner) []const u8 {
+    const start = self.offset;
+    while (self.next()) |ch| if (ch == '\n') return self.source[start .. self.offset - 1];
+    return self.source[start..self.offset];
 }
 
 pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
