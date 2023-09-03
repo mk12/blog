@@ -167,6 +167,13 @@ const Token = union(enum) {
     // Used for both block and inline
     @"]",
 
+    fn link(url_or_label: []const u8, is_reference: bool, is_image: bool) Token {
+        return switch (is_reference) {
+            false => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+            true => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
+        };
+    }
+
     fn is_inline(self: Token) bool {
         return @intFromEnum(self) >= @intFromEnum(Token.text);
     }
@@ -247,9 +254,8 @@ const Tokenizer = struct {
                     const ch = scanner.peek(0);
                     if (!(ch == null or ch == '\n')) return null;
                     self.in_raw_html_block = true;
-                    // Need to make a separate text token, rather than just
-                    // `return null` as we do for inline HTML, so that when the
-                    // user checks `in_raw_html_block` it's accurate.
+                    // We can't just return null here (as we do for raw inline HTML)
+                    // because the renderer needs `in_raw_html_block` to be accurate.
                     return .{ .text = scanner.source[self.token_start..scanner.offset] };
                 },
                 else => {},
@@ -311,7 +317,10 @@ const Tokenizer = struct {
             '<' => {
                 if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
-                        _ = scanner.until('>') catch unreachable;
+                        if (scanner.untilOnLine('>') == null) {
+                            scanner.offset = self.token_start + 1;
+                            return .@"<";
+                        }
                         return null;
                     },
                     else => {},
@@ -324,17 +333,18 @@ const Tokenizer = struct {
                 _ = scanner.until('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '[' => link: {
-                if (scanner.eatIf('^')) return .{ .@"[^x]" = scanner.until(']') catch unreachable };
-                const after_lbracket = scanner.offset;
+            '[' => {
+                if (scanner.eatIf('^')) if (scanner.untilOnLine(']')) |label| return .{ .@"[^x]" = label };
+                const start_bracketed = scanner.offset;
+                defer scanner.offset = start_bracketed;
                 const is_image = scanner.behind(2) == '!';
                 if (is_image) self.token_start -= 1;
-                var i: usize = 0;
                 var escaped = false;
                 var in_code = false;
                 var depth: usize = 1;
-                while (true) : (i += 1) {
-                    const ch = scanner.peek(i) orelse break :link;
+                while (true) {
+                    const ch = scanner.next() orelse return null;
+                    if (ch == '\n') return null;
                     if (escaped) {
                         escaped = false;
                     } else if (in_code) {
@@ -350,37 +360,27 @@ const Tokenizer = struct {
                         else => {},
                     }
                 }
-                const closing_char: u8 = switch (scanner.peek(i + 1) orelse 0) {
+                const end_bracketed = scanner.offset - 1;
+                const closing_char: u8 = switch (scanner.next() orelse 0) {
                     '(' => ')',
                     '[' => ']',
                     else => {
                         // Shortcut reference link.
-                        const end_of_text = scanner.offset + i;
-                        const label = scanner.source[after_lbracket..end_of_text];
+                        const label = scanner.source[start_bracketed..end_bracketed];
                         self.link_depth += 1;
-                        return if (is_image) .{ .@"![...][x]" = label } else .{ .@"[...][x]" = label };
+                        return Token.link(label, true, is_image);
                     },
                 };
-                i += 2;
-                const start_of_url = scanner.offset + i;
-                while (scanner.peek(i)) |ch| : (i += 1) if (ch == closing_char) break;
-                if (scanner.peek(i) != closing_char) break :link;
-                const closing_paren = scanner.offset + i;
-                i += 1;
-                const url_or_label = scanner.source[start_of_url..closing_paren];
+                const url_or_label = scanner.untilOnLine(closing_char) orelse return null;
                 self.link_depth += 1;
-                return switch (closing_char) {
-                    ')' => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
-                    ']' => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
-                    else => unreachable,
-                };
+                return Token.link(url_or_label, closing_char == ']', is_image);
             },
             ']' => {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
                 if (scanner.peek(0)) |c| switch (c) {
-                    '(' => _ = scanner.until(')') catch unreachable,
-                    '[' => _ = scanner.until(']') catch unreachable,
+                    '(' => _ = scanner.untilOnLine(')').?,
+                    '[' => _ = scanner.untilOnLine(']').?,
                     else => {},
                 };
                 return .@"]";
@@ -915,6 +915,11 @@ test "render first block only with gap" {
     try expectRenderSuccess("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
 }
 
+test "render backslash at end" {
+    try expectRenderSuccess("<p>\\</p>", "\\", .{});
+    try expectRenderSuccess("<p>Foo\\</p>", "Foo\\", .{});
+}
+
 test "render backslash scapes" {
     try expectRenderSuccess(
         \\<p># _nice_ `stuff` \</p>
@@ -937,6 +942,10 @@ test "render entities" {
 
 test "render raw entities" {
     try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{});
+}
+
+test "render inline element after something that looks like raw html" {
+    try expectRenderSuccess("<p>x&lt;y<em>z</em></p>", "x<y_z_", .{});
 }
 
 test "render raw block html" {
@@ -1074,7 +1083,7 @@ test "render all headings" {
     , .{});
 }
 
-test "render inline after non-heading" {
+test "render inline after something that looks like a heading" {
     try expectRenderSuccess("<p>####### <em>hi</em></p>", "####### _hi_", .{});
 }
 
@@ -1446,10 +1455,9 @@ test "failure in writeUrl hook (inline)" {
         }
     }{};
     try expectRenderFailureWithHooks(
-        \\<input>:2:12: xyz: bad url
+        \\<input>:1:18: xyz: bad url
     ,
-        \\[some
-        \\link text](xyz)
+        \\[some link text](xyz)
     , .{}, hooks);
 }
 

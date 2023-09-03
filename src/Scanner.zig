@@ -18,6 +18,8 @@ reporter: *Reporter,
 filename: []const u8 = "<input>",
 offset: usize = 0,
 
+// TODO: choose better names for methods
+
 pub fn eof(self: Scanner) bool {
     return self.offset == self.source.len;
 }
