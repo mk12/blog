@@ -47,20 +47,19 @@ pub const LinkMap = std.StringHashMapUnmanaged([]const u8);
 pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     var links = LinkMap{};
     const start = scanner.offset;
-    var end = scanner.source.len;
-    while (true) {
-        scanner.offset = end;
+    scanner.offset = scanner.source.len;
+    const end = while (true) {
         scanner.skipReverse('\n', start);
-        end = scanner.offset;
+        const end_of_line = scanner.offset;
         if (scanner.untilReverse('\n', start)) scanner.eat();
         const start_of_line = scanner.offset;
-        if (!scanner.eatIf('[')) break;
-        if (scanner.eatIf('^')) break;
-        const label = scanner.untilOnLine(']') orelse break;
-        if (!scanner.eatIfString(": ")) break;
-        try links.put(allocator, label, scanner.source[scanner.offset..end]);
-        end = start_of_line;
-    }
+        if (!scanner.eatIf('[')) break end_of_line;
+        if (scanner.eatIf('^')) break end_of_line;
+        const label = scanner.untilOnLine(']') orelse break end_of_line;
+        if (!scanner.eatIfString(": ")) break end_of_line;
+        try links.put(allocator, label, scanner.source[scanner.offset..end_of_line]);
+        scanner.offset = start_of_line;
+    };
     return Markdown{
         .text = scanner.source[start..end],
         .context = Context{ .source = scanner.source, .filename = scanner.filename, .links = links },
