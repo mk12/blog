@@ -175,8 +175,8 @@ const Token = union(enum) {
 const Tokenizer = struct {
     scanner: *Scanner,
     peeked: ?Token = null,
-    last_token_start: usize = 0,
-    peeked_last_token_start: usize = 0,
+    token_start: usize,
+    peeked_token_start: usize = undefined,
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
     block_allowed: bool = true,
@@ -186,11 +186,11 @@ const Tokenizer = struct {
 
     fn init(scanner: *Scanner) !Tokenizer {
         _ = scanner.eatWhile('\n');
-        return Tokenizer{ .scanner = scanner };
+        return Tokenizer{ .scanner = scanner, .token_start = scanner.offset };
     }
 
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.scanner.failAtOffset(self.last_token_start, format, args);
+        return self.scanner.failAtOffset(self.token_start, format, args);
     }
 
     // Returns the remaining untokenized source.
@@ -199,36 +199,33 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer) !Token {
+    fn next(self: *Tokenizer, in_code_block: bool) !Token {
+        if (in_code_block) {
+            assert(self.peeked == null);
+            self.token_start = self.scanner.offset;
+            if (self.scanner.eof()) return .eof;
+            if (self.scanner.eatIfLine("```")) return .@"```\n";
+            return .stay_in_code_block;
+        }
         if (self.peeked) |token| {
             self.peeked = null;
-            self.last_token_start = self.peeked_last_token_start;
+            self.token_start = self.peeked_token_start;
             return token;
         }
         const start = self.scanner.offset;
-        var token_start: usize = undefined;
-        const token = while (true) if (try self.recognize(&token_start)) |token| break token;
-        const text = self.scanner.source[start..token_start];
-        self.last_token_start = token_start;
+        const token = while (true) if (try self.recognize()) |token| break token;
+        const text = self.scanner.source[start..self.token_start];
         if (text.len == 0) return token;
         self.peeked = token;
-        self.peeked_last_token_start = token_start;
-        self.last_token_start = start;
+        self.peeked_token_start = self.token_start;
+        self.token_start = start;
         return Token{ .text = text };
     }
 
-    fn nextInCodeBlock(self: *Tokenizer) Token {
-        assert(self.peeked == null);
-        self.last_token_start = self.scanner.offset;
-        if (self.scanner.eof()) return .eof;
-        if (self.scanner.eatIfLine("```")) return .@"```\n";
-        return .stay_in_code_block;
-    }
-
-    fn recognize(self: *Tokenizer, token_start: *usize) !?Token {
+    fn recognize(self: *Tokenizer) !?Token {
         const scanner = self.scanner;
         const start = scanner.offset;
-        token_start.* = start;
+        self.token_start = start;
         const char = scanner.next() orelse return .eof;
         if (self.block_allowed) switch (char) {
             '#' => {
@@ -335,7 +332,7 @@ const Tokenizer = struct {
                 if (scanner.eatIf('^')) return .{ .@"[^x]" = try scanner.until(']') };
                 const after_lbracket = start;
                 const is_image = scanner.behind(2) == '!';
-                if (is_image) token_start.* -= 1;
+                if (is_image) self.token_start -= 1;
                 var i: usize = 0;
                 var escaped = false;
                 var in_code = false;
@@ -406,7 +403,7 @@ const Tokenizer = struct {
                 // Look backwards for the space in " -- " instead of checking for
                 // "-- " after any space, because spaces are much more common.
                 if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
-                    token_start.* -= 1;
+                    self.token_start -= 1;
                     return .@" -- ";
                 }
                 return .@"--";
@@ -428,7 +425,7 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(Token).init(allocator);
     while (true) {
-        const token = try tokenizer.next();
+        const token = try tokenizer.next(false);
         try actual.append(token);
         if (token == .eof) break;
     }
@@ -745,7 +742,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
-        var token = try if (all_open and highlighter.active) tokenizer.nextInCodeBlock() else tokenizer.next();
+        var token = try tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
@@ -759,7 +756,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
-            token = try if (all_open and highlighter.active) tokenizer.nextInCodeBlock() else tokenizer.next();
+            token = try tokenizer.next(all_open and highlighter.active);
         }
         if (token == .eof) break;
         if (highlighter.active) {
@@ -843,7 +840,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next();
+            token = try tokenizer.next(false);
         }
         if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
