@@ -23,18 +23,18 @@ year: u16,
 pub fn parse(scanner: *Scanner) Reporter.Error!Date {
     var date: Date = undefined;
     try parseField(scanner, 4, &date, "year", 2000, 2099);
-    try scanner.expect("-");
+    try scanner.expect('-');
     try parseField(scanner, 2, &date, "month", 1, 12);
-    try scanner.expect("-");
+    try scanner.expect('-');
     try parseField(scanner, 2, &date, "day", 1, daysInMonth(date.month, date.year));
-    try scanner.expect("T");
+    try scanner.expect('T');
     try parseField(scanner, 2, &date, "hour", 0, 23);
-    try scanner.expect(":");
+    try scanner.expect(':');
     try parseField(scanner, 2, &date, "minute", 0, 59);
-    try scanner.expect(":");
+    try scanner.expect(':');
     try parseField(scanner, 2, &date, "second", 0, 60); // leap second
     try parseField(scanner, 3, &date, "tz_offset_h", -12, 14);
-    try scanner.expect(":00");
+    try scanner.expectString(":00");
     return date;
 }
 
@@ -56,7 +56,7 @@ fn parseField(
     max: @TypeOf(@field(date, name)),
 ) !void {
     const FieldType = @TypeOf(@field(date, name));
-    const field = try scanner.consume(length);
+    const field = try scanner.consumeFixed(length);
     const parseNumber = switch (@typeInfo(FieldType).Int.signedness) {
         .signed => std.fmt.parseInt,
         .unsigned => std.fmt.parseUnsigned,

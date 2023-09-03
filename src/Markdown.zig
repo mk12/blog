@@ -52,12 +52,12 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     while (true) {
         scanner.skipReverse('\n', start);
         end = scanner.offset;
-        if (scanner.untilReverse('\n', start)) scanner.eat();
+        if (scanner.untilReverse('\n', start)) scanner.inc();
         const start_of_line = scanner.offset;
-        if (!scanner.eatIf('[')) break;
-        if (scanner.eatIf('^')) break;
+        if (!scanner.eat('[')) break;
+        if (scanner.eat('^')) break;
         const label = scanner.untilOnLine(']') orelse break;
-        if (!scanner.eatIfString(": ")) break;
+        if (!scanner.eatString(": ")) break;
         try links.put(allocator, label, scanner.source[scanner.offset..end]);
         scanner.offset = start_of_line;
     }
@@ -192,9 +192,8 @@ const Tokenizer = struct {
         return self.scanner.failAtOffset(self.token_start, format, args);
     }
 
-    // Returns the remaining untokenized source.
-    // This is inaccurate when there is a peeked token (i.e. after next() returns text).
     fn remaining(self: Tokenizer) []const u8 {
+        assert(self.peeked == null);
         return self.scanner.source[self.scanner.offset..];
     }
 
@@ -238,7 +237,7 @@ const Tokenizer = struct {
         switch (scanner.next() orelse return .eof) {
             '#' => {
                 const level: u8 = @intCast(1 + scanner.eatWhile('#'));
-                if (level <= 6 and scanner.eatIf(' ')) return .{ .@"#" = level };
+                if (level <= 6 and scanner.eat(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |c| switch (c) {
                 '/', 'a'...'z' => {
@@ -252,26 +251,26 @@ const Tokenizer = struct {
                 },
                 else => {},
             },
-            '>' => if (scanner.eatIf(' ') or scanner.peek() == '\n' or scanner.eof()) {
+            '>' => if (scanner.eat(' ') or scanner.peek() == '\n' or scanner.eof()) {
                 self.block_allowed = true;
                 return .@">";
             },
-            '`' => if (scanner.eatIfString("``")) return .{ .@"```x\n" = scanner.restOfLine() },
-            '$' => if (scanner.eatIf('$')) {
+            '`' => if (scanner.eatString("``")) return .{ .@"```x\n" = scanner.restOfLine() },
+            '$' => if (scanner.eat('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
                 _ = scanner.until('$') catch unreachable;
-                scanner.expect("$") catch unreachable;
+                scanner.expect('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '-' => if (scanner.eatIf(' ')) return .@"-",
+            '-' => if (scanner.eat(' ')) return .@"-",
             '1'...'9' => while (scanner.next()) |c| switch (c) {
                 '0'...'9' => {},
                 '.' => if (scanner.next() == ' ') return .@"1.",
                 else => break,
             },
             '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
-            '[' => if (scanner.eatIf('^')) if (scanner.untilOnLine(']')) |label| {
-                if (scanner.eatIfString(": ")) return .{ .@"[^x]: " = label };
+            '[' => if (scanner.eat('^')) if (scanner.untilOnLine(']')) |label| {
+                if (scanner.eatString(": ")) return .{ .@"[^x]: " = label };
             },
             else => {},
         }
@@ -320,10 +319,11 @@ const Tokenizer = struct {
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '[' => {
-                if (scanner.eatIf('^')) if (scanner.untilOnLine(']')) |label| return .{ .@"[^x]" = label };
+                if (scanner.eat('^'))
+                    return if (scanner.untilOnLine(']')) |label| .{ .@"[^x]" = label } else null;
                 const start_bracketed = scanner.offset;
                 defer scanner.offset = start_bracketed;
-                const is_image = scanner.behind(2) == '!';
+                const is_image = scanner.prev(1) == '!';
                 if (is_image) self.token_start -= 1;
                 var escaped = false;
                 var in_code = false;
@@ -371,26 +371,26 @@ const Tokenizer = struct {
                 };
                 return .@"]";
             },
-            '*' => if (scanner.eatIf('*')) return .@"**",
+            '*' => if (scanner.eat('*')) return .@"**",
             '_' => return ._,
             '\'' => {
-                const prev = scanner.behind(2);
+                const prev = scanner.prev(1);
                 return if (prev == null or prev == ' ' or prev == '\n') .lsquo else .rsquo;
             },
             '"' => {
-                const prev = scanner.behind(2);
+                const prev = scanner.prev(1);
                 return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
             },
-            '-' => if (scanner.eatIf('-')) {
+            '-' => if (scanner.eat('-')) {
                 // Look backwards for the space in " -- " instead of checking for
                 // "-- " after any space, because spaces are much more common.
-                if (scanner.behind(3) == ' ' and scanner.eatIf(' ')) {
+                if (scanner.prev(2) == ' ' and scanner.eat(' ')) {
                     self.token_start -= 1;
                     return .@" -- ";
                 }
                 return .@"--";
             },
-            '.' => if (scanner.eatIfString("..")) return .@"...",
+            '.' => if (scanner.eatString("..")) return .@"...",
             else => {},
         }
         return null;

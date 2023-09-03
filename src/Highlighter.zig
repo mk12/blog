@@ -112,14 +112,14 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
             '&' => try self.write(writer, "&amp;", null),
             '0'...'9' => {
                 while (scanner.peek()) |ch| switch (ch) {
-                    '0'...'9', '.', '_' => scanner.eat(),
+                    '0'...'9', '.', '_' => scanner.inc(),
                     else => break,
                 };
                 try self.write(writer, scanner.source[start..scanner.offset], .cn);
             },
             ' ' => {
                 while (scanner.peek()) |ch| switch (ch) {
-                    ' ' => scanner.eat(),
+                    ' ' => scanner.inc(),
                     else => break,
                 };
                 try self.writeWhitespace(scanner.source[start..scanner.offset]);
@@ -170,8 +170,8 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
             },
             'a'...'z', 'A'...'Z' => {
                 while (scanner.peek()) |ch| switch (ch) {
-                    'a'...'z', 'A'...'Z', '_' => scanner.eat(),
-                    '-' => if (language == .scheme) scanner.eat() else break,
+                    'a'...'z', 'A'...'Z', '_' => scanner.inc(),
+                    '-' => if (language == .scheme) scanner.inc() else break,
                     else => break,
                 };
                 const text = scanner.source[start..scanner.offset];
@@ -184,7 +184,7 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                 if (language == .c and scanner.peek() == '/') {
                     while (scanner.peek()) |ch| switch (ch) {
                         '\n' => break,
-                        else => scanner.eat(),
+                        else => scanner.inc(),
                     };
                     try self.write(writer, scanner.source[start..scanner.offset], .co);
                 } else {

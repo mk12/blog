@@ -74,6 +74,8 @@ pub const Location = struct {
     }
 
     pub fn fromPtr(source: []const u8, ptr: [*]const u8) Location {
+        // TODO(https://github.com/ziglang/zig/issues/9646): Should be able to subtract pointers at comptime.
+        if (@inComptime()) return Location{ .line = 0, .column = 0 }; // use 0 to indicate it's fake
         // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
         return fromOffset(source, @intFromPtr(ptr) - @intFromPtr(source.ptr));
     }

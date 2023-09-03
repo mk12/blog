@@ -23,17 +23,17 @@ pub const Status = union(enum) {
 pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var meta: Metadata = undefined;
     const separator = "---\n";
-    try scanner.expect(separator);
+    try scanner.expectString(separator);
     inline for (.{ "title", "subtitle", "category" }) |key| {
-        try scanner.expect(key ++ ": ");
+        try scanner.expectString(key ++ ": ");
         @field(meta, key) = try scanner.until('\n');
     }
     switch (try scanner.choice(.{ .date = "date: ", .end = separator })) {
         .date => {
             const date = try Date.parse(scanner);
-            try scanner.expect("\n");
+            try scanner.expectString("\n");
             meta.status = Status{ .published = date };
-            try scanner.expect(separator);
+            try scanner.expectString(separator);
         },
         .end => meta.status = Status.draft,
     }

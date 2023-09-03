@@ -82,7 +82,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         .variable => .{ .variable = word },
         .include => .{
             .include = blk: {
-                try scanner.expect("\"");
+                try scanner.expectString("\"");
                 const path = try scanner.until('"');
                 scanner.skipWhitespace();
                 break :blk path;
@@ -105,14 +105,14 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         .@"else" => .@"else",
         .end => .end,
     };
-    try scanner.expect("}}");
+    try scanner.expectString("}}");
     return token;
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
     while (scanner.peek()) |char| switch (char) {
-        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(),
+        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.inc(),
         else => break,
     };
     if (scanner.offset == start) return scanner.fail("expected an identifier", .{});
@@ -391,7 +391,7 @@ test "invalid command" {
 
 test "unterminated command" {
     try expectParseFailure(
-        \\<input>:1:27: unexpected EOF, expected "}}"
+        \\<input>:1:27: expected "}}", got EOF
     ,
         \\Missing closing {{ braces.
     );
