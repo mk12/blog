@@ -229,15 +229,14 @@ const Tokenizer = struct {
             self.block_allowed = false;
             self.scanner.offset = start;
         }
+        if (self.in_inline_code) while (true) if (self.recognizeInsideInlineCode()) |token| return token;
         while (true) if (self.recognizeInline()) |token| return token;
     }
 
     fn recognizeBlock(self: *Tokenizer) ?Token {
         const scanner = self.scanner;
-        const start = scanner.offset;
-        self.token_start = start;
-        const char = scanner.next() orelse return .eof;
-        switch (char) {
+        self.token_start = scanner.offset;
+        switch (scanner.next() orelse return .eof) {
             '#' => {
                 const level: u8 = @intCast(1 + scanner.eatWhile('#'));
                 if (level <= 6 and scanner.eatIf(' ')) return .{ .@"#" = level };
@@ -251,7 +250,7 @@ const Tokenizer = struct {
                     // Need to make a separate text token, rather than just
                     // `return null` as we do for inline HTML, so that when the
                     // user checks `in_raw_html_block` it's accurate.
-                    return .{ .text = scanner.source[start..scanner.offset] };
+                    return .{ .text = scanner.source[self.token_start..scanner.offset] };
                 },
                 else => {},
             },
@@ -264,7 +263,7 @@ const Tokenizer = struct {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
                 _ = scanner.until('$') catch unreachable;
                 scanner.expect("$") catch unreachable;
-                return .{ .text = scanner.source[start..scanner.offset] };
+                return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '-' => if (scanner.eatIf(' ')) return .@"-",
             '1'...'9' => while (scanner.next()) |c| switch (c) {
@@ -281,24 +280,36 @@ const Tokenizer = struct {
         return null;
     }
 
+    fn recognizeInsideInlineCode(self: *Tokenizer) ?Token {
+        const scanner = self.scanner;
+        self.token_start = scanner.offset;
+        switch (scanner.next() orelse return .eof) {
+            '\n' => return .@"\n",
+            '`' => {
+                self.in_inline_code = false;
+                return .@"`";
+            },
+            '<' => return .@"<",
+            '&' => return .@"&",
+            else => return null,
+        }
+    }
+
     fn recognizeInline(self: *Tokenizer) ?Token {
         const scanner = self.scanner;
-        const start = scanner.offset;
-        self.token_start = start;
-        const char = scanner.next() orelse return .eof;
-        switch (char) {
+        self.token_start = scanner.offset;
+        switch (scanner.next() orelse return .eof) {
             '\n' => {
                 if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
                 self.block_allowed = true;
-                // TODO what if in inline code here
                 return .@"\n";
             },
             '`' => {
-                self.in_inline_code = !self.in_inline_code;
+                self.in_inline_code = true;
                 return .@"`";
             },
             '<' => {
-                if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
+                if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
                         _ = scanner.until('>') catch unreachable;
                         return null;
@@ -307,21 +318,15 @@ const Tokenizer = struct {
                 };
                 return .@"<";
             },
-            else => {},
-        }
-        // Only escape ampersands in inline code. Leave them alone in regular
-        // text so that you can use a raw entity if you want to.
-        if (self.in_inline_code) return if (char == '&') .@"&" else null;
-        switch (char) {
             '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
             '$' => {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
                 _ = scanner.until('$') catch unreachable;
-                return .{ .text = scanner.source[start..scanner.offset] };
+                return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '[' => link: {
                 if (scanner.eatIf('^')) return .{ .@"[^x]" = scanner.until(']') catch unreachable };
-                const after_lbracket = start;
+                const after_lbracket = scanner.offset;
                 const is_image = scanner.behind(2) == '!';
                 if (is_image) self.token_start -= 1;
                 var i: usize = 0;
@@ -351,7 +356,7 @@ const Tokenizer = struct {
                     else => {
                         // Shortcut reference link.
                         const end_of_text = scanner.offset + i;
-                        const label = scanner.source[after_lbracket + 1 .. end_of_text];
+                        const label = scanner.source[after_lbracket..end_of_text];
                         self.link_depth += 1;
                         return if (is_image) .{ .@"![...][x]" = label } else .{ .@"[...][x]" = label };
                     },
@@ -1382,6 +1387,15 @@ test "unclosed inline in middle" {
         \\> Some **stuff
         \\
         \\And more.
+    , .{});
+}
+
+test "unclosed inline code" {
+    try expectRenderFailure(
+        \\<input>:1:6: unclosed <code> tag
+    ,
+        \\`nice
+        \\foo`
     , .{});
 }
 
