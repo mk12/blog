@@ -22,6 +22,19 @@ pub fn eof(self: Scanner) bool {
     return self.offset == self.source.len;
 }
 
+pub fn at(self: Scanner, offset: usize) ?u8 {
+    return if (offset >= self.source.len) null else self.source[offset];
+}
+
+pub fn untilOnLineUnowned(self: Scanner, char: u8, offset: usize) ?usize {
+    var o = offset;
+    while (self.at(o)) |ch| : (o += 1) switch (ch) {
+        char => return offset,
+        '\n' => return null,
+    };
+    return null;
+}
+
 pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
     const offset = self.offset + bytes_ahead;
     return if (offset >= self.source.len) null else self.source[offset];
@@ -35,19 +48,18 @@ pub fn behind(self: Scanner, bytes_behind: usize) ?u8 {
 pub fn next(self: *Scanner) ?u8 {
     if (self.eof()) return null;
     const char = self.source[self.offset];
-    self.eat(char);
+    self.eat();
     return char;
 }
 
-pub fn eat(self: *Scanner, char: u8) void {
-    assert(char == self.peek(0));
+pub fn eat(self: *Scanner) void {
     self.offset += 1;
 }
 
 // TODO revisit, also test
 pub fn eatIf(self: *Scanner, char: u8) bool {
     if (self.peek(0)) |c| if (c == char) {
-        self.eat(c);
+        self.eat();
         return true;
     };
     return false;
@@ -55,7 +67,6 @@ pub fn eatIf(self: *Scanner, char: u8) bool {
 
 // TODO revisit, also test
 pub fn eatIfString(self: *Scanner, string: []const u8) bool {
-    // assert no newline
     const end = self.offset + string.len;
     if (end > self.source.len) return false;
     if (!mem.eql(u8, self.source[self.offset..end], string)) return false;
@@ -66,7 +77,7 @@ pub fn eatIfString(self: *Scanner, string: []const u8) bool {
 // TODO revisit, also test
 pub fn eatWhile(self: *Scanner, char: u8) usize {
     const start = self.offset;
-    while (self.peek(0)) |c| if (c == char) self.eat(c) else break;
+    while (self.peek(0)) |c| if (c == char) self.eat() else break;
     return self.offset - start;
 }
 
@@ -146,7 +157,7 @@ pub fn choice(
 
 pub fn skipWhitespace(self: *Scanner) void {
     while (self.peek(0)) |char| switch (char) {
-        ' ', '\t', '\n' => self.eat(char),
+        ' ', '\t', '\n' => self.eat(),
         else => break,
     };
 }
@@ -199,7 +210,7 @@ test "peek" {
     try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));
-    scanner.eat('a');
+    scanner.eat();
     try testing.expectEqual(@as(?u8, 'b'), scanner.peek(0));
     try testing.expectEqual(@as(?u8, null), scanner.peek(1));
     try testing.expectEqual(@as(?u8, null), scanner.peek(2));

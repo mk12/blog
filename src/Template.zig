@@ -78,7 +78,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
             if (text.len != 0) return .{ .text = text };
             break;
         }
-        scanner.eat(char1.?);
+        scanner.eat();
     }
     if (scanner.eof()) return null;
     try scanner.expect("{{");
@@ -121,7 +121,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
     while (scanner.peek(0)) |char| switch (char) {
-        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(char),
+        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(),
         else => break,
     };
     if (scanner.offset == start) return scanner.fail("expected an identifier", .{});

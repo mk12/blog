@@ -199,7 +199,7 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer, in_code_block: bool) !Token {
+    fn next(self: *Tokenizer, in_code_block: bool) Token {
         if (in_code_block) {
             assert(self.peeked == null);
             self.token_start = self.scanner.offset;
@@ -213,7 +213,7 @@ const Tokenizer = struct {
             return token;
         }
         const start = self.scanner.offset;
-        const token = while (true) if (try self.recognize()) |token| break token;
+        const token = self.nextNonText();
         const text = self.scanner.source[start..self.token_start];
         if (text.len == 0) return token;
         self.peeked = token;
@@ -222,25 +222,38 @@ const Tokenizer = struct {
         return Token{ .text = text };
     }
 
-    fn recognize(self: *Tokenizer) !?Token {
+    fn nextNonText(self: *Tokenizer) Token {
+        if (self.block_allowed) {
+            const start = self.scanner.offset;
+            if (self.recognizeBlock()) |token| return token;
+            self.block_allowed = false;
+            self.scanner.offset = start;
+        }
+        while (true) if (self.recognizeInline()) |token| return token;
+    }
+
+    fn recognizeBlock(self: *Tokenizer) ?Token {
         const scanner = self.scanner;
         const start = scanner.offset;
         self.token_start = start;
         const char = scanner.next() orelse return .eof;
-        if (self.block_allowed) switch (char) {
+        // offset variable not ideal, could use and then reuse by accident when already partially advanced
+        var offset = scanner.offset;
+        switch (char) {
             '#' => {
                 const level: u8 = @intCast(1 + scanner.eatWhile('#'));
                 if (level <= 6 and scanner.eatIf(' ')) return .{ .@"#" = level };
             },
-            '<' => if (scanner.peek(0)) |c| switch (c) {
+            '<' => if (scanner.at(offset)) |c| switch (c) {
                 '/', 'a'...'z' => {
-                    var i: usize = 1;
-                    while (scanner.peek(i)) |ch| : (i += 1) if (ch == '>') break;
-                    if (scanner.peek(i) == '>') {
-                        i += 1;
-                        const ch = scanner.peek(i);
+                    offset += 1;
+                    // TODO stop at newline
+                    while (scanner.at(offset)) |ch| : (offset += 1) if (ch == '>') break;
+                    if (scanner.at(offset) == '>') {
+                        offset += 1;
+                        const ch = scanner.at(offset);
                         if (ch == null or ch == '\n') {
-                            _ = try scanner.consume(i);
+                            scanner.offset = offset;
                             self.in_raw_html_block = true;
                             // Need to make a separate text token, rather than just
                             // `return` as we do for inline HTML, so that when the
@@ -267,8 +280,8 @@ const Tokenizer = struct {
             },
             '$' => if (scanner.eatIf('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = try scanner.until('$');
-                try scanner.expect("$");
+                _ = scanner.until('$') catch unreachable;
+                scanner.expect("$") catch unreachable;
                 return .{ .text = scanner.source[start..scanner.offset] };
             },
             '-' => if (scanner.eatIf(' ')) return .@"-",
@@ -279,7 +292,7 @@ const Tokenizer = struct {
                     '.' => {
                         i += 1;
                         if (scanner.peek(i) == ' ') {
-                            _ = try scanner.consume(i + 1);
+                            scanner.offset += i + 1;
                             return .@"1.";
                         }
                     },
@@ -288,14 +301,21 @@ const Tokenizer = struct {
             },
             '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
             '[' => if (scanner.eatIf('^')) {
-                const label = try scanner.until(']');
+                const label = scanner.until(']') catch unreachable;
                 // TODO: maybe shouldn't be an error here.
-                try scanner.expect(": ");
+                scanner.expect(": ") catch unreachable;
                 return .{ .@"[^x]: " = label };
             },
             else => {},
-        };
-        self.block_allowed = false;
+        }
+        return null;
+    }
+
+    fn recognizeInline(self: *Tokenizer) ?Token {
+        const scanner = self.scanner;
+        const start = scanner.offset;
+        self.token_start = start;
+        const char = scanner.next() orelse return .eof;
         switch (char) {
             '\n' => {
                 if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
@@ -309,7 +329,7 @@ const Tokenizer = struct {
             '<' => {
                 if (!self.in_inline_code) if (scanner.peek(0)) |c| switch (c) {
                     '/', 'a'...'z' => {
-                        _ = try scanner.until('>');
+                        _ = scanner.until('>') catch unreachable;
                         return null;
                     },
                     else => {},
@@ -325,11 +345,11 @@ const Tokenizer = struct {
             '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
             '$' => {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = try scanner.until('$');
+                _ = scanner.until('$') catch unreachable;
                 return .{ .text = scanner.source[start..scanner.offset] };
             },
             '[' => link: {
-                if (scanner.eatIf('^')) return .{ .@"[^x]" = try scanner.until(']') };
+                if (scanner.eatIf('^')) return .{ .@"[^x]" = scanner.until(']') catch unreachable };
                 const after_lbracket = start;
                 const is_image = scanner.behind(2) == '!';
                 if (is_image) self.token_start -= 1;
@@ -380,11 +400,11 @@ const Tokenizer = struct {
                 };
             },
             ']' => {
-                if (self.link_depth == 0) return scanner.failAtOffset(start, "unexpected ']'", .{});
+                if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
                 if (scanner.peek(0)) |c| switch (c) {
-                    '(' => _ = try scanner.until(')'),
-                    '[' => _ = try scanner.until(']'),
+                    '(' => _ = scanner.until(')') catch unreachable,
+                    '[' => _ = scanner.until(']') catch unreachable,
                     else => {},
                 };
                 return .@"]";
@@ -425,7 +445,7 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(Token).init(allocator);
     while (true) {
-        const token = try tokenizer.next(false);
+        const token = tokenizer.next(false);
         try actual.append(token);
         if (token == .eof) break;
     }
@@ -742,7 +762,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
-        var token = try tokenizer.next(all_open and highlighter.active);
+        var token = tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .footnote_li, .h, .figcaption, .figure => break,
@@ -756,7 +776,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
-            token = try tokenizer.next(all_open and highlighter.active);
+            token = tokenizer.next(all_open and highlighter.active);
         }
         if (token == .eof) break;
         if (highlighter.active) {
@@ -840,7 +860,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = try tokenizer.next(false);
+            token = tokenizer.next(false);
         }
         if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
@@ -1076,6 +1096,10 @@ test "render all headings" {
         \\###### This is h6
         \\####### There is no h7
     , .{});
+}
+
+test "render inline after non-heading" {
+    try expectRenderSuccess("<p>####### <em>hi</em></p>", "####### _hi_", .{});
 }
 
 test "render heading id" {
@@ -1364,6 +1388,14 @@ test "render figure with link in caption" {
     , .{});
 }
 
+test "render unbalanced right bracket" {
+    try expectRenderSuccess(
+        \\<p>Some ] out of nowhere</p>
+    ,
+        \\Some ] out of nowhere
+    , .{});
+}
+
 test "unclosed inline at end" {
     try expectRenderFailure(
         \\<input>:1:5: unclosed <em> tag
@@ -1403,14 +1435,6 @@ test "exceed max block tag depth" {
         \\<input>:1:17: exceeded maximum tag depth (8)
     ,
         \\> > > > > > > > -
-    , .{});
-}
-
-test "unexpected right bracket" {
-    try expectRenderFailure(
-        \\<input>:1:6: unexpected ']'
-    ,
-        \\Some ] out of nowhere
     , .{});
 }
 
