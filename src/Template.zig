@@ -68,20 +68,11 @@ const Token = union(enum) {
 };
 
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
-    const start = scanner.offset;
-    const brace: u8 = '{';
-    while (true) {
-        const char1 = scanner.peek(0);
-        const char2 = scanner.peek(1);
-        if (char1 == null or (char1 == brace and char2 == brace)) {
-            const text = scanner.source[start..scanner.offset];
-            if (text.len != 0) return .{ .text = text };
-            break;
-        }
-        scanner.eat();
-    }
+    const open_braces = "{{";
+    const text = scanner.untilStringOrEof(open_braces);
+    if (text.len != 0) return .{ .text = text };
     if (scanner.eof()) return null;
-    try scanner.expect("{{");
+    scanner.offset += open_braces.len;
     scanner.skipWhitespace();
     const word = try scanIdentifier(scanner);
     scanner.skipWhitespace();

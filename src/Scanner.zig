@@ -24,8 +24,11 @@ pub fn eof(self: Scanner) bool {
     return self.offset == self.source.len;
 }
 
-pub fn at(self: Scanner, offset: usize) ?u8 {
-    return if (offset >= self.source.len) null else self.source[offset];
+pub fn untilStringOrEof(self: *Scanner, string: []const u8) []const u8 {
+    const start = self.offset;
+    const end = std.mem.indexOfPos(u8, self.source, self.offset, string) orelse self.source.len;
+    self.offset = end;
+    return self.source[start..end];
 }
 
 pub fn skipReverse(self: *Scanner, char: u8, stop: usize) void {
