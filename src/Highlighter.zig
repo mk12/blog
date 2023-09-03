@@ -13,6 +13,8 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Highlighter = @This();
 
+// REMEMBER TO POP STASH
+
 active: bool = false,
 language: ?Language = null,
 first_line: bool = false,
@@ -109,14 +111,14 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
             '<' => try self.write(writer, "&lt;", null),
             '&' => try self.write(writer, "&amp;", null),
             '0'...'9' => {
-                while (scanner.peek(0)) |ch| switch (ch) {
+                while (scanner.peek()) |ch| switch (ch) {
                     '0'...'9', '.', '_' => scanner.eat(),
                     else => break,
                 };
                 try self.write(writer, scanner.source[start..scanner.offset], .cn);
             },
             ' ' => {
-                while (scanner.peek(0)) |ch| switch (ch) {
+                while (scanner.peek()) |ch| switch (ch) {
                     ' ' => scanner.eat(),
                     else => break,
                 };
@@ -167,7 +169,7 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                 });
             },
             'a'...'z', 'A'...'Z' => {
-                while (scanner.peek(0)) |ch| switch (ch) {
+                while (scanner.peek()) |ch| switch (ch) {
                     'a'...'z', 'A'...'Z', '_' => scanner.eat(),
                     '-' => if (language == .scheme) scanner.eat() else break,
                     else => break,
@@ -179,8 +181,8 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
                 try self.write(writer, text, if (kw) .kw else null);
             },
             '/' => {
-                if (language == .c and scanner.peek(0) == '/') {
-                    while (scanner.peek(0)) |ch| switch (ch) {
+                if (language == .c and scanner.peek() == '/') {
+                    while (scanner.peek()) |ch| switch (ch) {
                         '\n' => break,
                         else => scanner.eat(),
                     };
@@ -192,12 +194,8 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
             },
             '#' => {
                 if (language == .ruby) {
-                    var i: usize = 0;
-                    while (scanner.peek(i)) |ch| switch (ch) {
-                        '\n' => break,
-                        else => i += 1,
-                    };
-                    _ = try scanner.consume(i);
+                    _ = scanner.restOfLine();
+                    scanner.offset -= 1;
                     try self.write(writer, scanner.source[start..scanner.offset], .co);
                 } else {
                     // TODO remove

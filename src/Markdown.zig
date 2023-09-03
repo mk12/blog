@@ -243,7 +243,7 @@ const Tokenizer = struct {
             '<' => if (scanner.next()) |c| switch (c) {
                 '/', 'a'...'z' => {
                     if (scanner.untilOnLine('>') == null) return null;
-                    const ch = scanner.peek(0);
+                    const ch = scanner.peek();
                     if (!(ch == null or ch == '\n')) return null;
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
@@ -252,7 +252,7 @@ const Tokenizer = struct {
                 },
                 else => {},
             },
-            '>' => if (scanner.eatIf(' ') or scanner.peek(0) == '\n' or scanner.eof()) {
+            '>' => if (scanner.eatIf(' ') or scanner.peek() == '\n' or scanner.eof()) {
                 self.block_allowed = true;
                 return .@">";
             },
@@ -307,7 +307,7 @@ const Tokenizer = struct {
                 return .@"`";
             },
             '<' => {
-                if (scanner.peek(0)) |c| switch (c) {
+                if (scanner.peek()) |c| switch (c) {
                     '/', 'a'...'z' => return if (scanner.untilOnLine('>')) |_| null else .@"<",
                     else => {},
                 };
@@ -364,7 +364,7 @@ const Tokenizer = struct {
             ']' => {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
-                if (scanner.peek(0)) |c| switch (c) {
+                if (scanner.peek()) |c| switch (c) {
                     '(' => _ = scanner.untilOnLine(')').?,
                     '[' => _ = scanner.untilOnLine(']').?,
                     else => {},

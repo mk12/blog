@@ -59,9 +59,8 @@ pub fn restOfLine(self: *Scanner) []const u8 {
     return self.source[start..self.offset];
 }
 
-pub fn peek(self: Scanner, bytes_ahead: usize) ?u8 {
-    const offset = self.offset + bytes_ahead;
-    return if (offset >= self.source.len) null else self.source[offset];
+pub fn peek(self: Scanner) ?u8 {
+    return if (self.offset == self.source.len) null else self.source[self.offset];
 }
 
 // TODO revisit, also test
@@ -82,7 +81,7 @@ pub fn eat(self: *Scanner) void {
 
 // TODO revisit, also test
 pub fn eatIf(self: *Scanner, char: u8) bool {
-    if (self.peek(0)) |c| if (c == char) {
+    if (self.peek()) |c| if (c == char) {
         self.eat();
         return true;
     };
@@ -101,7 +100,7 @@ pub fn eatIfString(self: *Scanner, string: []const u8) bool {
 // TODO revisit, also test
 pub fn eatWhile(self: *Scanner, char: u8) usize {
     const start = self.offset;
-    while (self.peek(0)) |c| if (c == char) self.eat() else break;
+    while (self.peek()) |c| if (c == char) self.eat() else break;
     return self.offset - start;
 }
 
@@ -180,7 +179,7 @@ pub fn choice(
 }
 
 pub fn skipWhitespace(self: *Scanner) void {
-    while (self.peek(0)) |char| switch (char) {
+    while (self.peek()) |char| switch (char) {
         ' ', '\t', '\n' => self.eat(),
         else => break,
     };
@@ -231,13 +230,9 @@ test "peek" {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = "ab", .reporter = &reporter };
-    try testing.expectEqual(@as(?u8, 'a'), scanner.peek(0));
-    try testing.expectEqual(@as(?u8, 'b'), scanner.peek(1));
-    try testing.expectEqual(@as(?u8, null), scanner.peek(2));
+    try testing.expectEqual(@as(?u8, 'a'), scanner.peek());
     scanner.eat();
-    try testing.expectEqual(@as(?u8, 'b'), scanner.peek(0));
-    try testing.expectEqual(@as(?u8, null), scanner.peek(1));
-    try testing.expectEqual(@as(?u8, null), scanner.peek(2));
+    try testing.expectEqual(@as(?u8, 'b'), scanner.peek());
 }
 
 test "consume" {

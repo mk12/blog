@@ -111,7 +111,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
-    while (scanner.peek(0)) |char| switch (char) {
+    while (scanner.peek()) |char| switch (char) {
         'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(),
         else => break,
     };
