@@ -52,12 +52,12 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     while (true) {
         scanner.skipReverse('\n', start);
         end = scanner.offset;
-        if (scanner.untilReverse('\n', start)) scanner.inc();
+        if (scanner.untilReverse('\n', start)) scanner.eat();
         const start_of_line = scanner.offset;
-        if (!scanner.eat('[')) break;
-        if (scanner.eat('^')) break;
-        const label = scanner.untilOnLine(']') orelse break;
-        if (!scanner.eatString(": ")) break;
+        if (!scanner.consume('[')) break;
+        if (scanner.consume('^')) break;
+        const label = scanner.consumeUntilNoEol(']') orelse break;
+        if (!scanner.consumeString(": ")) break;
         try links.put(allocator, label, scanner.source[scanner.offset..end]);
         scanner.offset = start_of_line;
     }
@@ -184,7 +184,7 @@ const Tokenizer = struct {
     link_depth: u8 = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
-        _ = scanner.eatWhile('\n');
+        scanner.skipWhile('\n');
         return Tokenizer{ .scanner = scanner, .token_start = scanner.offset };
     }
 
@@ -202,7 +202,7 @@ const Tokenizer = struct {
             assert(self.peeked == null);
             self.token_start = self.scanner.offset;
             if (self.scanner.eof()) return .eof;
-            if (self.scanner.eatIfLine("```")) return .@"```\n";
+            if (self.scanner.consumeStringEol("```")) return .@"```\n";
             return .stay_in_code_block;
         }
         if (self.peeked) |token| {
@@ -236,12 +236,12 @@ const Tokenizer = struct {
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
             '#' => {
-                const level: u8 = @intCast(1 + scanner.eatWhile('#'));
-                if (level <= 6 and scanner.eat(' ')) return .{ .@"#" = level };
+                const level: u8 = @intCast(1 + scanner.consumeWhile('#'));
+                if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |c| switch (c) {
                 '/', 'a'...'z' => {
-                    if (scanner.untilOnLine('>') == null) return null;
+                    if (scanner.consumeUntilNoEol('>') == null) return null;
                     const ch = scanner.peek();
                     if (!(ch == null or ch == '\n')) return null;
                     self.in_raw_html_block = true;
@@ -251,26 +251,26 @@ const Tokenizer = struct {
                 },
                 else => {},
             },
-            '>' => if (scanner.eat(' ') or scanner.peek() == '\n' or scanner.eof()) {
+            '>' => if (scanner.consume(' ') or scanner.peek() == '\n' or scanner.eof()) {
                 self.block_allowed = true;
                 return .@">";
             },
-            '`' => if (scanner.eatString("``")) return .{ .@"```x\n" = scanner.restOfLine() },
-            '$' => if (scanner.eat('$')) {
+            '`' => if (scanner.consumeString("``")) return .{ .@"```x\n" = scanner.consumeUntilEol() },
+            '$' => if (scanner.consume('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = scanner.until('$') catch unreachable;
+                _ = scanner.expectUntil('$') catch unreachable;
                 scanner.expect('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '-' => if (scanner.eat(' ')) return .@"-",
+            '-' => if (scanner.consume(' ')) return .@"-",
             '1'...'9' => while (scanner.next()) |c| switch (c) {
                 '0'...'9' => {},
                 '.' => if (scanner.next() == ' ') return .@"1.",
                 else => break,
             },
-            '*' => if (scanner.eatIfLine(" * *")) return .@"* * *\n",
-            '[' => if (scanner.eat('^')) if (scanner.untilOnLine(']')) |label| {
-                if (scanner.eatString(": ")) return .{ .@"[^x]: " = label };
+            '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
+            '[' => if (scanner.consume('^')) if (scanner.consumeUntilNoEol(']')) |label| {
+                if (scanner.consumeString(": ")) return .{ .@"[^x]: " = label };
             },
             else => {},
         }
@@ -297,7 +297,7 @@ const Tokenizer = struct {
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
             '\n' => {
-                if (scanner.eatWhile('\n') > 0) self.in_raw_html_block = false;
+                if (scanner.consumeWhile('\n') > 0) self.in_raw_html_block = false;
                 self.block_allowed = true;
                 return .@"\n";
             },
@@ -307,7 +307,7 @@ const Tokenizer = struct {
             },
             '<' => {
                 if (scanner.peek()) |c| switch (c) {
-                    '/', 'a'...'z' => return if (scanner.untilOnLine('>')) |_| null else .@"<",
+                    '/', 'a'...'z' => return if (scanner.consumeUntilNoEol('>')) |_| null else .@"<",
                     else => {},
                 };
                 return .@"<";
@@ -315,12 +315,12 @@ const Tokenizer = struct {
             '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
             '$' => {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = scanner.until('$') catch unreachable;
+                _ = scanner.expectUntil('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '[' => {
-                if (scanner.eat('^'))
-                    return if (scanner.untilOnLine(']')) |label| .{ .@"[^x]" = label } else null;
+                if (scanner.consume('^'))
+                    return if (scanner.consumeUntilNoEol(']')) |label| .{ .@"[^x]" = label } else null;
                 const start_bracketed = scanner.offset;
                 defer scanner.offset = start_bracketed;
                 const is_image = scanner.prev(1) == '!';
@@ -357,7 +357,7 @@ const Tokenizer = struct {
                         return Token.link(label, true, is_image);
                     },
                 };
-                const url_or_label = scanner.untilOnLine(closing_char) orelse return null;
+                const url_or_label = scanner.consumeUntilNoEol(closing_char) orelse return null;
                 self.link_depth += 1;
                 return Token.link(url_or_label, closing_char == ']', is_image);
             },
@@ -365,13 +365,13 @@ const Tokenizer = struct {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
                 if (scanner.peek()) |c| switch (c) {
-                    '(' => _ = scanner.untilOnLine(')').?,
-                    '[' => _ = scanner.untilOnLine(']').?,
+                    '(' => _ = scanner.consumeUntilNoEol(')').?,
+                    '[' => _ = scanner.consumeUntilNoEol(']').?,
                     else => {},
                 };
                 return .@"]";
             },
-            '*' => if (scanner.eat('*')) return .@"**",
+            '*' => if (scanner.consume('*')) return .@"**",
             '_' => return ._,
             '\'' => {
                 const prev = scanner.prev(1);
@@ -381,16 +381,16 @@ const Tokenizer = struct {
                 const prev = scanner.prev(1);
                 return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
             },
-            '-' => if (scanner.eat('-')) {
+            '-' => if (scanner.consume('-')) {
                 // Look backwards for the space in " -- " instead of checking for
                 // "-- " after any space, because spaces are much more common.
-                if (scanner.prev(2) == ' ' and scanner.eat(' ')) {
+                if (scanner.prev(2) == ' ' and scanner.consume(' ')) {
                     self.token_start -= 1;
                     return .@" -- ";
                 }
                 return .@"--";
             },
-            '.' => if (scanner.eatString("..")) return .@"...",
+            '.' => if (scanner.consumeString("..")) return .@"...",
             else => {},
         }
         return null;

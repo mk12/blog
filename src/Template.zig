@@ -69,36 +69,36 @@ const Token = union(enum) {
 
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
     const open_braces = "{{";
-    const text = scanner.untilStringOrEof(open_braces);
+    const text = scanner.consumeUntilStringOrEof(open_braces);
     if (text.len != 0) return .{ .text = text };
     if (scanner.eof()) return null;
     scanner.offset += open_braces.len;
-    scanner.skipWhitespace();
+    scanner.skipWhile(' ');
     const word = try scanIdentifier(scanner);
-    scanner.skipWhitespace();
+    scanner.skipWhile(' ');
     const Kind = enum { variable, include, define, @"if", range, @"else", end };
     const kind = std.meta.stringToEnum(Kind, word) orelse .variable;
     const token: Token = switch (kind) {
         .variable => .{ .variable = word },
         .include => .{
             .include = blk: {
-                try scanner.expectString("\"");
-                const path = try scanner.until('"');
-                scanner.skipWhitespace();
+                try scanner.expect('"');
+                const path = try scanner.expectUntil('"');
+                scanner.skipWhile(' ');
                 break :blk path;
             },
         },
         .define => .{
             .define = blk: {
                 const variable = try scanIdentifier(scanner);
-                scanner.skipWhitespace();
+                scanner.skipWhile(' ');
                 break :blk variable;
             },
         },
         .@"if", .range => .{
             .start = blk: {
                 const variable = try scanIdentifier(scanner);
-                scanner.skipWhitespace();
+                scanner.skipWhile(' ');
                 break :blk variable;
             },
         },
@@ -112,7 +112,7 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
     while (scanner.peek()) |char| switch (char) {
-        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.inc(),
+        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(),
         else => break,
     };
     if (scanner.offset == start) return scanner.fail("expected an identifier", .{});

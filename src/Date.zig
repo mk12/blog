@@ -56,7 +56,8 @@ fn parseField(
     max: @TypeOf(@field(date, name)),
 ) !void {
     const FieldType = @TypeOf(@field(date, name));
-    const field = try scanner.consumeFixed(length);
+    const field = scanner.consumeLength(length) orelse
+        return scanner.fail("unexpected EOF parsing {s}", .{name});
     const parseNumber = switch (@typeInfo(FieldType).Int.signedness) {
         .signed => std.fmt.parseInt,
         .unsigned => std.fmt.parseUnsigned,
@@ -97,7 +98,7 @@ test "parse valid" {
 }
 
 test "parse invalid" {
-    try expectFailure("<input>:1:1: unexpected EOF", "");
+    try expectFailure("<input>:1:1: unexpected EOF parsing year", "");
     try expectFailure("<input>:1:1: \"asdf\": invalid year", "asdf");
     try expectFailure("<input>:1:5: expected \"-\", got \".\"", "2000.");
     try expectFailure("<input>:1:12: \"1z\": invalid hour", "2023-04-29T1z:06:12-07:00");

@@ -26,17 +26,15 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     try scanner.expectString(separator);
     inline for (.{ "title", "subtitle", "category" }) |key| {
         try scanner.expectString(key ++ ": ");
-        @field(meta, key) = try scanner.until('\n');
+        @field(meta, key) = try scanner.expectUntil('\n');
     }
-    switch (try scanner.choice(.{ .date = "date: ", .end = separator })) {
-        .date => {
-            const date = try Date.parse(scanner);
-            try scanner.expectString("\n");
-            meta.status = Status{ .published = date };
-            try scanner.expectString(separator);
-        },
-        .end => meta.status = Status.draft,
+    if (scanner.consumeString("date: ")) {
+        meta.status = Status{ .published = try Date.parse(scanner) };
+        try scanner.expect('\n');
+    } else {
+        meta.status = Status.draft;
     }
+    try scanner.expectString(separator);
     return meta;
 }
 
@@ -103,7 +101,7 @@ test "missing fields" {
 
 test "invalid field" {
     try expectFailure(
-        \\<input>:5:1: expected "date: " or "---\n", got "invali"
+        \\<input>:5:1: expected "---\n", got "inva"
     ,
         \\---
         \\title: The title
@@ -126,5 +124,14 @@ test "invalid date" {
         \\date: 2023-04-29?15:28:50-07:00
         \\---
         \\
+    );
+}
+
+test "incomplete header" {
+    try expectFailure(
+        \\<input>:2:17: unexpected EOF while looking for "\n"
+    ,
+        \\---
+        \\title: The title
     );
 }
