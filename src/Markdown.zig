@@ -54,12 +54,12 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         while (scanner.offset > start and scanner.prev(0) == '\n') scanner.offset -= 1;
         end = scanner.offset;
         while (scanner.offset > start and scanner.prev(0) != '\n') scanner.offset -= 1;
-        scanner.skip('\n');
         const start_of_line = scanner.offset;
         if (!scanner.consume('[')) break;
         if (scanner.consume('^')) break;
         const label = scanner.consumeLineUntil(']') orelse break;
-        if (!scanner.consumeString(": ")) break;
+        if (!scanner.consume(':')) break;
+        scanner.skipWhile(' ');
         try links.put(allocator, label, scanner.source[scanner.offset..end]);
         scanner.offset = start_of_line;
     }

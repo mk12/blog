@@ -68,10 +68,8 @@ const Token = union(enum) {
 };
 
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
-    const start = scanner.offset;
     const braces = "{{";
-    scanner.offset = std.mem.indexOfPos(u8, scanner.source, scanner.offset, braces) orelse scanner.source.len;
-    const text = scanner.source[start..scanner.offset];
+    const text = scanUntilStringOrEof(scanner, braces);
     if (text.len != 0) return .{ .text = text };
     if (scanner.eof()) return null;
     scanner.offset += braces.len;
@@ -110,6 +108,12 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
     };
     try scanner.expectString("}}");
     return token;
+}
+
+fn scanUntilStringOrEof(scanner: *Scanner, string: []const u8) []const u8 {
+    const start = scanner.offset;
+    scanner.offset = mem.indexOfPos(u8, scanner.source, scanner.offset, string) orelse scanner.source.len;
+    return scanner.source[start..scanner.offset];
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {

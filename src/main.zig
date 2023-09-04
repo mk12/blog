@@ -133,7 +133,7 @@ fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![
         if (!include_drafts and post.meta.status == .draft) continue;
         try posts.append(post);
     }
-    std.mem.sort(Post, posts.items, {}, cmpPostsReverseChronological);
+    mem.sort(Post, posts.items, {}, cmpPostsReverseChronological);
     return posts.items;
 }
 
