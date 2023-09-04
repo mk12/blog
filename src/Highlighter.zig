@@ -15,7 +15,7 @@ const Highlighter = @This();
 
 active: bool = false,
 language: ?Language = null,
-class: ?Class = null,
+class: ?u8 = null,
 pending_newlines: u32 = 0,
 
 pub const Language = enum {
@@ -28,11 +28,27 @@ pub const Language = enum {
     }
 };
 
-const Class = enum {
-    kw, // keyword
-    co, // comment
-    cn, // constant
-    st, // string
+const Token = enum {
+    // Special cases
+    @"<",
+    @"&",
+    whitespace,
+
+    // Classes
+    keyword,
+    comment,
+    constant,
+    string,
+
+    fn class(self: Token) u8 {
+        return switch (self) {
+            .keyword => 'K',
+            .comment => 'C',
+            .constant => 'N',
+            .string => 'S',
+            else => unreachable,
+        };
+    }
 };
 
 fn isKeyword(comptime language: Language, identifier: []const u8) bool {
@@ -69,20 +85,22 @@ pub fn end(self: *Highlighter, writer: anytype) !void {
 }
 
 pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
-    while (true) {
-        const status = try self.renderPrefix(writer, scanner);
-        self.pending_to = scanner.offset;
-        switch (status) {
-            .wrote => self.pending_from = scanner.offset,
-            .did_not_write => {},
-            .end_of_line => break,
-        }
-    }
+    _ = scanner;
+    _ = writer;
+    _ = self;
+    // while (true) {
+    //     const status = try self.renderPrefix(writer, scanner);
+    //     self.pending_to = scanner.offset;
+    //     switch (status) {
+    //         .wrote => self.pending_from = scanner.offset,
+    //         .did_not_write => {},
+    //         .end_of_line => break,
+    //     }
+    // }
 }
 
-const Status = enum { wrote, did_not_write, end_of_line };
-
-fn renderPrefix(self: *Highlighter, writer: anytype, scanner: *Scanner) !Status {
+fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
+    const writer: usize = 0;
     const language = self.language;
     const start = scanner.offset;
     const char = scanner.next() orelse return .end_of_line;
@@ -189,17 +207,17 @@ fn renderPrefix(self: *Highlighter, writer: anytype, scanner: *Scanner) !Status 
     }
 }
 
-fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !Status {
-    if (class == self.class and self.pending_is_space) {
-        try self.flushPending(writer);
-    } else {
-        try self.flush(writer);
-        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{@tagName(c)});
-        self.class = class;
-    }
-    try writer.writeAll(text);
-    return .wrote;
-}
+// fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !Status {
+//     if (class == self.class and self.pending_is_space) {
+//         try self.flushPending(writer);
+//     } else {
+//         try self.flush(writer);
+//         if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{@tagName(c)});
+//         self.class = class;
+//     }
+//     try writer.writeAll(text);
+//     return .wrote;
+// }
 
 fn writeWhitespace(self: *Highlighter, writer: anytype, text: []const u8) !void {
     _ = text;
