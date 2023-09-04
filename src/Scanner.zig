@@ -2,8 +2,6 @@
 
 //! This module implements text scanning from a buffer (not a generic reader).
 //! It provides functionality useful for building tokenizers and parsers.
-//! Calling next() advances through the characters, and returns null on EOF.
-//! It is equivalent to peek() followed by eat().
 //! The "consume" methods advance unless returning false, null, empty, or zero.
 //! The "skip" methods are like "consume" but return void.
 //! The "expect" methods are like "consume" but report an error on failure.
@@ -78,17 +76,6 @@ pub fn consumeLength(self: *Scanner, length: usize) ?[]const u8 {
     return self.source[self.offset..end];
 }
 
-pub fn consumeUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
-    const start = self.offset;
-    while (self.next()) |char| if (char == delimiter) return self.source[start .. self.offset - 1];
-    // TODO: to behave according to "consume" rule, must reset offset
-    // if returning null. But expectUntil uses consumeUntil, and Metadata parsing
-    // does expectUntil, and wants error message about not finding the delimiter
-    // to refer to as far as it got (EOF), not to where it started looking.
-    // self.offset = start;
-    return null;
-}
-
 pub fn consumeLineUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
     const start = self.offset;
     while (self.next()) |char| {
@@ -130,11 +117,6 @@ pub fn expectString(self: *Scanner, string: []const u8) Error!void {
     if (self.eof()) return self.fail("expected \"{}\", got EOF", .{fmtEscapes(string)});
     const actual = self.source[self.offset..@min(self.offset + string.len, self.source.len)];
     return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(string), fmtEscapes(actual) });
-}
-
-pub fn expectUntil(self: *Scanner, delimiter: u8) Error![]const u8 {
-    return self.consumeUntil(delimiter) orelse
-        self.fail("unexpected EOF while looking for \"{}\"", .{fmtEscapes(&.{delimiter})});
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
@@ -241,16 +223,6 @@ test "everything" {
         try testing.expect(scanner.eof());
     }
 
-    // consumeUntil
-    // {
-    //     var scanner = Scanner{ .source = "foo bar", .reporter = &reporter };
-    //     try testing.expectEqual(@as(?[]const u8, null), scanner.consumeUntil('.'));
-    //     try testing.expectEqualStrings("foo", scanner.consumeUntil(' ').?);
-    //     try testing.expectEqual(@as(?[]const u8, null), scanner.consumeUntil('f'));
-    //     try testing.expectEqualStrings("ba", scanner.consumeUntil('r').?);
-    //     try testing.expect(scanner.eof());
-    // }
-
     // consumeLineUntil
     {
         var scanner = Scanner{ .source = "foo:\nbar.", .reporter = &reporter };
@@ -261,78 +233,85 @@ test "everything" {
         try testing.expectEqualStrings("bar", scanner.consumeLineUntil('.').?);
         try testing.expect(scanner.eof());
     }
+
+    // consumeUntilEol
+    {
+        var scanner = Scanner{ .source = "foo\nbar", .reporter = &reporter };
+        try testing.expectEqualStrings("foo", scanner.consumeUntilEol());
+        try testing.expectEqualStrings("bar", scanner.consumeUntilEol());
+        try testing.expect(scanner.eof());
+    }
+
+    // consumeWhile
+    {
+        var scanner = Scanner{ .source = "abbccc", .reporter = &reporter };
+        try testing.expectEqual(@as(usize, 1), scanner.consumeWhile('a'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('a'));
+        try testing.expectEqual(@as(usize, 2), scanner.consumeWhile('b'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('b'));
+        try testing.expectEqual(@as(usize, 3), scanner.consumeWhile('c'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('c'));
+        try testing.expect(scanner.eof());
+    }
+
+    // skip
+    {
+        var scanner = Scanner{ .source = "x", .reporter = &reporter };
+        scanner.skip('y');
+        try testing.expect(!scanner.eof());
+        scanner.skip('x');
+        try testing.expect(scanner.eof());
+    }
+
+    // skipWhile
+    {
+        var scanner = Scanner{ .source = "abb", .reporter = &reporter };
+        scanner.skipWhile('b');
+        scanner.skipWhile('a');
+        scanner.skipWhile('b');
+        try testing.expect(scanner.eof());
+    }
+
+    // expect
+    {
+        var scanner = Scanner{ .source = "ab", .reporter = &reporter };
+        try scanner.expect('a');
+        try reporter.expectFailure("<input>:1:2: expected \"a\", got \"b\"", scanner.expect('a'));
+        try scanner.expect('b');
+        try reporter.expectFailure("<input>:1:3: expected \"b\", got EOF", scanner.expect('b'));
+    }
+
+    // expectString
+    {
+        var scanner = Scanner{ .source = "foo bar", .reporter = &reporter };
+        try scanner.expectString("foo ");
+        try reporter.expectFailure("<input>:1:5: expected \"barn\", got \"bar\"", scanner.expectString("barn"));
+        try scanner.expectString("bar");
+        try reporter.expectFailure("<input>:1:8: expected \"qux\", got EOF", scanner.expectString("qux"));
+    }
+
+    // fail
+    {
+        var scanner = Scanner{ .source = "\n", .reporter = &reporter };
+        scanner.eat();
+        try reporter.expectFailure("<input>:2:1: msg: arg", @as(Error!void, scanner.fail("msg: {s}", .{"arg"})));
+    }
+
+    // failOn
+    {
+        var scanner = Scanner{ .source = "foo bar", .reporter = &reporter };
+        try reporter.expectFailure("<input>:1:5: \"bar\": bad", @as(Error!void, scanner.failOn(scanner.source[4..], "bad", .{})));
+    }
+
+    // failAtOffset
+    {
+        var scanner = Scanner{ .source = "foo bar", .reporter = &reporter };
+        try reporter.expectFailure("<input>:1:5: bad", @as(Error!void, scanner.failAtOffset(4, "bad", .{})));
+    }
+
+    // failAtOffset
+    {
+        var scanner = Scanner{ .source = "foo bar", .reporter = &reporter };
+        try reporter.expectFailure("<input>:1:5: bad", @as(Error!void, scanner.failAtPtr(scanner.source.ptr + 4, "bad", .{})));
+    }
 }
-
-// test "single character" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "x", .reporter = &reporter };
-//     try testing.expect(!scanner.eof());
-//     try testing.expectEqual(@as(?u8, 'x'), scanner.next());
-//     try testing.expect(scanner.eof());
-//     try testing.expectEqual(@as(?u8, null), scanner.next());
-// }
-
-// // TODO consider doing `test peek { ... }` instead of `test "peek" { ... }`
-// test "peek" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "ab", .reporter = &reporter };
-//     try testing.expectEqual(@as(?u8, 'a'), scanner.peek());
-//     scanner.eat();
-//     try testing.expectEqual(@as(?u8, 'b'), scanner.peek());
-// }
-
-// test "consume" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "a\nbc", .reporter = &reporter };
-//     try testing.expectEqualStrings("a\nb", scanner.consumeLength(3).?);
-//     try testing.expectEqualStrings("c", scanner.consumeLength(1).?);
-//     try testing.expect(scanner.eof());
-// }
-
-// test "eatIfString" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "abc", .reporter = &reporter };
-//     try testing.expect(!scanner.consumeString("x"));
-//     try testing.expect(scanner.consumeString("a"));
-//     try testing.expect(!scanner.consumeString("a"));
-//     try testing.expect(scanner.consumeString("bc"));
-//     try testing.expect(scanner.eof());
-// }
-
-// test "expect" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "abc", .reporter = &reporter };
-//     try reporter.expectFailure(
-//         \\<input>:1:1: expected "xyz", got "abc"
-//     , scanner.expectString("xyz"));
-//     try scanner.expectString("abc");
-//     try testing.expect(scanner.eof());
-// }
-
-// test "until" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     var reporter = Reporter.init(arena.allocator());
-//     errdefer |err| reporter.showMessage(err);
-//     var scanner = Scanner{ .source = "one\ntwo\n", .reporter = &reporter };
-//     try testing.expectEqualStrings("one", try scanner.expectUntil('\n'));
-//     try testing.expectEqualStrings("two", try scanner.expectUntil('\n'));
-//     try testing.expect(scanner.eof());
-// }
-
-// // TODO: test rest of stuff
