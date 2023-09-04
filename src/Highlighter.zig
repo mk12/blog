@@ -194,9 +194,8 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
             },
             '#' => {
                 if (language == .ruby) {
-                    _ = scanner.consumeUntilEol();
                     scanner.offset -= 1;
-                    try self.write(writer, scanner.source[start..scanner.offset], .co);
+                    break try self.write(writer, scanner.consumeUntilEol(), .co);
                 } else {
                     // TODO remove
                     try self.write(writer, scanner.source[start..scanner.offset], null);

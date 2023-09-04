@@ -68,11 +68,13 @@ const Token = union(enum) {
 };
 
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
-    const open_braces = "{{";
-    const text = scanner.consumeUntilStringOrEof(open_braces);
+    const start = scanner.offset;
+    const braces = "{{";
+    scanner.offset = std.mem.indexOfPos(u8, scanner.source, scanner.offset, braces) orelse scanner.source.len;
+    const text = scanner.source[start..scanner.offset];
     if (text.len != 0) return .{ .text = text };
     if (scanner.eof()) return null;
-    scanner.offset += open_braces.len;
+    scanner.offset += braces.len;
     scanner.skipWhile(' ');
     const word = try scanIdentifier(scanner);
     scanner.skipWhile(' ');
@@ -83,7 +85,8 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
         .include => .{
             .include = blk: {
                 try scanner.expect('"');
-                const path = try scanner.expectUntil('"');
+                const path = scanner.consumeLineUntil('"') orelse
+                    return scanner.fail("unclosed '\"'", .{});
                 scanner.skipWhile(' ');
                 break :blk path;
             },

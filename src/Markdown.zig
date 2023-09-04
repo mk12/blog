@@ -10,8 +10,9 @@
 //!
 //! It is not CommonMark compliant. It lacks a few regular Markdown features:
 //! no hard wrapping (a single newline ends a paragraph), no nesting in lists,
-//! and no loose lists. It only supports fenced code blocks, not indented ones.
-//! It requires link references to be defined together at the end of the file.
+//! no loose lists, no single-asterisk italics, and no double-underscore bold.
+//! It only supports fenced code blocks, not indented ones. It requires link
+//! references to be defined together at the end of the file, not in the middle.
 //! It treats ![Foo](foo.jpg) syntax as a block <figure>, not an inline <img>.
 //! It allows Markdown within raw HTML. It supports smart typography, auto
 //! heading IDs, footnotes, code highlighting, (TODO!) tables, and (TODO!) TeX
@@ -50,13 +51,14 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     var end: usize = undefined;
     scanner.offset = scanner.source.len;
     while (true) {
-        scanner.skipReverse('\n', start);
+        while (scanner.offset > start and scanner.prev(0) == '\n') scanner.offset -= 1;
         end = scanner.offset;
-        if (scanner.untilReverse('\n', start)) scanner.eat();
+        while (scanner.offset > start and scanner.prev(0) != '\n') scanner.offset -= 1;
+        scanner.skip('\n');
         const start_of_line = scanner.offset;
         if (!scanner.consume('[')) break;
         if (scanner.consume('^')) break;
-        const label = scanner.consumeUntilNoEol(']') orelse break;
+        const label = scanner.consumeLineUntil(']') orelse break;
         if (!scanner.consumeString(": ")) break;
         try links.put(allocator, label, scanner.source[scanner.offset..end]);
         scanner.offset = start_of_line;
@@ -241,7 +243,7 @@ const Tokenizer = struct {
             },
             '<' => if (scanner.next()) |c| switch (c) {
                 '/', 'a'...'z' => {
-                    if (scanner.consumeUntilNoEol('>') == null) return null;
+                    if (scanner.consumeLineUntil('>') == null) return null;
                     const ch = scanner.peek();
                     if (!(ch == null or ch == '\n')) return null;
                     self.in_raw_html_block = true;
@@ -258,7 +260,7 @@ const Tokenizer = struct {
             '`' => if (scanner.consumeString("``")) return .{ .@"```x\n" = scanner.consumeUntilEol() },
             '$' => if (scanner.consume('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = scanner.expectUntil('$') catch unreachable;
+                while (scanner.next()) |ch| if (ch == '$') break;
                 scanner.expect('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
@@ -269,7 +271,7 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
-            '[' => if (scanner.consume('^')) if (scanner.consumeUntilNoEol(']')) |label| {
+            '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| {
                 if (scanner.consumeString(": ")) return .{ .@"[^x]: " = label };
             },
             else => {},
@@ -307,7 +309,7 @@ const Tokenizer = struct {
             },
             '<' => {
                 if (scanner.peek()) |c| switch (c) {
-                    '/', 'a'...'z' => return if (scanner.consumeUntilNoEol('>')) |_| null else .@"<",
+                    '/', 'a'...'z' => return if (scanner.consumeLineUntil('>')) |_| null else .@"<",
                     else => {},
                 };
                 return .@"<";
@@ -315,12 +317,12 @@ const Tokenizer = struct {
             '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
             '$' => {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                _ = scanner.expectUntil('$') catch unreachable;
+                while (scanner.next()) |ch| if (ch == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '[' => {
                 if (scanner.consume('^'))
-                    return if (scanner.consumeUntilNoEol(']')) |label| .{ .@"[^x]" = label } else null;
+                    return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null;
                 const start_bracketed = scanner.offset;
                 defer scanner.offset = start_bracketed;
                 const is_image = scanner.prev(1) == '!';
@@ -357,7 +359,7 @@ const Tokenizer = struct {
                         return Token.link(label, true, is_image);
                     },
                 };
-                const url_or_label = scanner.consumeUntilNoEol(closing_char) orelse return null;
+                const url_or_label = scanner.consumeLineUntil(closing_char) orelse return null;
                 self.link_depth += 1;
                 return Token.link(url_or_label, closing_char == ']', is_image);
             },
@@ -365,8 +367,8 @@ const Tokenizer = struct {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
                 if (scanner.peek()) |c| switch (c) {
-                    '(' => _ = scanner.consumeUntilNoEol(')').?,
-                    '[' => _ = scanner.consumeUntilNoEol(']').?,
+                    '(' => _ = scanner.consumeLineUntil(')').?,
+                    '[' => _ = scanner.consumeLineUntil(']').?,
                     else => {},
                 };
                 return .@"]";
@@ -1150,6 +1152,10 @@ test "render multiple lists" {
 
 test "render two thematic breaks" {
     try expectRenderSuccess("<hr>\n<hr>", "* * *\n* * *", .{});
+}
+
+test "render three asterisks with text after" {
+    try expectRenderSuccess("<p>* * *foo</p>", "* * *foo", .{});
 }
 
 test "render two thematic breaks in blockquote" {

@@ -26,7 +26,7 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     try scanner.expectString(separator);
     inline for (.{ "title", "subtitle", "category" }) |key| {
         try scanner.expectString(key ++ ": ");
-        @field(meta, key) = try scanner.expectUntil('\n');
+        @field(meta, key) = scanner.consumeUntilEol();
     }
     if (scanner.consumeString("date: ")) {
         meta.status = Status{ .published = try Date.parse(scanner) };
@@ -129,7 +129,7 @@ test "invalid date" {
 
 test "incomplete header" {
     try expectFailure(
-        \\<input>:2:17: unexpected EOF while looking for "\n"
+        \\<input>:2:17: expected "subtitle: ", got EOF
     ,
         \\---
         \\title: The title
