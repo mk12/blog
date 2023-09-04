@@ -241,11 +241,8 @@ const Tokenizer = struct {
                 const level: u8 = @intCast(1 + scanner.consumeMany('#'));
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
-            '<' => if (scanner.next()) |c| switch (c) {
-                '/', 'a'...'z' => {
-                    if (scanner.consumeLineUntil('>') == null) return null;
-                    const ch = scanner.peek();
-                    if (!(ch == null or ch == '\n')) return null;
+            '<' => if (scanner.next()) |char| switch (char) {
+                '/', 'a'...'z' => if (std.mem.endsWith(u8, scanner.consumeUntilEol(), ">")) {
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
                     // because the renderer needs `in_raw_html_block` to be accurate.
@@ -260,12 +257,12 @@ const Tokenizer = struct {
             '`' => if (scanner.consumeString("``")) return .{ .@"```x\n" = scanner.consumeUntilEol() },
             '$' => if (scanner.consume('$')) {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                while (scanner.next()) |ch| if (ch == '$') break;
+                while (scanner.next()) |c| if (c == '$') break;
                 scanner.expect('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '-' => if (scanner.consume(' ')) return .@"-",
-            '1'...'9' => while (scanner.next()) |c| switch (c) {
+            '1'...'9' => while (scanner.next()) |char| switch (char) {
                 '0'...'9' => {},
                 '.' => if (scanner.next() == ' ') return .@"1.",
                 else => break,
@@ -309,16 +306,16 @@ const Tokenizer = struct {
                 return .@"`";
             },
             '<' => {
-                if (scanner.peek()) |c| switch (c) {
-                    '/', 'a'...'z' => return if (scanner.consumeLineUntil('>')) |_| null else .@"<",
+                if (scanner.peek()) |char| switch (char) {
+                    '/', 'a'...'z' => if (scanner.consumeLineUntil('>')) |_| return null,
                     else => {},
                 };
                 return .@"<";
             },
-            '\\' => if (scanner.next()) |c| return .{ .@"\\x" = c },
+            '\\' => if (scanner.next()) |char| return .{ .@"\\x" = char },
             '$' => {
                 // TODO: This is temporary, to avoid interpreting math as Markdown.
-                while (scanner.next()) |ch| if (ch == '$') break;
+                while (scanner.next()) |c| if (c == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
             '[' => {
@@ -332,13 +329,13 @@ const Tokenizer = struct {
                 var in_code = false;
                 var depth: usize = 1;
                 while (true) {
-                    const ch = scanner.next() orelse return null;
-                    if (ch == '\n') return null;
+                    const char = scanner.next() orelse return null;
+                    if (char == '\n') return null;
                     if (escaped) {
                         escaped = false;
                     } else if (in_code) {
-                        if (ch == '`') in_code = false;
-                    } else switch (ch) {
+                        if (char == '`') in_code = false;
+                    } else switch (char) {
                         '[' => depth += 1,
                         ']' => {
                             depth -= 1;
@@ -367,7 +364,7 @@ const Tokenizer = struct {
             ']' => {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
-                if (scanner.peek()) |c| switch (c) {
+                if (scanner.peek()) |char| switch (char) {
                     '(' => _ = scanner.consumeLineUntil(')').?,
                     '[' => _ = scanner.consumeLineUntil(']').?,
                     else => {},

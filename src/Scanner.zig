@@ -46,10 +46,10 @@ pub fn prev(self: Scanner, count: usize) ?u8 {
 }
 
 pub fn consume(self: *Scanner, char: u8) bool {
-    if (self.peek()) |c| if (c == char) {
+    if (self.peek() == char) {
         self.eat();
         return true;
-    };
+    }
     return false;
 }
 
@@ -78,9 +78,9 @@ pub fn consumeLength(self: *Scanner, length: usize) ?[]const u8 {
 
 pub fn consumeLineUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
     const start = self.offset;
-    while (self.next()) |char| {
-        if (char == delimiter) return self.source[start .. self.offset - 1];
-        if (char == '\n') break;
+    while (self.next()) |c| {
+        if (c == delimiter) return self.source[start .. self.offset - 1];
+        if (c == '\n') break;
     }
     self.offset = start;
     return null;
@@ -88,7 +88,7 @@ pub fn consumeLineUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
 
 pub fn consumeUntilEol(self: *Scanner) []const u8 {
     const start = self.offset;
-    while (self.next()) |ch| if (ch == '\n') return self.source[start .. self.offset - 1];
+    while (self.next()) |c| if (c == '\n') return self.source[start .. self.offset - 1];
     return self.source[start..self.offset];
 }
 
