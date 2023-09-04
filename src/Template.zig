@@ -73,9 +73,9 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
     if (text.len != 0) return .{ .text = text };
     if (scanner.eof()) return null;
     scanner.offset += braces.len;
-    scanner.skipWhile(' ');
+    scanner.skipMany(' ');
     const word = try scanIdentifier(scanner);
-    scanner.skipWhile(' ');
+    scanner.skipMany(' ');
     const Kind = enum { variable, include, define, @"if", range, @"else", end };
     const kind = std.meta.stringToEnum(Kind, word) orelse .variable;
     const token: Token = switch (kind) {
@@ -85,21 +85,21 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
                 try scanner.expect('"');
                 const path = scanner.consumeLineUntil('"') orelse
                     return scanner.fail("unclosed '\"'", .{});
-                scanner.skipWhile(' ');
+                scanner.skipMany(' ');
                 break :blk path;
             },
         },
         .define => .{
             .define = blk: {
                 const variable = try scanIdentifier(scanner);
-                scanner.skipWhile(' ');
+                scanner.skipMany(' ');
                 break :blk variable;
             },
         },
         .@"if", .range => .{
             .start = blk: {
                 const variable = try scanIdentifier(scanner);
-                scanner.skipWhile(' ');
+                scanner.skipMany(' ');
                 break :blk variable;
             },
         },

@@ -92,7 +92,7 @@ pub fn consumeUntilEol(self: *Scanner) []const u8 {
     return self.source[start..self.offset];
 }
 
-pub fn consumeWhile(self: *Scanner, char: u8) usize {
+pub fn consumeMany(self: *Scanner, char: u8) usize {
     const start = self.offset;
     while (self.peek()) |c| if (c == char) self.eat() else break;
     return self.offset - start;
@@ -102,8 +102,8 @@ pub fn skip(self: *Scanner, char: u8) void {
     _ = self.consume(char);
 }
 
-pub fn skipWhile(self: *Scanner, char: u8) void {
-    _ = self.consumeWhile(char);
+pub fn skipMany(self: *Scanner, char: u8) void {
+    _ = self.consumeMany(char);
 }
 
 pub fn expect(self: *Scanner, char: u8) Error!void {
@@ -242,15 +242,15 @@ test "everything" {
         try testing.expect(scanner.eof());
     }
 
-    // consumeWhile
+    // consumeMany
     {
         var scanner = Scanner{ .source = "abbccc", .reporter = &reporter };
-        try testing.expectEqual(@as(usize, 1), scanner.consumeWhile('a'));
-        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('a'));
-        try testing.expectEqual(@as(usize, 2), scanner.consumeWhile('b'));
-        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('b'));
-        try testing.expectEqual(@as(usize, 3), scanner.consumeWhile('c'));
-        try testing.expectEqual(@as(usize, 0), scanner.consumeWhile('c'));
+        try testing.expectEqual(@as(usize, 1), scanner.consumeMany('a'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeMany('a'));
+        try testing.expectEqual(@as(usize, 2), scanner.consumeMany('b'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeMany('b'));
+        try testing.expectEqual(@as(usize, 3), scanner.consumeMany('c'));
+        try testing.expectEqual(@as(usize, 0), scanner.consumeMany('c'));
         try testing.expect(scanner.eof());
     }
 
@@ -263,12 +263,12 @@ test "everything" {
         try testing.expect(scanner.eof());
     }
 
-    // skipWhile
+    // skipMany
     {
         var scanner = Scanner{ .source = "abb", .reporter = &reporter };
-        scanner.skipWhile('b');
-        scanner.skipWhile('a');
-        scanner.skipWhile('b');
+        scanner.skipMany('b');
+        scanner.skipMany('a');
+        scanner.skipMany('b');
         try testing.expect(scanner.eof());
     }
 

@@ -59,7 +59,7 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
         if (scanner.consume('^')) break;
         const label = scanner.consumeLineUntil(']') orelse break;
         if (!scanner.consume(':')) break;
-        scanner.skipWhile(' ');
+        scanner.skipMany(' ');
         try links.put(allocator, label, scanner.source[scanner.offset..end]);
         scanner.offset = start_of_line;
     }
@@ -186,7 +186,7 @@ const Tokenizer = struct {
     link_depth: u8 = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
-        scanner.skipWhile('\n');
+        scanner.skipMany('\n');
         return Tokenizer{ .scanner = scanner, .token_start = scanner.offset };
     }
 
@@ -238,7 +238,7 @@ const Tokenizer = struct {
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
             '#' => {
-                const level: u8 = @intCast(1 + scanner.consumeWhile('#'));
+                const level: u8 = @intCast(1 + scanner.consumeMany('#'));
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |c| switch (c) {
@@ -271,8 +271,9 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
-            '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| {
-                if (scanner.consumeString(": ")) return .{ .@"[^x]: " = label };
+            '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| if (scanner.consume(':')) {
+                scanner.skipMany(' ');
+                return .{ .@"[^x]: " = label };
             },
             else => {},
         }
@@ -299,7 +300,7 @@ const Tokenizer = struct {
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
             '\n' => {
-                if (scanner.consumeWhile('\n') > 0) self.in_raw_html_block = false;
+                if (scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
                 self.block_allowed = true;
                 return .@"\n";
             },
@@ -611,26 +612,25 @@ fn Stack(comptime Tag: type) type {
 }
 
 const BlockTag = union(enum) {
-    // TODO reorder these
     p,
     li,
-    footnote_li: []const u8,
     // I'm making this fit in 8 bytes just because I can.
     h: struct { source: ?[*]const u8, source_len: u32, level: u8 },
-    figcaption,
     ul,
     ol,
-    footnote_ol,
     blockquote,
     figure,
+    figcaption,
+    footnote_ol,
+    footnote_li: []const u8,
 
     fn heading(source: []const u8, level: u8, options: Options) BlockTag {
-        const adjusted = @as(i8, @intCast(level)) + options.shift_heading_level;
+        const shifted = @as(i8, @intCast(level)) + options.shift_heading_level;
         return BlockTag{
             .h = .{
                 .source = if (options.auto_heading_ids) source.ptr else null,
                 .source_len = @intCast(source.len),
-                .level = @intCast(std.math.clamp(adjusted, 1, 6)),
+                .level = @intCast(std.math.clamp(shifted, 1, 6)),
             },
         };
     }
@@ -638,16 +638,16 @@ const BlockTag = union(enum) {
     fn implicitChild(parent: ?BlockTag, footnote_label: ?[]const u8) ?BlockTag {
         return switch (parent orelse return .p) {
             .ul, .ol => .li,
-            .footnote_ol => .{ .footnote_li = footnote_label.? },
             .blockquote => .p,
+            .footnote_ol => .{ .footnote_li = footnote_label.? },
             else => null,
         };
     }
 
     fn goesOnItsOwnLine(self: BlockTag) bool {
         return switch (self) {
-            .p, .li, .footnote_li, .h, .figcaption => false,
-            .ul, .ol, .footnote_ol, .blockquote, .figure => true,
+            .p, .li, .h, .figcaption, .footnote_li => false,
+            .ul, .ol, .blockquote, .figure, .footnote_ol => true,
         };
     }
 
@@ -729,14 +729,14 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         var token = tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .footnote_li, .h, .figcaption, .figure => break,
+                .p, .li, .h, .figure, .figcaption, .footnote_li => break,
                 .ul => if (token != .@"-") break,
                 .ol => if (token != .@"1.") break,
+                .blockquote => if (token != .@">") break,
                 .footnote_ol => switch (token) {
                     .@"[^x]: " => |label| footnote_label = label,
                     else => break,
                 },
-                .blockquote => if (token != .@">") break,
             }
             num_blocks_open += 1;
             all_open = num_blocks_open == blocks.len();
@@ -772,10 +772,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     break try highlighter.begin(writer, language);
                 },
                 .stay_in_code_block, .@"```\n" => unreachable,
-                .@"#" => |level| {
-                    const tag = BlockTag.heading(tokenizer.remaining(), level, options);
-                    try blocks.push(writer, tag);
-                },
+                .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
@@ -1246,6 +1243,18 @@ test "render code block with special characters" {
     ,
         \\```
         \\<foo> [bar] `baz` _qux_ & \
+        \\```
+    , .{});
+}
+
+test "render code block with triple backticks inside" {
+    try expectRenderSuccess(
+        \\<pre>
+        \\<code>```not the end</code>
+        \\</pre>
+    ,
+        \\```
+        \\```not the end
         \\```
     , .{});
 }
