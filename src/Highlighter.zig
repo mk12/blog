@@ -17,7 +17,8 @@ active: bool = false,
 language: ?Language = null,
 mode: Mode = .normal,
 class: ?Class = null,
-pending_newlines: u16 = 0,
+pending_newlines: usize = 0,
+pending_spaces: ?[]const u8 = null,
 
 pub const Language = enum {
     c,
@@ -61,7 +62,7 @@ const Class = enum {
 
 const Token = union(enum) {
     eol,
-    whitespace,
+    spaces,
     class: Class,
     @"<": ?Class,
     @"&": ?Class,
@@ -94,13 +95,14 @@ pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
 }
 
 pub fn end(self: *Highlighter, writer: anytype) !void {
-    try self.flush(writer);
+    self.pending_newlines -= 1;
+    try self.flushCloseSpan(writer);
+    try self.flushWhitespace(writer);
     try writer.writeAll("</code>\n</pre>");
     self.* = Highlighter{};
 }
 
 pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
-    // var pending_
     while (true) {
         const start = scanner.offset;
         const token = while (true) {
@@ -112,22 +114,14 @@ pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
         if (skipped.len > 0) try self.write(writer, skipped, null);
         switch (token.value) {
             .eol => break,
-            .whitespace => unreachable,
+            .spaces => self.pending_spaces = text,
             .class => |class| try self.write(writer, text, class),
             .@"<" => |class| try self.write(writer, "&lt;", class),
             .@"&" => |class| try self.write(writer, "&amp;", class),
         }
     }
+    if (self.pending_spaces) |text| return scanner.failOn(text, "trailing whitespace", .{});
     self.pending_newlines += 1;
-    // while (true) {
-    //     const status = try self.renderPrefix(writer, scanner);
-    //     self.pending_to = scanner.offset;
-    //     switch (status) {
-    //         .wrote => self.pending_from = scanner.offset,
-    //         .did_not_write => {},
-    //         .end_of_line => break,
-    //     }
-    // }
 }
 
 fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
@@ -139,7 +133,7 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
         else => unreachable,
     };
     const language = self.language orelse return null;
-    if (scanner.consumeMany(' ') > 0) return .whitespace;
+    if (scanner.consumeMany(' ') > 0) return .spaces;
     const mode = switch (self.mode) {
         .normal => switch (recognizeNormal(scanner, language) orelse return null) {
             .class => |c| return .{ .class = c },
@@ -149,8 +143,8 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
     };
     const finished = switch (mode) {
         .normal => unreachable,
-        .in_string => scanString(scanner),
-        .in_line_comment => scanLineComment(scanner),
+        .in_string => scanUntilEndOfString(scanner),
+        .in_line_comment => scanUntilEol(scanner),
     };
     if (!finished) self.mode = mode;
     return .{ .class = mode.class().? };
@@ -192,8 +186,7 @@ fn recognizeNormal(scanner: *Scanner, language: Language) ?union(enum) { class: 
     return null;
 }
 
-// TODO: rename
-fn scanString(scanner: *Scanner) bool {
+fn scanUntilEndOfString(scanner: *Scanner) bool {
     var escape = false;
     while (scanner.peek()) |char| {
         if (char == '\n') break;
@@ -212,8 +205,7 @@ fn scanString(scanner: *Scanner) bool {
     return false;
 }
 
-// TODO: rename
-fn scanLineComment(scanner: *Scanner) bool {
+fn scanUntilEol(scanner: *Scanner) bool {
     while (scanner.peek()) |char| switch (char) {
         '\n' => break,
         '<', '&' => return false,
@@ -223,39 +215,30 @@ fn scanLineComment(scanner: *Scanner) bool {
 }
 
 fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !void {
-    if (class == self.class and self.pending_is_space) {
-        try self.flushPending(writer);
+    if (class == self.class) {
+        try self.flushWhitespace(writer);
     } else {
-        try self.flush(writer);
-        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{@tagName(c)});
+        try self.flushCloseSpan(writer);
+        try self.flushWhitespace(writer);
+        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{c.cssClassName()});
         self.class = class;
     }
     try writer.writeAll(text);
-    return .wrote;
 }
 
-fn writeWhitespace(self: *Highlighter, writer: anytype, text: []const u8) !void {
-    _ = text;
-    _ = writer;
-    _ = self;
-}
-
-fn flush(self: *Highlighter, writer: anytype) !void {
-    try self.flushSpanTag(writer);
-    try self.flushPending(writer);
-}
-
-fn flushSpanTag(self: *Highlighter, writer: anytype) !void {
+fn flushCloseSpan(self: *Highlighter, writer: anytype) !void {
     if (self.class) |_| {
         try writer.writeAll("</span>");
         self.class = null;
     }
 }
 
-fn flushPending(self: *Highlighter, writer: anytype) !void {
-    if (self.pending) |text| {
+fn flushWhitespace(self: *Highlighter, writer: anytype) !void {
+    while (self.pending_newlines > 0) : (self.pending_newlines -= 1)
+        try writer.writeByte('\n');
+    if (self.pending_spaces) |text| {
         try writer.writeAll(text);
-        self.pending = null;
+        self.pending_spaces = null;
     }
 }
 
@@ -275,8 +258,20 @@ fn expectHighlight(expected_html: []const u8, source: []const u8, language: ?Lan
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
-test "empty" {
+test "empty input" {
     try expectHighlight("<pre>\n<code></code>\n</pre>", "", null);
+}
+
+test "empty line" {
+    try expectHighlight("<pre>\n<code></code>\n</pre>", "\n", null);
+}
+
+test "blank line" {
+    try expectHighlight("<pre>\n<code>\n</code>\n</pre>", "\n\n", null);
+}
+
+test "two blank line" {
+    try expectHighlight("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
 }
 
 test "one line" {

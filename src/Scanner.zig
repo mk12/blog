@@ -2,7 +2,6 @@
 
 //! This module implements text scanning from a buffer (not a generic reader).
 //! It provides functionality useful for building tokenizers and parsers.
-//! The "Z" methods return 0 instead of null.
 //! The "consume" methods advance unless returning false, null, empty, or zero.
 //! The "skip" methods are like "consume" but return void.
 //! The "expect" methods are like "consume" but report an error on failure.
