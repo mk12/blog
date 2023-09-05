@@ -242,7 +242,7 @@ const Tokenizer = struct {
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |char| switch (char) {
-                '/', 'a'...'z' => if (std.mem.endsWith(u8, scanner.consumeUntilEol(), ">")) {
+                '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peek() == '\n' or scanner.eof()) {
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
                     // because the renderer needs `in_raw_html_block` to be accurate.
