@@ -15,7 +15,7 @@ const Highlighter = @This();
 
 active: bool = false,
 language: ?Language = null,
-mode: Mode = .normal,
+mode: ?Mode = null,
 class: ?Class = null,
 pending_newlines: usize = 0,
 pending_spaces: ?[]const u8 = null,
@@ -31,13 +31,11 @@ pub const Language = enum {
 };
 
 const Mode = enum {
-    normal, // TODO: try ?Mode
     in_string,
     in_line_comment,
 
-    fn class(self: Mode) ?Class {
+    fn class(self: Mode) Class {
         return switch (self) {
-            .normal => null,
             .in_string => .constant,
             .in_line_comment => .comment,
         };
@@ -68,34 +66,13 @@ const Token = union(enum) {
     @"&": ?Class,
 };
 
-fn isKeyword(comptime language: Language, identifier: []const u8) bool {
-    const keywords = switch (language) {
-        .c => .{
-            "char",
-            "int",
-            "void",
-        },
-        .ruby => .{
-            "def",
-            "end",
-            "test",
-        },
-        .scheme => .{
-            "define",
-        },
-    };
-    comptime var kv_list: []const struct { []const u8 } = &.{};
-    inline for (keywords) |keyword| kv_list = kv_list ++ .{.{keyword}};
-    return std.ComptimeStringMap(void, kv_list).has(identifier);
-}
-
 pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
     try writer.writeAll("<pre>\n<code>");
     self.* = Highlighter{ .active = true, .language = language };
 }
 
 pub fn end(self: *Highlighter, writer: anytype) !void {
-    self.pending_newlines -= 1;
+    self.pending_newlines -|= 1;
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
     try writer.writeAll("</code>\n</pre>");
@@ -109,55 +86,83 @@ pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
             const offset = scanner.offset;
             if (self.recognize(scanner)) |token| break .{ .offset = offset, .value = token };
         };
-        const skipped = scanner.source[start..token.offset];
-        const text = scanner.source[token.offset..scanner.offset];
-        if (skipped.len > 0) try self.write(writer, skipped, null);
+        const normal_text = scanner.source[start..token.offset];
+        const token_text = scanner.source[token.offset..scanner.offset];
+        if (normal_text.len > 0) try self.write(writer, normal_text, null);
         switch (token.value) {
             .eol => break,
-            .spaces => self.pending_spaces = text,
-            .class => |class| try self.write(writer, text, class),
+            .spaces => self.pending_spaces = token_text,
+            .class => |class| try self.write(writer, token_text, class),
             .@"<" => |class| try self.write(writer, "&lt;", class),
             .@"&" => |class| try self.write(writer, "&amp;", class),
         }
     }
-    if (self.pending_spaces) |text| return scanner.failOn(text, "trailing whitespace", .{});
+    if (self.pending_spaces) |spaces| return scanner.failOn(spaces, "trailing whitespace", .{});
     self.pending_newlines += 1;
+}
+
+fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !void {
+    if (class == self.class) {
+        try self.flushWhitespace(writer);
+    } else {
+        try self.flushCloseSpan(writer);
+        try self.flushWhitespace(writer);
+        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{c.cssClassName()});
+        self.class = class;
+    }
+    try writer.writeAll(text);
+}
+
+fn flushCloseSpan(self: *Highlighter, writer: anytype) !void {
+    if (self.class) |_| {
+        try writer.writeAll("</span>");
+        self.class = null;
+    }
+}
+
+fn flushWhitespace(self: *Highlighter, writer: anytype) !void {
+    while (self.pending_newlines > 0) : (self.pending_newlines -= 1)
+        try writer.writeByte('\n');
+    if (self.pending_spaces) |spaces| {
+        try writer.writeAll(spaces);
+        self.pending_spaces = null;
+    }
 }
 
 fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
     if (scanner.eof()) return .eol;
     if (scanner.consumeAny("\n<&")) |char| switch (char) {
         '\n' => return .eol,
-        '<' => return .{ .@"<" = self.mode.class() },
-        '&' => return .{ .@"&" = self.mode.class() },
+        '<' => return .{ .@"<" = if (self.mode) |m| m.class() else null },
+        '&' => return .{ .@"&" = if (self.mode) |m| m.class() else null },
         else => unreachable,
     };
-    const language = self.language orelse return null;
+    const language = self.language orelse {
+        // TODO maybe reconsider avoiding next() above
+        scanner.eat();
+        return null;
+    };
     if (scanner.consumeMany(' ') > 0) return .spaces;
-    const mode = switch (self.mode) {
-        .normal => switch (recognizeNormal(scanner, language) orelse return null) {
-            .class => |c| return .{ .class = c },
-            .mode => |m| m,
-        },
-        else => self.mode,
+    const mode = self.mode orelse switch (dispatch(scanner, language)) {
+        .none => return null,
+        .class => |c| return .{ .class = c },
+        .mode => |m| m,
     };
     const finished = switch (mode) {
-        .normal => unreachable,
-        .in_string => scanUntilEndOfString(scanner),
-        .in_line_comment => scanUntilEol(scanner),
+        .in_string => finishString(scanner),
+        .in_line_comment => finishLine(scanner),
     };
     if (!finished) self.mode = mode;
-    return .{ .class = mode.class().? };
+    return .{ .class = mode.class() };
 }
 
-// TODO: rename
-fn recognizeNormal(scanner: *Scanner, language: Language) ?union(enum) { class: Class, mode: Mode } {
+fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Class, mode: Mode } {
     const start = scanner.offset;
     switch (scanner.next().?) {
         '0'...'9' => {
             while (scanner.peek()) |c| switch (c) {
                 '0'...'9', '.', '_' => scanner.eat(),
-                else => {},
+                else => break,
             };
             return .{ .class = .constant };
         },
@@ -183,10 +188,10 @@ fn recognizeNormal(scanner: *Scanner, language: Language) ?union(enum) { class: 
         },
         else => {},
     }
-    return null;
+    return .none;
 }
 
-fn scanUntilEndOfString(scanner: *Scanner) bool {
+fn finishString(scanner: *Scanner) bool {
     var escape = false;
     while (scanner.peek()) |char| {
         if (char == '\n') break;
@@ -205,7 +210,7 @@ fn scanUntilEndOfString(scanner: *Scanner) bool {
     return false;
 }
 
-fn scanUntilEol(scanner: *Scanner) bool {
+fn finishLine(scanner: *Scanner) bool {
     while (scanner.peek()) |char| switch (char) {
         '\n' => break,
         '<', '&' => return false,
@@ -214,32 +219,25 @@ fn scanUntilEol(scanner: *Scanner) bool {
     return true;
 }
 
-fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !void {
-    if (class == self.class) {
-        try self.flushWhitespace(writer);
-    } else {
-        try self.flushCloseSpan(writer);
-        try self.flushWhitespace(writer);
-        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{c.cssClassName()});
-        self.class = class;
-    }
-    try writer.writeAll(text);
-}
-
-fn flushCloseSpan(self: *Highlighter, writer: anytype) !void {
-    if (self.class) |_| {
-        try writer.writeAll("</span>");
-        self.class = null;
-    }
-}
-
-fn flushWhitespace(self: *Highlighter, writer: anytype) !void {
-    while (self.pending_newlines > 0) : (self.pending_newlines -= 1)
-        try writer.writeByte('\n');
-    if (self.pending_spaces) |text| {
-        try writer.writeAll(text);
-        self.pending_spaces = null;
-    }
+fn isKeyword(comptime language: Language, identifier: []const u8) bool {
+    const keywords = switch (language) {
+        .c => .{
+            "char",
+            "int",
+            "void",
+        },
+        .ruby => .{
+            "def",
+            "end",
+            "test",
+        },
+        .scheme => .{
+            "define",
+        },
+    };
+    comptime var kv_list: []const struct { []const u8 } = &.{};
+    inline for (keywords) |keyword| kv_list = kv_list ++ .{.{keyword}};
+    return std.ComptimeStringMap(void, kv_list).has(identifier);
 }
 
 fn expectHighlight(expected_html: []const u8, source: []const u8, language: ?Language) !void {
@@ -274,6 +272,8 @@ test "two blank line" {
     try expectHighlight("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
 }
 
+// TODO expectFailure trailing spaces
+
 test "one line" {
     try expectHighlight("<pre>\n<code>Foo</code>\n</pre>", "Foo", null);
 }
@@ -303,7 +303,7 @@ test "highlight ruby" {
         \\<pre>
         \\<code><span class="co"># Comment</span>
         \\<span class="kw">def</span> hello()
-        \\  print(<span class="st">"hi"</span>, <span class="cn">123</span>)
+        \\  print(<span class="cn">"hi"</span>, <span class="cn">123</span>)
         \\<span class="kw">end</span></code>
         \\</pre>
     ,
