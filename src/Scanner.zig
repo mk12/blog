@@ -2,6 +2,7 @@
 
 //! This module implements text scanning from a buffer (not a generic reader).
 //! It provides functionality useful for building tokenizers and parsers.
+//! The "Z" methods return 0 instead of null.
 //! The "consume" methods advance unless returning false, null, empty, or zero.
 //! The "skip" methods are like "consume" but return void.
 //! The "expect" methods are like "consume" but report an error on failure.
@@ -41,6 +42,10 @@ pub fn eat(self: *Scanner) void {
     self.offset += 1;
 }
 
+pub fn uneat(self: *Scanner) void {
+    self.offset -= 1;
+}
+
 pub fn prev(self: Scanner, count: usize) ?u8 {
     return if (count >= self.offset) null else self.source[self.offset - count - 1];
 }
@@ -67,6 +72,13 @@ pub fn consumeStringEol(self: *Scanner, string: []const u8) bool {
     if (!mem.eql(u8, self.source[self.offset..end], string)) return false;
     self.offset = if (end == self.source.len) end else if (self.source[end] == '\n') end + 1 else return false;
     return true;
+}
+
+pub fn consumeAny(self: *Scanner, chars: []const u8) ?u8 {
+    const c = self.peek() orelse return null;
+    _ = std.mem.indexOfScalar(u8, chars, c) orelse return null;
+    self.eat();
+    return c;
 }
 
 pub fn consumeLength(self: *Scanner, length: usize) ?[]const u8 {
@@ -173,6 +185,25 @@ test "everything" {
         try testing.expectEqual(@as(?u8, 'y'), scanner.peek());
     }
 
+    // uneat
+    {
+        var scanner = Scanner{ .source = "xy", .reporter = &reporter };
+        scanner.eat();
+        scanner.uneat();
+        try testing.expectEqual(@as(?u8, 'x'), scanner.peek());
+    }
+
+    // eof is sticky
+    {
+        var scanner = Scanner{ .source = "", .reporter = &reporter };
+        try testing.expect(scanner.eof());
+        try testing.expect(scanner.eof());
+        try testing.expectEqual(@as(?u8, null), scanner.peek());
+        try testing.expectEqual(@as(?u8, null), scanner.peek());
+        try testing.expectEqual(@as(?u8, null), scanner.next());
+        try testing.expectEqual(@as(?u8, null), scanner.next());
+    }
+
     // prev
     {
         var scanner = Scanner{ .source = "xy", .reporter = &reporter };
@@ -209,6 +240,17 @@ test "everything" {
         try testing.expect(scanner.consumeStringEol("foo"));
         try testing.expect(!scanner.consumeStringEol("ba"));
         try testing.expect(scanner.consumeStringEol("bar"));
+        try testing.expect(scanner.eof());
+    }
+
+    // consumeAny
+    {
+        var scanner = Scanner{ .source = "foo", .reporter = &reporter };
+        try testing.expectEqual(@as(?u8, null), scanner.consumeAny("ab"));
+        try testing.expectEqual(@as(?u8, 'f'), scanner.consumeAny("af"));
+        try testing.expectEqual(@as(?u8, null), scanner.consumeAny("af"));
+        try testing.expectEqual(@as(?u8, 'o'), scanner.consumeAny("o"));
+        try testing.expectEqual(@as(?u8, 'o'), scanner.consumeAny("...o..."));
         try testing.expect(scanner.eof());
     }
 

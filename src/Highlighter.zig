@@ -15,40 +15,56 @@ const Highlighter = @This();
 
 active: bool = false,
 language: ?Language = null,
-class: ?u8 = null,
-pending_newlines: u32 = 0,
+mode: Mode = .normal,
+class: ?Class = null,
+pending_newlines: u16 = 0,
 
 pub const Language = enum {
     c,
     ruby,
     scheme,
 
-    pub fn from(str: []const u8) ?Language {
-        return std.meta.stringToEnum(Language, str);
+    pub fn from(name: []const u8) ?Language {
+        return std.meta.stringToEnum(Language, name);
     }
 };
 
-const Token = enum {
-    // Special cases
-    @"<",
-    @"&",
-    whitespace,
+const Mode = enum {
+    normal, // TODO: try ?Mode
+    in_string,
+    in_line_comment,
 
-    // Classes
-    keyword,
-    comment,
-    constant,
-    string,
-
-    fn class(self: Token) u8 {
+    fn class(self: Mode) ?Class {
         return switch (self) {
-            .keyword => 'K',
-            .comment => 'C',
-            .constant => 'N',
-            .string => 'S',
-            else => unreachable,
+            .normal => null,
+            .in_string => .constant,
+            .in_line_comment => .comment,
         };
     }
+};
+
+const Class = enum {
+    keyword,
+    constant,
+    string,
+    comment,
+
+    fn cssClassName(self: Class) []const u8 {
+        return switch (self) {
+            .keyword => "kw",
+            .constant => "cn",
+            .string => "st",
+            .comment => "co",
+        };
+    }
+};
+
+const Token = union(enum) {
+    eol,
+    whitespace,
+    class: Class,
+    @"<": ?Class,
+    @"&": ?Class,
 };
 
 fn isKeyword(comptime language: Language, identifier: []const u8) bool {
@@ -74,20 +90,35 @@ fn isKeyword(comptime language: Language, identifier: []const u8) bool {
 
 pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
     try writer.writeAll("<pre>\n<code>");
-    self.active = true;
-    self.language = language;
+    self.* = Highlighter{ .active = true, .language = language };
 }
 
 pub fn end(self: *Highlighter, writer: anytype) !void {
     try self.flush(writer);
     try writer.writeAll("</code>\n</pre>");
-    self.active = false;
+    self.* = Highlighter{};
 }
 
-pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
-    _ = scanner;
-    _ = writer;
-    _ = self;
+pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
+    // var pending_
+    while (true) {
+        const start = scanner.offset;
+        const token = while (true) {
+            const offset = scanner.offset;
+            if (self.recognize(scanner)) |token| break .{ .offset = offset, .value = token };
+        };
+        const skipped = scanner.source[start..token.offset];
+        const text = scanner.source[token.offset..scanner.offset];
+        if (skipped.len > 0) try self.write(writer, skipped, null);
+        switch (token.value) {
+            .eol => break,
+            .whitespace => unreachable,
+            .class => |class| try self.write(writer, text, class),
+            .@"<" => |class| try self.write(writer, "&lt;", class),
+            .@"&" => |class| try self.write(writer, "&amp;", class),
+        }
+    }
+    self.pending_newlines += 1;
     // while (true) {
     //     const status = try self.renderPrefix(writer, scanner);
     //     self.pending_to = scanner.offset;
@@ -100,71 +131,41 @@ pub fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void 
 }
 
 fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
-    const writer: usize = 0;
-    const language = self.language;
+    if (scanner.eof()) return .eol;
+    if (scanner.consumeAny("\n<&")) |char| switch (char) {
+        '\n' => return .eol,
+        '<' => return .{ .@"<" = self.mode.class() },
+        '&' => return .{ .@"&" = self.mode.class() },
+        else => unreachable,
+    };
+    const language = self.language orelse return null;
+    if (scanner.consumeMany(' ') > 0) return .whitespace;
+    const mode = switch (self.mode) {
+        .normal => switch (recognizeNormal(scanner, language) orelse return null) {
+            .class => |c| return .{ .class = c },
+            .mode => |m| m,
+        },
+        else => self.mode,
+    };
+    const finished = switch (mode) {
+        .normal => unreachable,
+        .in_string => scanString(scanner),
+        .in_line_comment => scanLineComment(scanner),
+    };
+    if (!finished) self.mode = mode;
+    return .{ .class = mode.class().? };
+}
+
+// TODO: rename
+fn recognizeNormal(scanner: *Scanner, language: Language) ?union(enum) { class: Class, mode: Mode } {
     const start = scanner.offset;
-    const char = scanner.next() orelse return .end_of_line;
-    switch (char) {
-        '\n' => return .end_of_line,
-        '<' => return self.write(writer, "&lt;", null),
-        '&' => return self.write(writer, "&amp;", null),
+    switch (scanner.next().?) {
         '0'...'9' => {
             while (scanner.peek()) |c| switch (c) {
-                '0'...'9', '.', '_' => scanner.eat(c),
-                else => break,
+                '0'...'9', '.', '_' => scanner.eat(),
+                else => {},
             };
-            return self.write(writer, scanner.source[start..scanner.offset], .cn);
-        },
-        ' ' => {
-            while (scanner.peek()) |c| switch (c) {
-                ' ' => scanner.eat(),
-                else => break,
-            };
-            try self.writeWhitespace(scanner.source[start..scanner.offset]);
-        },
-        '"' => {
-            var escape = false;
-            while (scanner.next()) |c| {
-                if (escape) {
-                    escape = false;
-                    continue;
-                }
-                switch (c) {
-                    '\\' => escape = true,
-                    '"' => break,
-                    '&' => unreachable,
-                    '<' => unreachable,
-                    else => {},
-                }
-            } else {
-                return scanner.fail("unterminated string literal", .{});
-            }
-            try self.write(writer, scanner.source[start..scanner.offset], .st);
-        },
-        '\'' => {
-            // TODO scheme, don't do this
-            var escape = false;
-            while (scanner.next()) |c| {
-                if (escape) {
-                    escape = false;
-                    continue;
-                }
-                switch (c) {
-                    '\\' => escape = true,
-                    '\'' => break,
-                    '&' => return scanner.fail("entity in string not handled", .{}),
-                    '<' => return scanner.fail("entity in string not handled", .{}),
-                    else => {},
-                }
-            } else {
-                return scanner.fail("unterminated string literal", .{});
-            }
-            try self.write(writer, scanner.source[start..scanner.offset], switch (language) {
-                .ruby => .st,
-                .c => .cn,
-                // TODO remove
-                .scheme => null,
-            });
+            return .{ .class = .constant };
         },
         'a'...'z', 'A'...'Z' => {
             while (scanner.peek()) |c| switch (c) {
@@ -172,52 +173,66 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
                 '-' => if (language == .scheme) scanner.eat() else break,
                 else => break,
             };
-            const text = scanner.source[start..scanner.offset];
-            const kw = switch (language) {
-                inline else => |lang| isKeyword(lang, text),
+            const identifier = scanner.source[start..scanner.offset];
+            const is_keyword = switch (language) {
+                inline else => |lang| isKeyword(lang, identifier),
             };
-            try self.write(writer, text, if (kw) .kw else null);
+            if (is_keyword) return .{ .class = .keyword };
         },
-        '/' => {
-            if (language == .c and scanner.peek() == '/') {
-                while (scanner.peek()) |c| switch (c) {
-                    '\n' => break,
-                    else => scanner.eat(),
-                };
-                try self.write(writer, scanner.source[start..scanner.offset], .co);
-            } else {
-                // TODO remove
-                try self.write(writer, scanner.source[start..scanner.offset], null);
-            }
+        '"' => return .{ .mode = .in_string },
+        '#' => switch (language) {
+            .ruby => return .{ .mode = .in_line_comment },
+            else => {},
         },
-        '#' => {
-            if (language == .ruby) {
-                scanner.offset -= 1;
-                try self.write(writer, scanner.consumeUntilEol(), .co);
-                return .end_of_line;
-            } else {
-                // TODO remove
-                try self.write(writer, scanner.source[start..scanner.offset], null);
-            }
+        '/' => if (language == .c and scanner.consume('/')) {
+            return .{ .mode = .in_line_comment };
         },
-        else => return .did_not_write,
-        // TODO handle @, : in ruby
-        // '(', ')', ',', '*', '.', '-', '+', '=', ':', ';', '{', '}', '[', ']', '@', '?' => try self.write(writer, scanner.source[start..scanner.offset], null),
-        // else => return scanner.fail("highlighter encountered unexpected character: '{c}'", .{char}),
+        else => {},
     }
+    return null;
 }
 
-// fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !Status {
-//     if (class == self.class and self.pending_is_space) {
-//         try self.flushPending(writer);
-//     } else {
-//         try self.flush(writer);
-//         if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{@tagName(c)});
-//         self.class = class;
-//     }
-//     try writer.writeAll(text);
-//     return .wrote;
-// }
+// TODO: rename
+fn scanString(scanner: *Scanner) bool {
+    var escape = false;
+    while (scanner.peek()) |char| {
+        if (char == '\n') break;
+        scanner.eat();
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        switch (char) {
+            '\\' => escape = true,
+            '"' => return true,
+            '<', '&' => break scanner.uneat(),
+            else => {},
+        }
+    }
+    return false;
+}
+
+// TODO: rename
+fn scanLineComment(scanner: *Scanner) bool {
+    while (scanner.peek()) |char| switch (char) {
+        '\n' => break,
+        '<', '&' => return false,
+        else => scanner.eat(),
+    };
+    return true;
+}
+
+fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !void {
+    if (class == self.class and self.pending_is_space) {
+        try self.flushPending(writer);
+    } else {
+        try self.flush(writer);
+        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{@tagName(c)});
+        self.class = class;
+    }
+    try writer.writeAll(text);
+    return .wrote;
+}
 
 fn writeWhitespace(self: *Highlighter, writer: anytype, text: []const u8) !void {
     _ = text;
@@ -255,7 +270,7 @@ fn expectHighlight(expected_html: []const u8, source: []const u8, language: ?Lan
     const writer = actual_html.writer();
     var highlighter = Highlighter{};
     try highlighter.begin(writer, language);
-    while (!scanner.eof()) try highlighter.renderLine(writer, &scanner);
+    while (!scanner.eof()) try highlighter.line(writer, &scanner);
     try highlighter.end(writer);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }

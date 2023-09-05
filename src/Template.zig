@@ -70,7 +70,7 @@ const Token = union(enum) {
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
     const braces = "{{";
     const text = scanUntilStringOrEof(scanner, braces);
-    if (text.len != 0) return .{ .text = text };
+    if (text.len > 0) return .{ .text = text };
     if (scanner.eof()) return null;
     scanner.offset += braces.len;
     scanner.skipMany(' ');

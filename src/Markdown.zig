@@ -51,9 +51,9 @@ pub fn parse(allocator: Allocator, scanner: *Scanner) !Markdown {
     var end: usize = undefined;
     scanner.offset = scanner.source.len;
     while (true) {
-        while (scanner.offset > start and scanner.prev(0) == '\n') scanner.offset -= 1;
+        while (scanner.offset > start and scanner.prev(0) == '\n') scanner.uneat();
         end = scanner.offset;
-        while (scanner.offset > start and scanner.prev(0) != '\n') scanner.offset -= 1;
+        while (scanner.offset > start and scanner.prev(0) != '\n') scanner.uneat();
         const start_of_line = scanner.offset;
         if (!scanner.consume('[')) break;
         if (scanner.consume('^')) break;
@@ -743,7 +743,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         if (highlighter.active) {
             if (!all_open) return tokenizer.fail("missing closing ```", .{});
             switch (token) {
-                .stay_in_code_block => try highlighter.renderLine(writer, tokenizer.scanner),
+                .stay_in_code_block => try highlighter.line(writer, tokenizer.scanner),
                 .@"```\n" => try highlighter.end(writer),
                 else => unreachable,
             }
