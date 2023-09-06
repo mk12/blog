@@ -42,7 +42,7 @@ test "#create creates a new user with name and email" do
   assert_difference 'User.count', +1 do
     post :create, user: {name: "First Last", email: "test@example.com"}
   end
-  
+
   new_user = User.order(id: :desc).first
   assert_redirected_to new_user
   assert_equal "First Last", new_user.name
