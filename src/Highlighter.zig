@@ -30,8 +30,8 @@ pub const Language = enum {
     }
 };
 
-const Mode = enum {
-    in_string,
+const Mode = union(enum) {
+    in_string: u8,
     in_line_comment,
 
     fn class(self: Mode) Class {
@@ -45,18 +45,45 @@ const Mode = enum {
 const Class = enum {
     keyword,
     constant,
-    string,
     comment,
+    special, // TODO rename
+    quite_special, // TODO rename
 
     fn cssClassName(self: Class) []const u8 {
         return switch (self) {
             .keyword => "kw",
             .constant => "cn",
-            .string => "st",
             .comment => "co",
+            .special => "sp",
+            .quite_special => "qs",
         };
     }
 };
+
+fn isKeyword(comptime language: Language, identifier: []const u8) bool {
+    const keywords = switch (language) {
+        .c => .{
+            "char",
+            "for",
+            "int",
+            "return",
+            "void",
+        },
+        .ruby => .{
+            "class",
+            "def",
+            "do",
+            "end",
+            "test",
+        },
+        .scheme => .{
+            "define",
+        },
+    };
+    comptime var kv_list: []const struct { []const u8 } = &.{};
+    inline for (keywords) |keyword| kv_list = kv_list ++ .{.{keyword}};
+    return std.ComptimeStringMap(void, kv_list).has(identifier);
+}
 
 const Token = union(enum) {
     eol,
@@ -148,7 +175,7 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
         .mode => |m| m,
     };
     const finished = switch (mode) {
-        .in_string => finishString(scanner),
+        .in_string => |delimiter| finishString(scanner, delimiter),
         .in_line_comment => finishLine(scanner),
     };
     if (!finished) self.mode = mode;
@@ -177,8 +204,14 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
                 inline else => |lang| isKeyword(lang, identifier),
             };
             if (is_keyword) return .{ .class = .keyword };
+            // TODO only certain languages... or merge into keyword table?
+            if (std.mem.eql(u8, identifier, "true") or std.mem.eql(u8, identifier, "false"))
+                return .{ .class = .constant };
+            // if (language == .ruby and scanner.consume(':'))
+            //     return .{ .class = .quite_special };
         },
-        '"' => return .{ .mode = .in_string },
+        '\'' => return .{ .mode = .{ .in_string = '\'' } },
+        '"' => return .{ .mode = .{ .in_string = '"' } },
         '#' => switch (language) {
             .ruby => return .{ .mode = .in_line_comment },
             else => {},
@@ -186,12 +219,27 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
         '/' => if (language == .c and scanner.consume('/')) {
             return .{ .mode = .in_line_comment };
         },
+        ':' => if (language == .ruby) {
+            // TODO factor this out, it's used many times
+            while (scanner.peek()) |c| switch (c) {
+                'a'...'z', 'A'...'Z', '_' => scanner.eat(),
+                else => break,
+            };
+            if (scanner.offset > start + 1) return .{ .class = .quite_special };
+        },
+        '@' => if (language == .ruby) {
+            while (scanner.peek()) |c| switch (c) {
+                'a'...'z', 'A'...'Z', '_' => scanner.eat(),
+                else => break,
+            };
+            return .{ .class = .special };
+        },
         else => {},
     }
     return .none;
 }
 
-fn finishString(scanner: *Scanner) bool {
+fn finishString(scanner: *Scanner, delimiter: u8) bool {
     var escape = false;
     while (scanner.peek()) |char| {
         if (char == '\n') break;
@@ -202,9 +250,8 @@ fn finishString(scanner: *Scanner) bool {
         }
         switch (char) {
             '\\' => escape = true,
-            '"' => return true,
             '<', '&' => break scanner.uneat(),
-            else => {},
+            else => if (char == delimiter) return true,
         }
     }
     return false;
@@ -217,27 +264,6 @@ fn finishLine(scanner: *Scanner) bool {
         else => scanner.eat(),
     };
     return true;
-}
-
-fn isKeyword(comptime language: Language, identifier: []const u8) bool {
-    const keywords = switch (language) {
-        .c => .{
-            "char",
-            "int",
-            "void",
-        },
-        .ruby => .{
-            "def",
-            "end",
-            "test",
-        },
-        .scheme => .{
-            "define",
-        },
-    };
-    comptime var kv_list: []const struct { []const u8 } = &.{};
-    inline for (keywords) |keyword| kv_list = kv_list ++ .{.{keyword}};
-    return std.ComptimeStringMap(void, kv_list).has(identifier);
 }
 
 fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Language) !void {
@@ -266,10 +292,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
     const writer = std.io.null_writer;
     var highlighter = Highlighter{};
     try highlighter.begin(writer, language);
-    const result = while (true) {
-        if (scanner.eof()) break;
-        highlighter.line(writer, &scanner) catch |err| break err;
-    };
+    const result = while (!scanner.eof()) highlighter.line(writer, &scanner) catch |err| break err;
     try highlighter.end(writer);
     try reporter.expectFailure(expected_message, result);
 }
