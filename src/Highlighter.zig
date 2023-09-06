@@ -137,12 +137,11 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
         '&' => return .{ .@"&" = if (self.mode) |m| m.class() else null },
         else => unreachable,
     };
+    if (scanner.consumeMany(' ') > 0) return .spaces;
     const language = self.language orelse {
-        // TODO maybe reconsider avoiding next() above
         scanner.eat();
         return null;
     };
-    if (scanner.consumeMany(' ') > 0) return .spaces;
     const mode = self.mode orelse switch (dispatch(scanner, language)) {
         .none => return null,
         .class => |c| return .{ .class = c },
@@ -159,6 +158,7 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
 fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Class, mode: Mode } {
     const start = scanner.offset;
     switch (scanner.next().?) {
+        '\n', '<', '&' => unreachable,
         '0'...'9' => {
             while (scanner.peek()) |c| switch (c) {
                 '0'...'9', '.', '_' => scanner.eat(),
@@ -240,7 +240,7 @@ fn isKeyword(comptime language: Language, identifier: []const u8) bool {
     return std.ComptimeStringMap(void, kv_list).has(identifier);
 }
 
-fn expectHighlight(expected_html: []const u8, source: []const u8, language: ?Language) !void {
+fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Language) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -256,50 +256,74 @@ fn expectHighlight(expected_html: []const u8, source: []const u8, language: ?Lan
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
+fn expectFailure(expected_message: []const u8, source: []const u8, language: ?Language) !void {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    const writer = std.io.null_writer;
+    var highlighter = Highlighter{};
+    try highlighter.begin(writer, language);
+    const result = while (true) {
+        if (scanner.eof()) break;
+        highlighter.line(writer, &scanner) catch |err| break err;
+    };
+    try highlighter.end(writer);
+    try reporter.expectFailure(expected_message, result);
+}
+
 test "empty input" {
-    try expectHighlight("<pre>\n<code></code>\n</pre>", "", null);
+    try expectSuccess("<pre>\n<code></code>\n</pre>", "", null);
 }
 
 test "empty line" {
-    try expectHighlight("<pre>\n<code></code>\n</pre>", "\n", null);
+    try expectSuccess("<pre>\n<code></code>\n</pre>", "\n", null);
 }
 
 test "blank line" {
-    try expectHighlight("<pre>\n<code>\n</code>\n</pre>", "\n\n", null);
+    try expectSuccess("<pre>\n<code>\n</code>\n</pre>", "\n\n", null);
 }
 
 test "two blank line" {
-    try expectHighlight("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
+    try expectSuccess("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
 }
 
-// TODO expectFailure trailing spaces
+test "fails on trailing spaces" {
+    try expectFailure("<input>:1:1: \" \": trailing whitespace", " ", null);
+}
+
+test "fails on trailing spaces after text" {
+    try expectFailure("<input>:2:4: \"   \": trailing whitespace", "\nfoo   \n", null);
+}
 
 test "one line" {
-    try expectHighlight("<pre>\n<code>Foo</code>\n</pre>", "Foo", null);
+    try expectSuccess("<pre>\n<code>Foo</code>\n</pre>", "Foo", null);
 }
 
 test "escape with entities" {
-    try expectHighlight("<pre>\n<code>&lt;&amp;></code>\n</pre>", "<&>", null);
+    try expectSuccess("<pre>\n<code>&lt;&amp;></code>\n</pre>", "<&>", null);
 }
 
 test "two keywords in a row" {
-    try expectHighlight("<pre>\n<code><span class=\"kw\">def def</span></code>\n</pre>", "def def", .ruby);
+    try expectSuccess("<pre>\n<code><span class=\"kw\">def def</span></code>\n</pre>", "def def", .ruby);
 }
 
 test "two keywords on separate lines" {
-    try expectHighlight("<pre>\n<code><span class=\"kw\">def\ndef</span></code>\n</pre>", "def\ndef", .ruby);
+    try expectSuccess("<pre>\n<code><span class=\"kw\">def\ndef</span></code>\n</pre>", "def\ndef", .ruby);
 }
 
 test "two keywords on separate lines with indent" {
-    try expectHighlight("<pre>\n<code><span class=\"kw\">def\n  def</span></code>\n</pre>", "def\n  def", .ruby);
+    try expectSuccess("<pre>\n<code><span class=\"kw\">def\n  def</span></code>\n</pre>", "def\n  def", .ruby);
 }
 
 test "two keywords on separate lines with blank" {
-    try expectHighlight("<pre>\n<code><span class=\"kw\">def\n\ndef</span></code>\n</pre>", "def\n\ndef", .ruby);
+    try expectSuccess("<pre>\n<code><span class=\"kw\">def\n\ndef</span></code>\n</pre>", "def\n\ndef", .ruby);
 }
 
 test "highlight ruby" {
-    try expectHighlight(
+    try expectSuccess(
         \\<pre>
         \\<code><span class="co"># Comment</span>
         \\<span class="kw">def</span> hello()
