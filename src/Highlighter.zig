@@ -219,24 +219,23 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
         '/' => if (language == .c and scanner.consume('/')) {
             return .{ .mode = .in_line_comment };
         },
-        ':' => if (language == .ruby) {
-            // TODO factor this out, it's used many times
-            while (scanner.peek()) |c| switch (c) {
-                'a'...'z', 'A'...'Z', '_' => scanner.eat(),
-                else => break,
-            };
-            if (scanner.offset > start + 1) return .{ .class = .quite_special };
-        },
-        '@' => if (language == .ruby) {
-            while (scanner.peek()) |c| switch (c) {
-                'a'...'z', 'A'...'Z', '_' => scanner.eat(),
-                else => break,
-            };
-            return .{ .class = .special };
-        },
+        ':' => if (language == .ruby and scanIdentifier(scanner) != null)
+            return .{ .class = .quite_special },
+        '@' => if (language == .ruby and scanIdentifier(scanner) != null)
+            return .{ .class = .special },
         else => {},
     }
     return .none;
+}
+
+fn scanIdentifier(scanner: *Scanner) ?[]const u8 {
+    const start = scanner.offset;
+    while (scanner.peek()) |c| switch (c) {
+        'a'...'z', 'A'...'Z', '_' => scanner.eat(),
+        else => break,
+    };
+    const text = scanner.source[start..scanner.offset];
+    return if (text.len == 0) null else text;
 }
 
 fn finishString(scanner: *Scanner, delimiter: u8) bool {
