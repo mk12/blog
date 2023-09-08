@@ -135,6 +135,9 @@ const Token = union(enum) {
     // @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
+    // @"![^",
+    // @"](x)": []const u8,
+    // @"][x]": []const u8,
     @"[^x]: ": []const u8,
     // TODO: tables
 
@@ -161,14 +164,15 @@ const Token = union(enum) {
     // Used for both block and inline
     @"]",
 
-    fn link(url_or_label: []const u8, is_reference: bool, is_image: bool) Token {
-        return switch (is_reference) {
-            false => if (is_image) .{ .@"![...](x)" = url_or_label } else .{ .@"[...](x)" = url_or_label },
-            true => if (is_image) .{ .@"![...][x]" = url_or_label } else .{ .@"[...][x]" = url_or_label },
+    const LinkOrFigure = enum { link, figure };
+    fn linkOrFigure(url_or_label: []const u8, is_label: bool, kind: LinkOrFigure) Token {
+        return switch (kind) {
+            .link => if (is_label) .{ .@"[...][x]" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+            .figure => if (is_label) .{ .@"![...][x]" = url_or_label } else .{ .@"![...](x)" = url_or_label },
         };
     }
 
-    fn is_inline(self: Token) bool {
+    fn isInline(self: Token) bool {
         return @intFromEnum(self) >= @intFromEnum(Token.text);
     }
 };
@@ -268,6 +272,7 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
+            '!' => if (scanner.consume('[')) if (self.recognizeLinkOrFigure(.figure)) |token| return token,
             '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| if (scanner.consume(':')) {
                 scanner.skipMany(' ');
                 return .{ .@"[^x]: " = label };
@@ -318,49 +323,7 @@ const Tokenizer = struct {
                 while (scanner.next()) |c| if (c == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '[' => {
-                if (scanner.consume('^'))
-                    return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null;
-                const start_bracketed = scanner.offset;
-                defer scanner.offset = start_bracketed;
-                const is_image = scanner.prev(1) == '!';
-                if (is_image) self.token_start -= 1;
-                var escaped = false;
-                var in_code = false;
-                var depth: usize = 1;
-                while (true) {
-                    const char = scanner.next() orelse return null;
-                    if (char == '\n') return null;
-                    if (escaped) {
-                        escaped = false;
-                    } else if (in_code) {
-                        if (char == '`') in_code = false;
-                    } else switch (char) {
-                        '[' => depth += 1,
-                        ']' => {
-                            depth -= 1;
-                            if (depth == 0) break;
-                        },
-                        '\\' => escaped = true,
-                        '`' => in_code = true,
-                        else => {},
-                    }
-                }
-                const end_bracketed = scanner.offset - 1;
-                const closing_char: u8 = switch (scanner.next() orelse 0) {
-                    '(' => ')',
-                    '[' => ']',
-                    else => {
-                        // Shortcut reference link.
-                        const label = scanner.source[start_bracketed..end_bracketed];
-                        self.link_depth += 1;
-                        return Token.link(label, true, is_image);
-                    },
-                };
-                const url_or_label = scanner.consumeLineUntil(closing_char) orelse return null;
-                self.link_depth += 1;
-                return Token.link(url_or_label, closing_char == ']', is_image);
-            },
+            '[' => return self.recognizeLinkOrFigure(.link),
             ']' => {
                 if (self.link_depth == 0) return null;
                 self.link_depth -= 1;
@@ -394,6 +357,49 @@ const Tokenizer = struct {
             else => {},
         }
         return null;
+    }
+
+    fn recognizeLinkOrFigure(self: *Tokenizer, kind: Token.LinkOrFigure) ?Token {
+        const scanner = self.scanner;
+        if (kind == .link and scanner.consume('^'))
+            return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null;
+        const start_bracketed = scanner.offset;
+        defer scanner.offset = start_bracketed;
+        var escaped = false;
+        var in_code = false;
+        var depth: usize = 1;
+        while (true) {
+            const char = scanner.next() orelse return null;
+            if (char == '\n') return null;
+            if (escaped) {
+                escaped = false;
+            } else if (in_code) {
+                if (char == '`') in_code = false;
+            } else switch (char) {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if (depth == 0) break;
+                },
+                '\\' => escaped = true,
+                '`' => in_code = true,
+                else => {},
+            }
+        }
+        const end_bracketed = scanner.offset - 1;
+        const closing_char: u8 = switch (scanner.next() orelse 0) {
+            '(' => ')',
+            '[' => ']',
+            else => {
+                // Shortcut reference link.
+                const label = scanner.source[start_bracketed..end_bracketed];
+                self.link_depth += 1;
+                return Token.linkOrFigure(label, true, kind);
+            },
+        };
+        const url_or_label = scanner.consumeLineUntil(closing_char) orelse return null;
+        self.link_depth += 1;
+        return Token.linkOrFigure(url_or_label, closing_char == ']', kind);
     }
 };
 
@@ -755,7 +761,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         first_iteration = false;
         var need_implicit_block = !options.is_inline;
         while (true) {
-            if (need_implicit_block and token.is_inline()) {
+            if (need_implicit_block and token.isInline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
                     if (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
                         try blocks.push(writer, block);
@@ -1369,6 +1375,10 @@ test "render figure with link in caption" {
         \\![Some [caption] here](rabbit.jpg)
         \\[caption]: foo
     , .{});
+}
+
+test "render figure" {
+    try expectRenderSuccess("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
 }
 
 test "render unbalanced right bracket" {
