@@ -135,9 +135,7 @@ const Token = union(enum) {
     // @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
-    // @"![^",
-    // @"](x)": []const u8,
-    // @"][x]": []const u8,
+    @"![^",
     @"[^x]: ": []const u8,
     // TODO: tables
 
@@ -161,8 +159,10 @@ const Token = union(enum) {
     @" -- ",
     @"...",
 
-    // Used for both block and inline
+    // Neither block nor inline
     @"]",
+    @"](x)": []const u8,
+    @"][x]": []const u8,
 
     const LinkOrFigure = enum { link, figure };
     fn linkOrFigure(url_or_label: []const u8, is_label: bool, kind: LinkOrFigure) Token {
@@ -187,6 +187,7 @@ const Tokenizer = struct {
     block_allowed: bool = true,
     in_inline_code: bool = false,
     in_raw_html_block: bool = false,
+    in_top_caption_figure: bool = false,
     link_depth: u8 = 0,
 
     fn init(scanner: *Scanner) !Tokenizer {
@@ -325,7 +326,13 @@ const Tokenizer = struct {
             },
             '[' => return self.recognizeLinkOrFigure(.link),
             ']' => {
-                if (self.link_depth == 0) return null;
+                if (self.link_depth == 0) {
+                    if (!self.in_top_caption_figure) return null;
+                    self.in_top_caption_figure = false;
+                    if (scanner.consume('(')) if (scanner.consumeLineUntil(')')) |url| return .{ .@"](x)" = url };
+                    if (scanner.consume('[')) if (scanner.consumeLineUntil(']')) |label| return .{ .@"][x]" = label };
+                    return .{ .@"](x)" = "" };
+                }
                 self.link_depth -= 1;
                 if (scanner.peek()) |char| switch (char) {
                     '(' => _ = scanner.consumeLineUntil(')').?,
@@ -359,10 +366,16 @@ const Tokenizer = struct {
         return null;
     }
 
+    // TODO really it's link or footnote or figure
     fn recognizeLinkOrFigure(self: *Tokenizer, kind: Token.LinkOrFigure) ?Token {
         const scanner = self.scanner;
-        if (kind == .link and scanner.consume('^'))
-            return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null;
+        if (scanner.consume('^')) switch (kind) {
+            .link => return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null,
+            .figure => {
+                self.in_top_caption_figure = true;
+                return .@"![^";
+            },
+        };
         const start_bracketed = scanner.offset;
         defer scanner.offset = start_bracketed;
         var escaped = false;
@@ -713,8 +726,8 @@ fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
 
 fn maybeLookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
     return switch (tag) {
-        .@"[...](x)", .@"![...](x)" => url_or_label,
-        .@"[...][x]", .@"![...][x]" => links.get(url_or_label) orelse
+        .@"[...](x)", .@"![...](x)", .@"](x)" => url_or_label,
+        .@"[...][x]", .@"![...][x]", .@"][x]" => links.get(url_or_label) orelse
             scanner.failAtPtr(url_or_label.ptr, "link label '{s}' is not defined", .{url_or_label}),
         else => unreachable,
     };
@@ -785,6 +798,20 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeByte('\n');
                     try blocks.push(writer, .figcaption);
+                },
+                .@"![^" => {
+                    try blocks.push(writer, .figure);
+                    try blocks.push(writer, .figcaption);
+                },
+                inline .@"](x)", .@"][x]" => |url_or_label, tag| {
+                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
+                    // TODO pop method that does the assertion for you
+                    assert(std.meta.activeTag(blocks.top().?) == .figcaption);
+                    try blocks.pop(writer);
+                    try writer.writeByte('\n');
+                    try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
+                    assert(std.meta.activeTag(blocks.top().?) == .figure);
+                    try blocks.pop(writer);
                 },
                 .@"[^x]: " => |label| {
                     footnote_label = label;
@@ -1377,7 +1404,54 @@ test "render figure with link in caption" {
     , .{});
 }
 
-test "render figure" {
+test "render top-caption figure (url)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<figcaption>Some caption</figcaption>
+        \\<img src="rabbit.jpg">
+        \\</figure>
+    ,
+        \\![^Some caption](rabbit.jpg)
+    , .{});
+}
+
+test "render top-caption figure (reference)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<figcaption>Some caption</figcaption>
+        \\<img src="rabbit.jpg">
+        \\</figure>
+    ,
+        \\![^Some caption][img]
+        \\
+        \\[img]: rabbit.jpg
+    , .{});
+}
+
+test "render top-caption figure (attempting shortcut)" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<figcaption>Some caption</figcaption>
+        \\<img src="">
+        \\</figure>
+    ,
+        \\![^Some caption]
+    , .{});
+}
+
+test "render top-caption figure with link in caption" {
+    try expectRenderSuccess(
+        \\<figure>
+        \\<figcaption>Some <a href="foo">caption</a> here</figcaption>
+        \\<img src="rabbit.jpg">
+        \\</figure>
+    ,
+        \\![^Some [caption] here](rabbit.jpg)
+        \\[caption]: foo
+    , .{});
+}
+
+test "render non-figure because it occurs inline" {
     try expectRenderSuccess("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
 }
 

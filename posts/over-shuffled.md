@@ -7,7 +7,7 @@ date: 2015-04-10T16:42:00-04:00
 
 How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle -- the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?
 
-> **Edit**: Some time after writing this article, I rediscovered Jeff Atwood's blog post [The Danger of Naïveté][jeff] from 2007. I read it years ago; it was the clearly the inspiration for this article. Had I recalled it, instead of assuming I picked up the idea in some book, I probably wouldn't have written this. In any case, readers should consider this as an alternative presentation of the ideas in Jeff's article. ---MK, 12 Aug. 2017
+> **Edit**: Some time after writing this article, I rediscovered Jeff Atwood's blog post [The Danger of Naïveté][jeff] from 2007. I read it years ago; it was the clearly the inspiration for this article. Had I recalled it, instead of assuming I picked up the idea in some book, I probably wouldn't have written this. In any case, readers should consider this as an alternative presentation of the ideas in Jeff's article. --MK, 12 Aug. 2017
 
 # Simple shuffle
 
@@ -21,7 +21,7 @@ Why _n_ times? Well, larger decks should require more shuffling, so it makes sen
 
 A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of _n_ cards, there are _n_! possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a _uniform distribution_ of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
 
-![@above Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
+![^Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
 There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples -- that's the number you get if you add up  the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
 
@@ -57,7 +57,7 @@ The Fischer--Yates shuffle is also referred to as the Knuth shuffle because Dona
 
 Try to convince yourself that this is equivalent to the Fisher--Yates algorithm (it is). We could have instead implemented it by literally building up a new deck in memory, but Knuth's method is more efficient than that because it shuffle in-place. Here's the distribution we get, once again using 20 cards, 200 permutation bins, and a million samples:
 
-![@above Distribution of permutations obtained by the Knuth shuffle](../assets/svg/knuth-shuffle.svg)
+![^Distribution of permutations obtained by the Knuth shuffle](../assets/svg/knuth-shuffle.svg)
 
 Much better! The distribution is not perfectly uniform, but it is very close. If we used a trillion samples instead of a million, the histogram would probably look like a solid rectangle. Also, keep in mind that this graph is zoomed in on the _y_-axis quite a bit more than the other one, since it doesn't have to show that huge spike at the beginning. In any case, there is no sign of bias in the variation here, and that's the important thing.
 
