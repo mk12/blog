@@ -14,6 +14,7 @@
 //! It only supports fenced code blocks, not indented ones. It requires link
 //! references to be defined together at the end of the file, not in the middle.
 //! It treats ![Foo](foo.jpg) syntax as a block <figure>, not an inline <img>.
+//! The syntax ![^Foo](foo.jpg) puts the <figcaption> above instead of below.
 //! It allows Markdown within raw HTML. It supports smart typography, auto
 //! heading IDs, footnotes, code highlighting, (TODO!) tables, and (TODO!) TeX
 //! math in dollar signs rendered to MathML.
@@ -617,6 +618,11 @@ fn Stack(comptime Tag: type) type {
             try self.items.pop().writeCloseTag(writer);
         }
 
+        fn popTag(self: *Self, writer: anytype, tag: std.meta.Tag(Tag)) !void {
+            assert(self.top().? == tag);
+            try self.pop(writer);
+        }
+
         fn toggle(self: *Self, writer: anytype, item: Tag) !void {
             try if (self.top() == item) self.pop(writer) else self.push(writer, item);
         }
@@ -805,13 +811,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
-                    // TODO pop method that does the assertion for you
-                    assert(std.meta.activeTag(blocks.top().?) == .figcaption);
-                    try blocks.pop(writer);
+                    try blocks.popTag(writer, .figcaption);
                     try writer.writeByte('\n');
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
-                    assert(std.meta.activeTag(blocks.top().?) == .figure);
-                    try blocks.pop(writer);
+                    try blocks.popTag(writer, .figure);
                 },
                 .@"[^x]: " => |label| {
                     footnote_label = label;
@@ -838,10 +841,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"]" => if (inlines.top() == .a) {
                     try inlines.pop(writer);
                 } else {
-                    assert(std.meta.activeTag(blocks.top().?) == .figcaption);
-                    try blocks.pop(writer);
-                    assert(std.meta.activeTag(blocks.top().?) == .figure);
-                    try blocks.pop(writer);
+                    try blocks.popTag(writer, .figcaption);
+                    try blocks.popTag(writer, .figure);
                 },
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
