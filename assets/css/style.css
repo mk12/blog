@@ -124,12 +124,7 @@ figure img, figure svg {
 figcaption {
   text-align: center;
   font: 20px 'Concourse 3', Helvetica, Arial, sans-serif;
-  margin-top: 1em;
-}
-
-figcaption.above {
-  margin-top: 0px;
-  margin-bottom: 1em;
+  margin: 1em 0;
 }
 
 sup {
@@ -357,6 +352,7 @@ li.post-li {
 }
 
 pre {
+  /* TODO more margin after? see over-shuffled deck julia gadly heading */
   margin: 1.2em -70px;
   background-color: #f6f6f6;
   padding: 0.75em 1em;
