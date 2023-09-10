@@ -181,12 +181,12 @@ const Token = union(enum) {
 const Tokenizer = struct {
     scanner: *Scanner,
     token_start: usize,
-    peeked: ?struct { token_start: usize, token: Token } = null,
+    in_raw_html_block: bool = false,
+    peeked: ?struct { token: Token, token_start: usize, in_raw_html_block: bool } = null,
+
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
     block_allowed: bool = true,
-    in_raw_html_block: bool = false,
-    exit_raw_block_html: bool = false,
     in_inline_code: bool = false,
     in_top_caption_figure: bool = false,
     link_depth: u8 = 0,
@@ -213,18 +213,20 @@ const Tokenizer = struct {
             if (self.scanner.consumeStringEol("```")) return .@"```\n";
             return .stay_in_code_block;
         }
-        if (self.exit_raw_block_html) self.in_raw_html_block = false;
         if (self.peeked) |peeked| {
             self.peeked = null;
             self.token_start = peeked.token_start;
+            self.in_raw_html_block = peeked.in_raw_html_block;
             return peeked.token;
         }
         const start = self.scanner.offset;
+        const in_raw_html_block = self.in_raw_html_block;
         const token = self.nextNonText();
         const text = self.scanner.source[start..self.token_start];
         if (text.len == 0) return token;
-        self.peeked = .{ .token_start = self.token_start, .token = token };
+        self.peeked = .{ .token = token, .token_start = self.token_start, .in_raw_html_block = self.in_raw_html_block };
         self.token_start = start;
+        self.in_raw_html_block = in_raw_html_block;
         return Token{ .text = text };
     }
 
@@ -250,8 +252,9 @@ const Tokenizer = struct {
             '<' => if (scanner.next()) |char| switch (char) {
                 '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peekEol()) {
                     self.in_raw_html_block = true;
-                    self.exit_raw_block_html = false;
-                    return null;
+                    // We can't just return null here (as we do for raw inline HTML)
+                    // because `in_raw_html_block` needs to apply to this token.
+                    return .{ .text = scanner.source[self.token_start..scanner.offset] };
                 },
                 else => {},
             },
@@ -379,10 +382,7 @@ const Tokenizer = struct {
     }
 
     fn recognizeAfterNewline(self: *Tokenizer) Token {
-        if (self.scanner.consumeMany('\n') > 0) {
-            self.exit_raw_block_html = true;
-            // self.in_raw_html_block = false;
-        }
+        if (self.scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
         self.block_allowed = true;
         return .@"\n";
     }
