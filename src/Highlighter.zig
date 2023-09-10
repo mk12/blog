@@ -22,6 +22,7 @@ pending_spaces: ?[]const u8 = null,
 
 pub const Language = enum {
     c,
+    haskell,
     ruby,
     scheme,
 
@@ -33,11 +34,15 @@ pub const Language = enum {
 const Mode = union(enum) {
     in_string: u8,
     in_line_comment,
+    in_haskell_signature: HaskellSignatureState,
+    in_scheme_quote: SchemeQuoteState,
 
-    fn class(self: Mode) Class {
+    fn class(self: Mode) ?Class {
         return switch (self) {
             .in_string => .constant,
             .in_line_comment => .comment,
+            .in_haskell_signature => |state| state.class,
+            .in_scheme_quote => .quite_special,
         };
     }
 };
@@ -60,29 +65,59 @@ const Class = enum {
     }
 };
 
-fn isKeyword(comptime language: Language, identifier: []const u8) bool {
-    const keywords = switch (language) {
+fn classifyIdentifier(comptime language: Language, identifier: []const u8) ?Class {
+    const list = switch (language) {
         .c => .{
-            "char",
-            "for",
-            "int",
-            "return",
-            "void",
+            .{ "char", .special },
+            .{ "int", .special },
+            .{ "void", .special },
+            .{ "for", .keyword },
+            .{ "return", .keyword },
+            .{ "sizeof", .keyword },
+            .{ "true", .constant },
+            .{ "false", .constant },
+        },
+        .haskell => .{
+            .{ "import", .keyword },
+            .{ "qualified", .keyword },
+            .{ "as", .keyword },
+            .{ "where", .keyword },
+            .{ "otherwise", .keyword },
         },
         .ruby => .{
-            "class",
-            "def",
-            "do",
-            "end",
-            "test",
+            .{ "class", .keyword },
+            .{ "def", .keyword },
+            .{ "do", .keyword },
+            .{ "end", .keyword },
+            .{ "test", .keyword },
+            .{ "true", .constant },
+            .{ "false", .constant },
         },
         .scheme => .{
-            "define",
+            .{ "define", .keyword },
+            .{ "case", .keyword },
+            .{ "if", .keyword },
+            .{ "cond", .keyword },
+            .{ "else", .keyword },
+            .{ "let", .keyword },
+            .{ "lambda", .keyword },
+            .{ "map", .special },
+            .{ "null?", .special },
+            .{ "list", .special },
+            .{ "or", .keyword },
+            .{ "and", .keyword },
+            .{ "car", .special },
+            .{ "cdr", .special },
+            .{ "cadr", .special },
+            .{ "cddr", .special },
+            .{ "eq?", .special },
+            .{ "odd?", .special },
+            .{ "even?", .special },
+            .{ "zero?", .special },
+            .{ "cons", .special },
         },
     };
-    comptime var kv_list: []const struct { []const u8 } = &.{};
-    inline for (keywords) |keyword| kv_list = kv_list ++ .{.{keyword}};
-    return std.ComptimeStringMap(void, kv_list).has(identifier);
+    return std.ComptimeStringMap(Class, list).get(identifier);
 }
 
 const Token = union(enum) {
@@ -169,7 +204,7 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
         scanner.eat();
         return null;
     };
-    const mode = self.mode orelse switch (dispatch(scanner, language)) {
+    var mode = self.mode orelse switch (dispatch(scanner, language)) {
         .none => return null,
         .class => |c| return .{ .class = c },
         .mode => |m| m,
@@ -177,16 +212,18 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
     const finished = switch (mode) {
         .in_string => |delimiter| finishString(scanner, delimiter),
         .in_line_comment => finishLine(scanner),
+        .in_haskell_signature => |*state| state.finish(scanner),
+        .in_scheme_quote => |*state| state.finish(scanner),
     };
-    if (!finished) self.mode = mode;
-    return .{ .class = mode.class() };
+    self.mode = if (finished) null else mode;
+    return if (mode.class()) |c| .{ .class = c } else null;
 }
 
 fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Class, mode: Mode } {
     const start = scanner.offset;
     switch (scanner.next().?) {
         '\n', '<', '&' => unreachable,
-        '0'...'9' => {
+        '0'...'9' => if (!isWordCharacter(scanner.prev(1))) {
             while (scanner.peek()) |c| switch (c) {
                 '0'...'9', '.', '_' => scanner.eat(),
                 else => break,
@@ -194,48 +231,68 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
             return .{ .class = .constant };
         },
         'a'...'z', 'A'...'Z' => {
-            while (scanner.peek()) |c| switch (c) {
-                'a'...'z', 'A'...'Z', '_' => scanner.eat(),
-                '-' => if (language == .scheme) scanner.eat() else break,
+            while (scanner.peek()) |c| : (scanner.eat()) switch (c) {
+                'a'...'z', 'A'...'Z', '_' => {},
+                '-', '?' => if (language != .scheme) break,
                 else => break,
             };
-            const identifier = scanner.source[start..scanner.offset];
-            const is_keyword = switch (language) {
-                inline else => |lang| isKeyword(lang, identifier),
+            const identifier = scanRestOfIdentifier(scanner, language, start);
+            const class = switch (language) {
+                inline else => |lang| classifyIdentifier(lang, identifier),
             };
-            if (is_keyword) return .{ .class = .keyword };
-            // TODO only certain languages... or merge into keyword table?
-            if (std.mem.eql(u8, identifier, "true") or std.mem.eql(u8, identifier, "false"))
-                return .{ .class = .constant };
-            // if (language == .ruby and scanner.consume(':'))
-            //     return .{ .class = .quite_special };
+            if (class) |c| return .{ .class = c };
         },
-        '\'' => return .{ .mode = .{ .in_string = '\'' } },
+        '\'' => return switch (language) {
+            .scheme => .{ .mode = .{ .in_scheme_quote = SchemeQuoteState{} } },
+            else => .{ .mode = .{ .in_string = '\'' } },
+        },
         '"' => return .{ .mode = .{ .in_string = '"' } },
         '#' => switch (language) {
             .ruby => return .{ .mode = .in_line_comment },
+            .scheme => if (scanner.consumeAny("tf")) |_| return .{ .class = .constant },
             else => {},
         },
         '/' => if (language == .c and scanner.consume('/')) {
             return .{ .mode = .in_line_comment };
         },
-        ':' => if (language == .ruby and scanIdentifier(scanner) != null)
-            return .{ .class = .quite_special },
-        '@' => if (language == .ruby and scanIdentifier(scanner) != null)
+        ':' => switch (language) {
+            .ruby => if (scanIdentifier(scanner, language)) |_| return .{ .class = .constant },
+            .haskell => if (scanner.consume(':')) return .{ .mode = .{ .in_haskell_signature = .{} } },
+            else => {},
+        },
+        '@' => if (language == .ruby and scanIdentifier(scanner, language) != null)
             return .{ .class = .special },
+        '`' => if (language == .haskell) if (scanner.consumeLineUntil('`')) |_|
+            return .{ .class = .quite_special },
         else => {},
     }
     return .none;
 }
 
-fn scanIdentifier(scanner: *Scanner) ?[]const u8 {
-    const start = scanner.offset;
-    while (scanner.peek()) |c| switch (c) {
-        'a'...'z', 'A'...'Z', '_' => scanner.eat(),
+fn isWordCharacter(char: ?u8) bool {
+    return switch (char orelse return false) {
+        'a'...'z', 'A'...'Z', '_' => true,
+        else => false,
+    };
+}
+
+fn scanIdentifier(scanner: *Scanner, language: Language) ?[]const u8 {
+    switch (scanner.peek() orelse return null) {
+        '0'...'9' => return null,
+        else => {},
+    }
+    const text = scanRestOfIdentifier(scanner, language, scanner.offset);
+    return if (text.len == 0) null else text;
+}
+
+fn scanRestOfIdentifier(scanner: *Scanner, language: Language, start: usize) []const u8 {
+    while (scanner.peek()) |c| : (scanner.eat()) switch (c) {
+        'a'...'z', 'A'...'Z', '_' => {},
+        '0'...'9' => if (scanner.offset == start) break,
+        '-', '+', '=', '*', '/', '?', '!' => if (language != .scheme) break,
         else => break,
     };
-    const text = scanner.source[start..scanner.offset];
-    return if (text.len == 0) null else text;
+    return scanner.source[start..scanner.offset];
 }
 
 fn finishString(scanner: *Scanner, delimiter: u8) bool {
@@ -264,6 +321,49 @@ fn finishLine(scanner: *Scanner) bool {
     };
     return true;
 }
+
+const HaskellSignatureState = struct {
+    class: ?Class = null,
+
+    fn finish(self: *HaskellSignatureState, scanner: *Scanner) bool {
+        if (scanIdentifier(scanner, .haskell)) |_| {
+            self.class = .special;
+            const char = scanner.peek();
+            return char == null or char == '\n';
+        }
+        self.class = null;
+        while (scanner.peek()) |char| switch (char) {
+            '\n' => break,
+            '<', '&', 'a'...'z', 'A'...'Z' => return false,
+            else => scanner.eat(),
+        };
+        return true;
+    }
+};
+
+const SchemeQuoteState = struct {
+    depth: u32 = 0,
+
+    fn finish(self: *SchemeQuoteState, scanner: *Scanner) bool {
+        if (self.depth == 0 and scanner.peek() != '(') {
+            _ = scanIdentifier(scanner, .scheme);
+            return true;
+        }
+        while (scanner.peek()) |char| : (scanner.eat()) switch (char) {
+            '\n', '<', '&' => return false,
+            '(' => self.depth += 1,
+            ')' => {
+                self.depth -= 1;
+                if (self.depth == 0) {
+                    scanner.eat();
+                    return true;
+                }
+            },
+            else => {},
+        };
+        return true;
+    }
+};
 
 fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Language) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

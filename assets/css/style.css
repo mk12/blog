@@ -352,8 +352,7 @@ li.post-li {
 }
 
 pre {
-  /* TODO more margin after? see over-shuffled deck julia gadly heading */
-  margin: 1.2em -70px;
+  margin: 28.8px -70px; /* 1.2 * 24px = 28.8px */
   background-color: #f6f6f6;
   padding: 0.75em 1em;
   line-height: 16px;
