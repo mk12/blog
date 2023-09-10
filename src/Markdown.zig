@@ -132,7 +132,7 @@ const Token = union(enum) {
     @"```x\n": []const u8,
     stay_in_code_block,
     @"```\n",
-    // @"$$",
+    @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
     @"![^",
@@ -144,11 +144,11 @@ const Token = union(enum) {
     @"<",
     @"&",
     @"\\x": u8,
-    // @"$",
     @"[^x]": []const u8,
     _,
     @"**",
     @"`",
+    @"$",
     @"[...](x)": []const u8,
     @"[...][x]": []const u8,
     @" | ",
@@ -265,12 +265,7 @@ const Tokenizer = struct {
                 self.block_allowed = true;
                 return .{ .@"```x\n" = scanner.consumeUntilEol() };
             },
-            '$' => if (scanner.consume('$')) {
-                // This is temporary, to avoid interpreting math as Markdown.
-                while (scanner.next()) |c| if (c == '$') break;
-                scanner.expect('$') catch unreachable;
-                return .{ .text = scanner.source[self.token_start..scanner.offset] };
-            },
+            '$' => if (scanner.consume('$')) return .@"$$",
             '-' => if (scanner.consume(' ')) return .@"-",
             '1'...'9' => while (scanner.next()) |char| switch (char) {
                 '0'...'9' => {},
@@ -339,11 +334,7 @@ const Tokenizer = struct {
                 return .@"<";
             },
             '\\' => if (scanner.next()) |char| return .{ .@"\\x" = char },
-            '$' => {
-                // This is temporary, to avoid interpreting math as Markdown.
-                while (scanner.next()) |c| if (c == '$') break;
-                return .{ .text = scanner.source[self.token_start..scanner.offset] };
-            },
+            '$' => return .@"$",
             '[' => return self.recognizeAfterOpenBracket(.link),
             ']' => {
                 if (self.link_depth == 0) {
@@ -862,6 +853,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     break try highlighter.begin(writer, language);
                 },
                 .stay_in_code_block, .@"```\n" => unreachable,
+                .@"$$" => unreachable,
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
@@ -897,6 +889,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 ._ => try inlines.toggle(writer, .em),
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
+                .@"$" => unreachable,
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
