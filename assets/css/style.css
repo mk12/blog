@@ -165,13 +165,11 @@ tr {
 
 td, th {
   padding: 5px 20px;
+  text-align: left;
 }
 
 th {
   font-family: 'Equity B Caps';
-  /* The Markdown syntax for left-aligning also left aligns the <th> with an
-  inline style attribute, but we want these to always be centred. */
-  text-align: center !important;
   text-transform: lowercase;
 }
 
