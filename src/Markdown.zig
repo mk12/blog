@@ -724,12 +724,11 @@ const BlockTag = union(enum) {
 
     fn implicitChild(parent: ?BlockTag, footnote_label: ?[]const u8) ?BlockTag {
         return switch (parent orelse return .p) {
+            .p, .li, .figure, .table, .tr, .footnote_li => unreachable,
+            .h, .figcaption, .th, .td => null,
             .ul, .ol => .li,
             .blockquote => .p,
-            .table, .tr => unreachable,
             .footnote_ol => .{ .footnote_li = footnote_label.? },
-            else => null,
-            // TODO exhaustive, and unreachable for p, li
         };
     }
 
