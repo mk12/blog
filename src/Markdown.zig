@@ -185,8 +185,9 @@ const Tokenizer = struct {
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
     block_allowed: bool = true,
-    in_inline_code: bool = false,
     in_raw_html_block: bool = false,
+    exit_raw_block_html: bool = false,
+    in_inline_code: bool = false,
     in_top_caption_figure: bool = false,
     link_depth: u8 = 0,
 
@@ -212,6 +213,7 @@ const Tokenizer = struct {
             if (self.scanner.consumeStringEol("```")) return .@"```\n";
             return .stay_in_code_block;
         }
+        if (self.exit_raw_block_html) self.in_raw_html_block = false;
         if (self.peeked) |peeked| {
             self.peeked = null;
             self.token_start = peeked.token_start;
@@ -248,9 +250,8 @@ const Tokenizer = struct {
             '<' => if (scanner.next()) |char| switch (char) {
                 '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peekEol()) {
                     self.in_raw_html_block = true;
-                    // We can't just return null here (as we do for raw inline HTML)
-                    // because the renderer needs `in_raw_html_block` to be accurate.
-                    return .{ .text = scanner.source[self.token_start..scanner.offset] };
+                    self.exit_raw_block_html = false;
+                    return null;
                 },
                 else => {},
             },
@@ -272,7 +273,6 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) {
-                // TODO
                 _ = self.recognizeAfterNewline();
                 return .@"* * *\n";
             },
@@ -355,11 +355,10 @@ const Tokenizer = struct {
                 return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
             },
             '-' => if (scanner.consume('-')) {
-                // Look backwards for the space in " -- " instead of checking for
-                // "-- " after any space, because spaces are much more common.
+                // Look backwards for the space in " -- " instead of checking
+                // for "-- " after a space, because spaces are much more common.
+                // This will help if I decide to optimize using SIMD.
                 if (scanner.prev(2) == ' ' and scanner.consume(' ')) {
-                    // TODO should maybe just have a ' ' case for these.
-                    // Then can simplify token_start stuff?
                     self.token_start -= 1;
                     return .@" -- ";
                 }
@@ -380,7 +379,10 @@ const Tokenizer = struct {
     }
 
     fn recognizeAfterNewline(self: *Tokenizer) Token {
-        if (self.scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
+        if (self.scanner.consumeMany('\n') > 0) {
+            self.exit_raw_block_html = true;
+            // self.in_raw_html_block = false;
+        }
         self.block_allowed = true;
         return .@"\n";
     }
@@ -1016,11 +1018,88 @@ test "render raw entities" {
     try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{});
 }
 
-test "render inline element after something that looks like raw html" {
+test "render inline element after false raw inline html" {
     try expectRenderSuccess("<p>x&lt;y<em>z</em></p>", "x<y_z_", .{});
 }
 
+test "render inline element after false raw block html" {
+    try expectRenderSuccess("<p>&lt;div jk not a <em>div</em></p>", "<div jk not a _div_", .{});
+}
+
 test "render raw block html" {
+    try expectRenderSuccess(
+        \\<div id="foo">
+        \\Just in a div.
+        \\</div>
+    ,
+        \\<div id="foo">
+        \\Just in a div.
+        \\</div>
+    , .{});
+}
+
+test "render text around raw block html" {
+    try expectRenderSuccess(
+        \\<p>Before</p>
+        \\<block>
+        \\After (part of block)
+    ,
+        \\Before
+        \\<block>
+        \\After (part of block)
+    , .{});
+}
+
+test "render inlines around raw block html" {
+    try expectRenderSuccess(
+        \\<p><em>Before</em></p>
+        \\<block>
+        \\<em>After (part of block)</em>
+    ,
+        \\_Before_
+        \\<block>
+        \\_After (part of block)_
+    , .{});
+}
+
+test "render text after exiting raw block html" {
+    try expectRenderSuccess(
+        \\<block>
+        \\<p>After (not part of block)</p>
+    ,
+        \\<block>
+        \\
+        \\After (not part of block)
+    , .{});
+}
+
+test "render text before and after exiting raw block html" {
+    try expectRenderSuccess(
+        \\<block>
+        \\After (part of block)
+        \\<p>After (not part of block)</p>
+    ,
+        \\<block>
+        \\After (part of block)
+        \\
+        \\After (not part of block)
+    , .{});
+}
+
+test "render inlines before and after exiting raw block html" {
+    try expectRenderSuccess(
+        \\<block>
+        \\<em>After (part of block)</em>
+        \\<p><em>After (not part of block)</em></p>
+    ,
+        \\<block>
+        \\_After (part of block)_
+        \\
+        \\_After (not part of block)_
+    , .{});
+}
+
+test "render raw block html with inline elements" {
     try expectRenderSuccess(
         \\<div id="foo">
         \\Just in a <strong>div</strong>.
@@ -1184,7 +1263,7 @@ test "render all headings" {
     , .{});
 }
 
-test "render inline after something that looks like a heading" {
+test "render inline after false heading" {
     try expectRenderSuccess("<p>####### <em>hi</em></p>", "####### _hi_", .{});
 }
 
