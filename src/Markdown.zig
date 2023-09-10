@@ -16,8 +16,8 @@
 //! It treats ![Foo](foo.jpg) syntax as a block <figure>, not an inline <img>.
 //! The syntax ![^Foo](foo.jpg) puts the <figcaption> above instead of below.
 //! It allows Markdown within raw HTML. It supports smart typography, auto
-//! heading IDs, footnotes, code highlighting, (TODO!) tables, and (TODO!) TeX
-//! math in dollar signs rendered to MathML.
+//! heading IDs, footnotes, code highlighting, tables, and (TODO!) TeX math in
+//! dollar signs rendered to MathML.
 //!
 //! It is customizable with Options and with Hooks. The options are mostly
 //! flags, e.g. whether to enable code highlighting. The hooks allow you to
