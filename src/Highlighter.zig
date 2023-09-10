@@ -328,8 +328,7 @@ const HaskellSignatureState = struct {
     fn finish(self: *HaskellSignatureState, scanner: *Scanner) bool {
         if (scanIdentifier(scanner, .haskell)) |_| {
             self.class = .special;
-            const char = scanner.peek();
-            return char == null or char == '\n';
+            return scanner.peekEol();
         }
         self.class = null;
         while (scanner.peek()) |char| switch (char) {

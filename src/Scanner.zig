@@ -49,6 +49,11 @@ pub fn prev(self: Scanner, count: usize) ?u8 {
     return if (count >= self.offset) null else self.source[self.offset - count - 1];
 }
 
+pub fn peekEol(self: *Scanner) bool {
+    const char = self.peek();
+    return char == null or char == '\n';
+}
+
 pub fn consume(self: *Scanner, char: u8) bool {
     if (self.peek() == char) {
         self.eat();
@@ -213,6 +218,18 @@ test "everything" {
         scanner.eat();
         try testing.expectEqual(@as(?u8, 'y'), scanner.prev(0));
         try testing.expectEqual(@as(?u8, 'x'), scanner.prev(1));
+    }
+
+    // peekEol
+    {
+        var scanner = Scanner{ .source = "x\n", .reporter = &reporter };
+        try testing.expect(!scanner.peekEol());
+        scanner.eat();
+        try testing.expect(scanner.peekEol());
+        try testing.expect(!scanner.eof());
+        scanner.eat();
+        try testing.expect(scanner.peekEol());
+        try testing.expect(scanner.eof());
     }
 
     // consume

@@ -246,8 +246,7 @@ const Tokenizer = struct {
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |char| switch (char) {
-                // TODO and or precedence
-                '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peek() == '\n' or scanner.eof()) {
+                '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peekEol()) {
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
                     // because the renderer needs `in_raw_html_block` to be accurate.
@@ -255,8 +254,7 @@ const Tokenizer = struct {
                 },
                 else => {},
             },
-            // TODO ">\n" token?
-            '>' => if (scanner.consume(' ') or scanner.peek() == '\n' or scanner.eof()) {
+            '>' => if (scanner.consume(' ') or scanner.peekEol()) {
                 self.block_allowed = true;
                 return .@">";
             },
