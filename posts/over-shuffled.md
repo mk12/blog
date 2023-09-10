@@ -23,7 +23,7 @@ A shuffling algorithm takes a list of cards and produces a random permutation. W
 
 ![^Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
-There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples -- that's the number you get if you add up  the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
+There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples -- that's the number you get if you add up the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
 
 Now, that's pretty bad! There's a huge bias at the beginning. And what's up with those periodic spikes? The simple shuffling algorithm might seem to work, but in fact some permutations are far more likely than others. You could actually take advantage of this to get an unfair advantage in a game! The first permutation in the histogram is in ascending order, and the last is in descending order. Given that lower permutations are significantly more likely, meaning the cards are in roughly ascending order, you could give yourself a better hand by always dealing for yourself last. Of course, I am assuming the deck is sorted before the game begins.
 
