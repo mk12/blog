@@ -1729,6 +1729,16 @@ test "render table omitting pipes at end" {
     , .{});
 }
 
+test "render table with inlines in cells" {
+    try expectRenderSuccess(
+        \\<table>
+        \\<tr><th><em>x</em></th><th><code>this || that</code></th><th><a href="b">a</a></th></tr>
+        \\</table>
+    ,
+        \\| _x_ | `this || that` | [a](b) |
+    , .{});
+}
+
 test "unclosed inline at end" {
     try expectRenderFailure(
         \\<input>:1:5: unclosed <em> tag
