@@ -138,7 +138,7 @@ const Token = union(enum) {
     @"![...][x]": []const u8,
     @"![^",
     @"[^x]: ": []const u8,
-    // TODO: tables
+    @"| ",
 
     // Inline tokens
     text: []const u8,
@@ -152,6 +152,7 @@ const Token = union(enum) {
     @"`",
     @"[...](x)": []const u8,
     @"[...][x]": []const u8,
+    @" | ",
     lsquo,
     rsquo,
     ldquo,
@@ -274,6 +275,10 @@ const Tokenizer = struct {
             },
             '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
             '!' => if (scanner.consume('[')) if (self.recognizeBracketed(.figure)) |token| return token,
+            '|' => {
+                scanner.skipMany(' ');
+                return .@"| ";
+            },
             '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| if (scanner.consume(':')) {
                 scanner.skipMany(' ');
                 return .{ .@"[^x]: " = label };
@@ -355,12 +360,20 @@ const Tokenizer = struct {
                 // Look backwards for the space in " -- " instead of checking for
                 // "-- " after any space, because spaces are much more common.
                 if (scanner.prev(2) == ' ' and scanner.consume(' ')) {
+                    // TODO should maybe just have a ' ' case for these.
+                    // Then can simplify token_start stuff?
                     self.token_start -= 1;
                     return .@" -- ";
                 }
                 return .@"--";
             },
             '.' => if (scanner.consumeString("..")) return .@"...",
+            '|' => {
+                while (self.token_start > 0 and scanner.source[self.token_start - 1] == ' ')
+                    self.token_start -= 1;
+                scanner.skipMany(' ');
+                return .@" | ";
+            },
             else => {},
         }
         return null;
@@ -644,6 +657,9 @@ const BlockTag = union(enum) {
     blockquote,
     figure,
     figcaption,
+    table,
+    tr,
+    td,
     footnote_ol,
     footnote_li: []const u8,
 
@@ -662,6 +678,8 @@ const BlockTag = union(enum) {
         return switch (parent orelse return .p) {
             .ul, .ol => .li,
             .blockquote => .p,
+            .table => .tr,
+            .tr => .td,
             .footnote_ol => .{ .footnote_li = footnote_label.? },
             else => null,
         };
@@ -669,8 +687,8 @@ const BlockTag = union(enum) {
 
     fn goesOnItsOwnLine(self: BlockTag) bool {
         return switch (self) {
-            .p, .li, .h, .figcaption, .footnote_li => false,
-            .ul, .ol, .blockquote, .figure, .footnote_ol => true,
+            .p, .li, .h, .figcaption, .tr, .td, .footnote_li => false,
+            .ul, .ol, .blockquote, .figure, .table, .footnote_ol => true,
         };
     }
 
@@ -752,10 +770,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         var token = tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .h, .figure, .figcaption, .footnote_li => break,
+                .p, .li, .h, .figure, .figcaption, .tr, .td, .footnote_li => break,
                 .ul => if (token != .@"-") break,
                 .ol => if (token != .@"1.") break,
                 .blockquote => if (token != .@">") break,
+                .table => if (token != .@"| ") break,
                 .footnote_ol => switch (token) {
                     .@"[^x]: " => |label| footnote_label = label,
                     else => break,
@@ -783,7 +802,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         while (true) {
             if (need_implicit_block and token.isInline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
-                    if (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
+                    while (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
             }
@@ -821,6 +840,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     footnote_label = label;
                     try blocks.push(writer, .footnote_ol);
                 },
+                .@"| " => try blocks.push(writer, .table),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
@@ -844,6 +864,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 } else {
                     try blocks.popTag(writer, .figcaption);
                     try blocks.popTag(writer, .figure);
+                },
+                .@" | " => {
+                    try blocks.popTag(writer, .td);
+                    need_implicit_block = true;
                 },
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
@@ -1464,6 +1488,28 @@ test "render unbalanced right bracket" {
         \\Some ] out of nowhere
     , .{});
 }
+
+test "render basic table" {
+    try expectRenderSuccess(
+        \\<table>
+        \\<tr><td>Fruit</td><td>Color</td></tr>
+        \\<tr><td>Apple</td><td>Red</td></tr>
+        \\<tr><td>Banana</td><td>Yellow</td></tr>
+        \\</table>
+    ,
+        \\| Fruit | Color |
+        \\| Apple | Red |
+        \\| Banana | Yellow |
+    , .{});
+}
+
+// test "render broken table" {
+//     try expectRenderSuccess(
+//         \\
+//     ,
+//         \\|
+//     , .{});
+// }
 
 test "unclosed inline at end" {
     try expectRenderFailure(
