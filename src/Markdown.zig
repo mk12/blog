@@ -232,9 +232,9 @@ const Tokenizer = struct {
 
     fn nextNonText(self: *Tokenizer) Token {
         if (self.block_allowed) {
+            self.block_allowed = false;
             const start = self.scanner.offset;
             if (self.recognizeBlock()) |token| return token;
-            self.block_allowed = false;
             self.scanner.offset = start;
         }
         if (self.in_inline_code) while (true) if (self.recognizeInsideInlineCode()) |token| return token;
@@ -262,7 +262,10 @@ const Tokenizer = struct {
                 self.block_allowed = true;
                 return .@">";
             },
-            '`' => if (scanner.consumeString("``")) return .{ .@"```x\n" = scanner.consumeUntilEol() },
+            '`' => if (scanner.consumeString("``")) {
+                self.block_allowed = true;
+                return .{ .@"```x\n" = scanner.consumeUntilEol() };
+            },
             '$' => if (scanner.consume('$')) {
                 // This is temporary, to avoid interpreting math as Markdown.
                 while (scanner.next()) |c| if (c == '$') break;
@@ -1263,6 +1266,14 @@ test "render all headings" {
     , .{});
 }
 
+test "render false heading without space" {
+    try expectRenderSuccess("<p>#1</p>", "#1", .{});
+}
+
+test "render heading with multiple spaces" {
+    try expectRenderSuccess("<h1>  X</h1>", "#   X", .{});
+}
+
 test "render inline after false heading" {
     try expectRenderSuccess("<p>####### <em>hi</em></p>", "####### _hi_", .{});
 }
@@ -1291,6 +1302,10 @@ test "render shifted heading (negative)" {
     try expectRenderSuccess("<h1>Foo</h1>", "# Foo", .{ .shift_heading_level = -1 });
     try expectRenderSuccess("<h1>Foo</h1>", "## Foo", .{ .shift_heading_level = -1 });
     try expectRenderSuccess("<h5>Foo</h5>", "###### Foo", .{ .shift_heading_level = -1 });
+}
+
+test "render false block inside heading" {
+    try expectRenderSuccess("<h1>> Not a blockquote</h1>", "# > Not a blockquote", .{});
 }
 
 test "render unordered list" {
