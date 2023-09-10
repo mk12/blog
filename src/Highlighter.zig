@@ -42,7 +42,7 @@ const Mode = union(enum) {
             .in_string => .constant,
             .in_line_comment => .comment,
             .in_haskell_signature => |state| state.class,
-            .in_scheme_quote => .quite_special,
+            .in_scheme_quote => .class_b,
         };
     }
 };
@@ -51,16 +51,16 @@ const Class = enum {
     keyword,
     constant,
     comment,
-    special, // TODO rename
-    quite_special, // TODO rename
+    class_a,
+    class_b,
 
     fn cssClassName(self: Class) []const u8 {
         return switch (self) {
             .keyword => "kw",
             .constant => "cn",
             .comment => "co",
-            .special => "sp",
-            .quite_special => "qs",
+            .class_a => "ca",
+            .class_b => "cb",
         };
     }
 };
@@ -68,53 +68,67 @@ const Class = enum {
 fn classifyIdentifier(comptime language: Language, identifier: []const u8) ?Class {
     const list = switch (language) {
         .c => .{
-            .{ "char", .special },
-            .{ "int", .special },
-            .{ "void", .special },
+            // Keywords
+            .{ "else", .keyword },
             .{ "for", .keyword },
+            .{ "if", .keyword },
             .{ "return", .keyword },
             .{ "sizeof", .keyword },
-            .{ "true", .constant },
+
+            // Types
+            .{ "char", .class_a },
+            .{ "int", .class_a },
+            .{ "void", .class_a },
+
+            // Constants
             .{ "false", .constant },
+            .{ "true", .constant },
         },
         .haskell => .{
-            .{ "import", .keyword },
-            .{ "qualified", .keyword },
+            // Keywords
             .{ "as", .keyword },
-            .{ "where", .keyword },
+            .{ "import", .keyword },
             .{ "otherwise", .keyword },
+            .{ "qualified", .keyword },
+            .{ "where", .keyword },
         },
         .ruby => .{
+            // Keywords
             .{ "class", .keyword },
             .{ "def", .keyword },
             .{ "do", .keyword },
             .{ "end", .keyword },
             .{ "test", .keyword },
-            .{ "true", .constant },
+
+            // Constants
             .{ "false", .constant },
+            .{ "true", .constant },
         },
         .scheme => .{
-            .{ "define", .keyword },
-            .{ "case", .keyword },
-            .{ "if", .keyword },
-            .{ "cond", .keyword },
-            .{ "else", .keyword },
-            .{ "let", .keyword },
-            .{ "lambda", .keyword },
-            .{ "map", .special },
-            .{ "null?", .special },
-            .{ "list", .special },
-            .{ "or", .keyword },
+            // Special forms
             .{ "and", .keyword },
-            .{ "car", .special },
-            .{ "cdr", .special },
-            .{ "cadr", .special },
-            .{ "cddr", .special },
-            .{ "eq?", .special },
-            .{ "odd?", .special },
-            .{ "even?", .special },
-            .{ "zero?", .special },
-            .{ "cons", .special },
+            .{ "case", .keyword },
+            .{ "cond", .keyword },
+            .{ "define", .keyword },
+            .{ "else", .keyword },
+            .{ "if", .keyword },
+            .{ "lambda", .keyword },
+            .{ "let", .keyword },
+            .{ "or", .keyword },
+
+            // Procedures
+            .{ "cadr", .class_a },
+            .{ "car", .class_a },
+            .{ "cddr", .class_a },
+            .{ "cdr", .class_a },
+            .{ "cons", .class_a },
+            .{ "eq?", .class_a },
+            .{ "even?", .class_a },
+            .{ "list", .class_a },
+            .{ "map", .class_a },
+            .{ "null?", .class_a },
+            .{ "odd?", .class_a },
+            .{ "zero?", .class_a },
         },
     };
     return std.ComptimeStringMap(Class, list).get(identifier);
@@ -261,9 +275,9 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
             else => {},
         },
         '@' => if (language == .ruby and scanIdentifier(scanner, language) != null)
-            return .{ .class = .special },
+            return .{ .class = .class_a },
         '`' => if (language == .haskell) if (scanner.consumeLineUntil('`')) |_|
-            return .{ .class = .quite_special },
+            return .{ .class = .class_b },
         else => {},
     }
     return .none;
@@ -327,7 +341,7 @@ const HaskellSignatureState = struct {
 
     fn finish(self: *HaskellSignatureState, scanner: *Scanner) bool {
         if (scanIdentifier(scanner, .haskell)) |_| {
-            self.class = .special;
+            self.class = .class_a;
             return scanner.peekEol();
         }
         self.class = null;

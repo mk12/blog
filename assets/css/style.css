@@ -388,8 +388,8 @@ pre code {
 .kw { color: #a626a4; }
 .cn { color: #307a06; }
 .co { color: #c0392b; }
-.sp { color: #0060d5; }
-.qs { color: #986801; }
+.ca { color: #0060d5; }
+.cb { color: #986801; }
 
 /*
 .op, .er { font-weight: bold; }  operators (assertion arrows), errors 
