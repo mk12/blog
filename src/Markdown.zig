@@ -275,7 +275,11 @@ const Tokenizer = struct {
                 '.' => if (scanner.next() == ' ') return .@"1.",
                 else => break,
             },
-            '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
+            '*' => if (scanner.consumeStringEol(" * *")) {
+                // FIXME
+                _ = self.recognizeAfterNewline();
+                return .@"* * *\n";
+            },
             '!' => if (scanner.consume('[')) if (self.recognizeBracketed(.figure)) |token| return token,
             '|' => {
                 scanner.skipMany(' ');
@@ -652,6 +656,10 @@ fn Stack(comptime Tag: type) type {
             try self.pushWithoutWriting(item);
         }
 
+        fn pushMultiple(self: *Self, writer: anytype, items: []const Tag) !void {
+            for (items) |item| try self.push(writer, item);
+        }
+
         fn pushWithoutWriting(self: *Self, item: Tag) !void {
             self.items.append(item) catch |err| return switch (err) {
                 error.Overflow => error.ExceededMaxTagDepth,
@@ -826,10 +834,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
-        if (blocks.top()) |block| if (block == .table) {
-            try blocks.push(writer, .tr);
-            try blocks.push(writer, .td);
-        };
+        if (blocks.top()) |block| if (block == .table) try blocks.pushMultiple(writer, &.{ .tr, .td });
         first_iteration = false;
         var need_implicit_block = !options.is_inline;
         while (true) {
@@ -858,10 +863,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try writer.writeByte('\n');
                     try blocks.push(writer, .figcaption);
                 },
-                .@"![^" => {
-                    try blocks.push(writer, .figure);
-                    try blocks.push(writer, .figcaption);
-                },
+                .@"![^" => try blocks.pushMultiple(writer, .{ .figure, .figcaption }),
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try blocks.popTag(writer, .figcaption);
@@ -1067,6 +1069,35 @@ test "render raw block html with nested blockquote and list" {
         \\> Paragraph.
         \\>
         \\> - list
+        \\</div>
+    , .{});
+}
+
+test "render raw block html with nested thematic break" {
+    try expectRenderSuccess(
+        \\<div>
+        \\<hr>
+        \\No paragraph!
+        \\</div>
+    ,
+        \\<div>
+        \\* * *
+        \\No paragraph!
+        \\</div>
+    , .{});
+}
+
+test "render raw block html with nested thematic break and paragraph" {
+    try expectRenderSuccess(
+        \\<div>
+        \\<hr>
+        \\<p>Yes paragraph!</p>
+        \\</div>
+    ,
+        \\<div>
+        \\* * *
+        \\
+        \\Yes paragraph!
         \\</div>
     , .{});
 }
