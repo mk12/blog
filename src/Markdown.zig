@@ -221,7 +221,7 @@ const Tokenizer = struct {
         const start = self.scanner.offset;
         const in_raw_html_block = self.in_raw_html_block;
         const token = self.nextNonText();
-        const text = self.scanner.source[start..self.token_start];
+        const text = self.scanner.source[start..@max(start, self.token_start)];
         if (text.len == 0) return token;
         self.peeked = .{ .token = token, .token_start = self.token_start, .in_raw_html_block = self.in_raw_html_block };
         self.token_start = start;
@@ -284,13 +284,19 @@ const Tokenizer = struct {
             '!' => if (scanner.consume('['))
                 if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '|' => {
-                scanner.skipMany(' ');
+                scanner.skipMany(' '); // TODO require 1 space?
+                // TODO: handle --- for th?
+                if (scanner.consume(':') or scanner.consume('-')) {
+                    _ = scanner.consumeUntilEol();
+                    return self.recognizeAfterNewline();
+                }
                 return .@"| ";
             },
-            '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| if (scanner.consume(':')) {
-                scanner.skipMany(' ');
-                return .{ .@"[^x]: " = label };
-            },
+            '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label|
+                if (scanner.consume(':')) {
+                    scanner.skipMany(' ');
+                    return .{ .@"[^x]: " = label };
+                },
             else => {},
         }
         return null;
@@ -1507,6 +1513,10 @@ test "render smart typography" {
     , .{});
 }
 
+// test "render space-aware smart typography when space is already consumed" {
+//     try expectRenderSuccess("<h1>– hmm", "# -- hmm", .{});
+// }
+
 test "render footnotes" {
     try expectRenderSuccess(
         \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
@@ -1631,7 +1641,7 @@ test "render top-caption figure with link in caption" {
     , .{});
 }
 
-test "render non-figure because it occurs inline" {
+test "render false figure inline" {
     try expectRenderSuccess("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
 }
 
@@ -1641,6 +1651,17 @@ test "render unbalanced right bracket" {
     ,
         \\Some ] out of nowhere
     , .{});
+}
+
+test "render empty table" {
+    const html =
+        \\<table>
+        \\<tr><td></td></tr>
+        \\</table>
+    ;
+    try expectRenderSuccess(html, "|", .{});
+    try expectRenderSuccess(html, "||", .{});
+    try expectRenderSuccess(html, "| |", .{});
 }
 
 test "render basic table" {
@@ -1657,13 +1678,15 @@ test "render basic table" {
     , .{});
 }
 
-// test "render broken table" {
-//     try expectRenderSuccess(
-//         \\
-//     ,
-//         \\|
-//     , .{});
-// }
+test "render table omitting pipes at end" {
+    try expectRenderSuccess(
+        \\<table>
+        \\<tr><td>x</td><td>y</td></tr>
+        \\</table>
+    ,
+        \\| x | y
+    , .{});
+}
 
 test "unclosed inline at end" {
     try expectRenderFailure(
