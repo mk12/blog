@@ -108,6 +108,12 @@ pub fn consumeUntilEol(self: *Scanner) []const u8 {
     return self.source[start..self.offset];
 }
 
+pub fn consumeWhileAny(self: *Scanner, chars: []const u8) []const u8 {
+    const end = std.mem.indexOfNonePos(u8, self.source, self.offset, chars) orelse self.source.len;
+    defer self.offset = end;
+    return self.source[self.offset..end];
+}
+
 pub fn consumeMany(self: *Scanner, char: u8) usize {
     const start = self.offset;
     while (self.peek()) |c| if (c == char) self.eat() else break;
@@ -297,6 +303,18 @@ test "everything" {
         var scanner = Scanner{ .source = "foo\nbar", .reporter = &reporter };
         try testing.expectEqualStrings("foo", scanner.consumeUntilEol());
         try testing.expectEqualStrings("bar", scanner.consumeUntilEol());
+        try testing.expect(scanner.eof());
+    }
+
+    // consumeWhileAny
+    {
+        var scanner = Scanner{ .source = "foo\nbar", .reporter = &reporter };
+        try testing.expectEqualStrings("", scanner.consumeWhileAny(""));
+        try testing.expectEqualStrings("", scanner.consumeWhileAny("x"));
+        try testing.expectEqualStrings("f", scanner.consumeWhileAny("f"));
+        try testing.expectEqualStrings("oo\nb", scanner.consumeWhileAny("bo\n"));
+        try testing.expectEqualStrings("ar", scanner.consumeWhileAny("xar"));
+        try testing.expectEqualStrings("", scanner.consumeWhileAny("abc"));
         try testing.expect(scanner.eof());
     }
 

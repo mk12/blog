@@ -285,7 +285,16 @@ const Tokenizer = struct {
                 if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '|' => {
                 scanner.skipMany(' ');
-                // TODO: handle --- for th?
+                // Skip over | --- | --- | row.
+                const offset = scanner.offset;
+                if (scanner.consume('-')) {
+                    _ = scanner.consumeWhileAny(" |-");
+                    if (scanner.consumeString("\n|")) {
+                        scanner.skipMany(' ');
+                        return .@"| ";
+                    }
+                }
+                scanner.offset = offset;
                 return .@"| ";
             },
             '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label|
@@ -364,6 +373,7 @@ const Tokenizer = struct {
             },
             '-' => if (scanner.consume('-')) return .@"--",
             ' ' => {
+                scanner.skipMany(' ');
                 if (scanner.consumeString("-- ")) return .@" -- ";
                 if (scanner.consume('|')) return self.recognizeAfterPipe();
             },
@@ -384,20 +394,7 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         scanner.skipMany(' ');
         if (scanner.eof()) return .eof;
-        // if (scanner.consume('\n')) return self.recognizeAfterNewline();
-
-        // TODO: temporarily ignoring --- rows to see how tables look
-        if (scanner.consume('\n')) {
-            if (scanner.consume('|')) {
-                if (scanner.consumeAny("-:")) |_| {
-                    _ = scanner.consumeUntilEol();
-                    return self.recognizeAfterNewline();
-                }
-                scanner.uneat();
-            }
-            return self.recognizeAfterNewline();
-        }
-
+        if (scanner.consume('\n')) return self.recognizeAfterNewline();
         return .@" | ";
     }
 
@@ -709,6 +706,7 @@ const BlockTag = union(enum) {
     figcaption,
     table,
     tr,
+    th,
     td,
     footnote_ol,
     footnote_li: []const u8,
@@ -731,12 +729,13 @@ const BlockTag = union(enum) {
             .table, .tr => unreachable,
             .footnote_ol => .{ .footnote_li = footnote_label.? },
             else => null,
+            // TODO exhaustive, and unreachable for p, li
         };
     }
 
     fn goesOnItsOwnLine(self: BlockTag) bool {
         return switch (self) {
-            .p, .li, .h, .figcaption, .tr, .td, .footnote_li => false,
+            .p, .li, .h, .figcaption, .tr, .th, .td, .footnote_li => false,
             .ul, .ol, .blockquote, .figure, .table, .footnote_ol => true,
         };
     }
@@ -819,7 +818,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         var token = tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .h, .figure, .figcaption, .tr, .td, .footnote_li => break,
+                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break,
                 .ul => if (token != .@"-") break,
                 .ol => if (token != .@"1.") break,
                 .blockquote => if (token != .@">") break,
@@ -887,7 +886,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     footnote_label = label;
                     try blocks.push(writer, .footnote_ol);
                 },
-                .@"| " => try blocks.append(writer, .{ .table, .tr, .td }),
+                .@"| " => try blocks.append(writer, .{ .table, .tr, .th }),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
@@ -913,8 +912,10 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try blocks.popTag(writer, .figure);
                 },
                 .@" | " => {
-                    try blocks.popTag(writer, .td);
-                    try blocks.push(writer, .td);
+                    const block = blocks.top().?;
+                    assert(block == .td or block == .th);
+                    try block.writeCloseTag(writer);
+                    try block.writeOpenTag(writer);
                 },
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
@@ -1661,7 +1662,7 @@ test "render unbalanced right bracket" {
 test "render empty table" {
     const html =
         \\<table>
-        \\<tr><td></td></tr>
+        \\<tr><th></th></tr>
         \\</table>
     ;
     try expectRenderSuccess(html, "|", .{});
@@ -1673,7 +1674,7 @@ test "render empty table" {
 test "render basic table" {
     try expectRenderSuccess(
         \\<table>
-        \\<tr><td>Fruit</td><td>Color</td></tr>
+        \\<tr><th>Fruit</th><th>Color</th></tr>
         \\<tr><td>Apple</td><td>Red</td></tr>
         \\<tr><td>Banana</td><td>Yellow</td></tr>
         \\</table>
@@ -1684,13 +1685,47 @@ test "render basic table" {
     , .{});
 }
 
+test "render table with heading separator" {
+    try expectRenderSuccess(
+        \\<table>
+        \\<tr><th>Fruit</th><th>Color</th></tr>
+        \\<tr><td>Apple</td><td>Red</td></tr>
+        \\<tr><td>Banana</td><td>Yellow</td></tr>
+        \\</table>
+    ,
+        \\| Fruit | Color |
+        \\| ----- | ----- |
+        \\| Apple | Red |
+        \\| Banana | Yellow |
+    , .{});
+}
+
+test "render table with weird spacing" {
+    try expectRenderSuccess(
+        \\<table>
+        \\<tr><th>a</th><th>b</th></tr>
+        \\<tr><td>c</td><td>d</td></tr>
+        \\<tr><td>e</td><td>f</td></tr>
+        \\<tr><td>g</td><td>h</td></tr>
+        \\</table>
+    ,
+        \\|a|b|
+        \\|-|-|
+        \\|  c  |  d  |
+        \\|e |f |
+        \\| g| h|
+    , .{});
+}
+
 test "render table omitting pipes at end" {
     try expectRenderSuccess(
         \\<table>
-        \\<tr><td>x</td><td>y</td></tr>
+        \\<tr><th>x</th><th>y</th></tr>
+        \\<tr><td>z</td><td>w</td></tr>
         \\</table>
     ,
         \\| x | y
+        \\| z | w
     , .{});
 }
 
