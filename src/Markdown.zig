@@ -165,11 +165,10 @@ const Token = union(enum) {
     @"](x)": []const u8,
     @"][x]": []const u8,
 
-    const LinkOrFigure = enum { link, figure };
-    fn linkOrFigure(url_or_label: []const u8, is_label: bool, kind: LinkOrFigure) Token {
-        return switch (kind) {
-            .link => if (is_label) .{ .@"[...][x]" = url_or_label } else .{ .@"[...](x)" = url_or_label },
-            .figure => if (is_label) .{ .@"![...][x]" = url_or_label } else .{ .@"![...](x)" = url_or_label },
+    fn linkish(url_or_label: []const u8, args: struct { label: bool, figure: bool }) Token {
+        return switch (args.figure) {
+            false => if (args.label) .{ .@"[...][x]" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+            true => if (args.label) .{ .@"![...][x]" = url_or_label } else .{ .@"![...](x)" = url_or_label },
         };
     }
 
@@ -274,7 +273,7 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) return .@"* * *\n",
-            '!' => if (scanner.consume('[')) if (self.recognizeLinkOrFigure(.figure)) |token| return token,
+            '!' => if (scanner.consume('[')) if (self.recognizeBracketed(.figure)) |token| return token,
             '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label| if (scanner.consume(':')) {
                 scanner.skipMany(' ');
                 return .{ .@"[^x]: " = label };
@@ -325,7 +324,7 @@ const Tokenizer = struct {
                 while (scanner.next()) |c| if (c == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '[' => return self.recognizeLinkOrFigure(.link),
+            '[' => return self.recognizeBracketed(.link),
             ']' => {
                 if (self.link_depth == 0) {
                     if (!self.in_top_caption_figure) return null;
@@ -367,11 +366,10 @@ const Tokenizer = struct {
         return null;
     }
 
-    // TODO really it's link or footnote or figure
-    fn recognizeLinkOrFigure(self: *Tokenizer, kind: Token.LinkOrFigure) ?Token {
+    fn recognizeBracketed(self: *Tokenizer, kind: enum { link, figure }) ?Token {
         const scanner = self.scanner;
-        if (scanner.consume('^')) switch (kind) {
-            .link => return if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null,
+        if (scanner.consume('^')) return switch (kind) {
+            .link => if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null,
             .figure => {
                 self.in_top_caption_figure = true;
                 return .@"![^";
@@ -400,20 +398,23 @@ const Tokenizer = struct {
                 else => {},
             }
         }
-        const end_bracketed = scanner.offset - 1;
-        const closing_char: u8 = switch (scanner.next() orelse 0) {
-            '(' => ')',
-            '[' => ']',
-            else => {
-                // Shortcut reference link.
-                const label = scanner.source[start_bracketed..end_bracketed];
-                self.link_depth += 1;
-                return Token.linkOrFigure(label, true, kind);
-            },
+        const is_figure = kind == .figure;
+        const closing_char: u8 = blk: {
+            const end_bracketed = scanner.offset - 1;
+            if (scanner.next()) |char| switch (char) {
+                '(' => break :blk ')',
+                '[' => break :blk ']',
+                else => {},
+            };
+            // Shortcut reference link.
+            const label = scanner.source[start_bracketed..end_bracketed];
+            self.link_depth += 1;
+            return Token.linkish(label, .{ .label = true, .figure = is_figure });
         };
         const url_or_label = scanner.consumeLineUntil(closing_char) orelse return null;
+        const is_label = closing_char == ']';
         self.link_depth += 1;
-        return Token.linkOrFigure(url_or_label, closing_char == ']', kind);
+        return Token.linkish(url_or_label, .{ .label = is_label, .figure = is_figure });
     }
 };
 
