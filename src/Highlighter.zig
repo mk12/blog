@@ -459,3 +459,17 @@ test "highlight ruby" {
         \\end
     , .ruby);
 }
+
+test "highlight haskell" {
+    try expectSuccess(
+        \\<pre>
+        \\<code><span class="kw">import</span> Foo
+        \\bar :: <span class="sp">This</span> -> <span class="sp">That</span>
+        \\bar x = x <span class="qs">`qux`</span> <span class="cn">123</span></code>
+        \\</pre>
+    ,
+        \\import Foo
+        \\bar :: This -> That
+        \\bar x = x `qux` 123
+    , .haskell);
+}
