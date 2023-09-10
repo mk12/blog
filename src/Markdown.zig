@@ -180,9 +180,8 @@ const Token = union(enum) {
 
 const Tokenizer = struct {
     scanner: *Scanner,
-    peeked: ?Token = null,
     token_start: usize,
-    peeked_token_start: usize = undefined,
+    peeked: ?struct { token_start: usize, token: Token } = null,
     // Be careful reading these values outside the Tokenizer, since they might
     // pertain to the peeked token, not the current one.
     block_allowed: bool = true,
@@ -213,17 +212,16 @@ const Tokenizer = struct {
             if (self.scanner.consumeStringEol("```")) return .@"```\n";
             return .stay_in_code_block;
         }
-        if (self.peeked) |token| {
+        if (self.peeked) |peeked| {
             self.peeked = null;
-            self.token_start = self.peeked_token_start;
-            return token;
+            self.token_start = peeked.token_start;
+            return peeked.token;
         }
         const start = self.scanner.offset;
         const token = self.nextNonText();
         const text = self.scanner.source[start..self.token_start];
         if (text.len == 0) return token;
-        self.peeked = token;
-        self.peeked_token_start = self.token_start;
+        self.peeked = .{ .token_start = self.token_start, .token = token };
         self.token_start = start;
         return Token{ .text = text };
     }
@@ -248,7 +246,7 @@ const Tokenizer = struct {
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |char| switch (char) {
-                // FIXME and or precedence
+                // TODO and or precedence
                 '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peek() == '\n' or scanner.eof()) {
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
@@ -264,7 +262,7 @@ const Tokenizer = struct {
             },
             '`' => if (scanner.consumeString("``")) return .{ .@"```x\n" = scanner.consumeUntilEol() },
             '$' => if (scanner.consume('$')) {
-                // TODO: This is temporary, to avoid interpreting math as Markdown.
+                // This is temporary, to avoid interpreting math as Markdown.
                 while (scanner.next()) |c| if (c == '$') break;
                 scanner.expect('$') catch unreachable;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
@@ -276,7 +274,7 @@ const Tokenizer = struct {
                 else => break,
             },
             '*' => if (scanner.consumeStringEol(" * *")) {
-                // FIXME
+                // TODO
                 _ = self.recognizeAfterNewline();
                 return .@"* * *\n";
             },
@@ -327,7 +325,7 @@ const Tokenizer = struct {
             },
             '\\' => if (scanner.next()) |char| return .{ .@"\\x" = char },
             '$' => {
-                // TODO: This is temporary, to avoid interpreting math as Markdown.
+                // This is temporary, to avoid interpreting math as Markdown.
                 while (scanner.next()) |c| if (c == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
@@ -656,14 +654,14 @@ fn Stack(comptime Tag: type) type {
             try self.pushWithoutWriting(item);
         }
 
-        fn pushMultiple(self: *Self, writer: anytype, items: []const Tag) !void {
-            for (items) |item| try self.push(writer, item);
-        }
-
         fn pushWithoutWriting(self: *Self, item: Tag) !void {
             self.items.append(item) catch |err| return switch (err) {
                 error.Overflow => error.ExceededMaxTagDepth,
             };
+        }
+
+        fn append(self: *Self, writer: anytype, items: anytype) !void {
+            inline for (items) |item| try self.push(writer, item);
         }
 
         fn pop(self: *Self, writer: anytype) !void {
@@ -834,7 +832,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
-        if (blocks.top()) |block| if (block == .table) try blocks.pushMultiple(writer, &.{ .tr, .td });
+        if (blocks.top()) |block| if (block == .table) try blocks.append(writer, .{ .tr, .td });
         first_iteration = false;
         var need_implicit_block = !options.is_inline;
         while (true) {
@@ -863,7 +861,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try writer.writeByte('\n');
                     try blocks.push(writer, .figcaption);
                 },
-                .@"![^" => try blocks.pushMultiple(writer, .{ .figure, .figcaption }),
+                .@"![^" => try blocks.append(writer, .{ .figure, .figcaption }),
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try blocks.popTag(writer, .figcaption);
@@ -875,11 +873,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     footnote_label = label;
                     try blocks.push(writer, .footnote_ol);
                 },
-                .@"| " => {
-                    try blocks.push(writer, .table);
-                    try blocks.push(writer, .tr);
-                    try blocks.push(writer, .td);
-                },
+                .@"| " => try blocks.append(writer, .{ .table, .tr, .td }),
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
