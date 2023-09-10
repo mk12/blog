@@ -248,6 +248,7 @@ const Tokenizer = struct {
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
             '<' => if (scanner.next()) |char| switch (char) {
+                // FIXME and or precedence
                 '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peek() == '\n' or scanner.eof()) {
                     self.in_raw_html_block = true;
                     // We can't just return null here (as we do for raw inline HTML)
@@ -256,6 +257,7 @@ const Tokenizer = struct {
                 },
                 else => {},
             },
+            // TODO ">\n" token?
             '>' => if (scanner.consume(' ') or scanner.peek() == '\n' or scanner.eof()) {
                 self.block_allowed = true;
                 return .@">";
@@ -292,7 +294,7 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
-            '\n' => return .@"\n",
+            '\n' => return self.recognizeAfterNewline(),
             '`' => {
                 self.in_inline_code = false;
                 return .@"`";
@@ -307,11 +309,7 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         self.token_start = scanner.offset;
         switch (scanner.next() orelse return .eof) {
-            '\n' => {
-                if (scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
-                self.block_allowed = true;
-                return .@"\n";
-            },
+            '\n' => return self.recognizeAfterNewline(),
             '`' => {
                 self.in_inline_code = true;
                 return .@"`";
@@ -372,11 +370,19 @@ const Tokenizer = struct {
                 while (self.token_start > 0 and scanner.source[self.token_start - 1] == ' ')
                     self.token_start -= 1;
                 scanner.skipMany(' ');
+                if (scanner.eof()) return .eof;
+                if (scanner.consume('\n')) return self.recognizeAfterNewline();
                 return .@" | ";
             },
             else => {},
         }
         return null;
+    }
+
+    fn recognizeAfterNewline(self: *Tokenizer) Token {
+        if (self.scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
+        self.block_allowed = true;
+        return .@"\n";
     }
 
     fn recognizeBracketed(self: *Tokenizer, kind: enum { link, figure }) ?Token {
@@ -435,16 +441,22 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+    const Tag = std.meta.Tag(Token);
+    var expected_tags = std.ArrayList(Tag).init(allocator);
+    for (expected) |token| try expected_tags.append(token);
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var tokenizer = try Tokenizer.init(&scanner);
     var actual = std.ArrayList(Token).init(allocator);
+    var actual_tags = std.ArrayList(Tag).init(allocator);
     while (true) {
         const token = tokenizer.next(false);
         try actual.append(token);
+        try actual_tags.append(token);
         if (token == .eof) break;
     }
+    try testing.expectEqualSlices(Tag, expected_tags.items, actual_tags.items);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -527,6 +539,24 @@ test "tokenize figure" {
         .eof,
     },
         \\![Foo](bar)
+    );
+}
+
+test "tokenize table" {
+    try expectTokens(&[_]Token{
+        .@"| ",
+        .{ .text = "Fruit" },
+        .@" | ",
+        .{ .text = "Color" },
+        .@"\n",
+        .@"| ",
+        .{ .text = "Apple" },
+        .@" | ",
+        .{ .text = "Red" },
+        .eof,
+    },
+        \\| Fruit | Color |
+        \\| Apple | Red |
     );
 }
 
@@ -678,8 +708,7 @@ const BlockTag = union(enum) {
         return switch (parent orelse return .p) {
             .ul, .ol => .li,
             .blockquote => .p,
-            .table => .tr,
-            .tr => .td,
+            .table, .tr => unreachable,
             .footnote_ol => .{ .footnote_li = footnote_label.? },
             else => null,
         };
@@ -797,12 +826,16 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
+        if (blocks.top()) |block| if (block == .table) {
+            try blocks.push(writer, .tr);
+            try blocks.push(writer, .td);
+        };
         first_iteration = false;
         var need_implicit_block = !options.is_inline;
         while (true) {
             if (need_implicit_block and token.isInline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
-                    while (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
+                    if (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
             }
@@ -840,7 +873,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     footnote_label = label;
                     try blocks.push(writer, .footnote_ol);
                 },
-                .@"| " => try blocks.push(writer, .table),
+                .@"| " => {
+                    try blocks.push(writer, .table);
+                    try blocks.push(writer, .tr);
+                    try blocks.push(writer, .td);
+                },
                 .text => |text| try writer.writeAll(text),
                 .@"<" => try writer.writeAll("&lt;"),
                 .@"&" => try writer.writeAll("&amp;"),
@@ -867,7 +904,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 .@" | " => {
                     try blocks.popTag(writer, .td);
-                    need_implicit_block = true;
+                    try blocks.push(writer, .td);
                 },
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
