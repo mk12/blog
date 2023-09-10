@@ -366,25 +366,13 @@ const Tokenizer = struct {
                 const prev = scanner.prev(1);
                 return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
             },
-            '-' => if (scanner.consume('-')) {
-                // Look backwards for the space in " -- " instead of checking
-                // for "-- " after a space, because spaces are much more common.
-                // This will help if I decide to optimize using SIMD.
-                if (scanner.prev(2) == ' ' and scanner.consume(' ')) {
-                    self.token_start -= 1;
-                    return .@" -- ";
-                }
-                return .@"--";
+            '-' => if (scanner.consume('-')) return .@"--",
+            ' ' => {
+                if (scanner.consumeString("-- ")) return .@" -- ";
+                if (scanner.consume('|')) return self.recognizeAfterPipe();
             },
+            '|' => return self.recognizeAfterPipe(),
             '.' => if (scanner.consumeString("..")) return .@"...",
-            '|' => {
-                while (self.token_start > 0 and scanner.source[self.token_start - 1] == ' ')
-                    self.token_start -= 1;
-                scanner.skipMany(' ');
-                if (scanner.eof()) return .eof;
-                if (scanner.consume('\n')) return self.recognizeAfterNewline();
-                return .@" | ";
-            },
             else => {},
         }
         return null;
@@ -394,6 +382,14 @@ const Tokenizer = struct {
         if (self.scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
         self.block_allowed = true;
         return .@"\n";
+    }
+
+    fn recognizeAfterPipe(self: *Tokenizer) Token {
+        const scanner = self.scanner;
+        scanner.skipMany(' ');
+        if (scanner.eof()) return .eof;
+        if (scanner.consume('\n')) return self.recognizeAfterNewline();
+        return .@" | ";
     }
 
     fn recognizeAfterOpenBracket(self: *Tokenizer, kind: enum { link, figure }) ?Token {
@@ -1513,9 +1509,9 @@ test "render smart typography" {
     , .{});
 }
 
-// test "render space-aware smart typography when space is already consumed" {
-//     try expectRenderSuccess("<h1>– hmm", "# -- hmm", .{});
-// }
+test "render space-aware smart typography when space is already consumed" {
+    try expectRenderSuccess("<h1>– en dash not em</h1>", "# -- en dash not em", .{});
+}
 
 test "render footnotes" {
     try expectRenderSuccess(
