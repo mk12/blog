@@ -284,12 +284,8 @@ const Tokenizer = struct {
             '!' => if (scanner.consume('['))
                 if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '|' => {
-                scanner.skipMany(' '); // TODO require 1 space?
+                scanner.skipMany(' ');
                 // TODO: handle --- for th?
-                if (scanner.consume(':') or scanner.consume('-')) {
-                    _ = scanner.consumeUntilEol();
-                    return self.recognizeAfterNewline();
-                }
                 return .@"| ";
             },
             '[' => if (scanner.consume('^')) if (scanner.consumeLineUntil(']')) |label|
@@ -388,7 +384,20 @@ const Tokenizer = struct {
         const scanner = self.scanner;
         scanner.skipMany(' ');
         if (scanner.eof()) return .eof;
-        if (scanner.consume('\n')) return self.recognizeAfterNewline();
+        // if (scanner.consume('\n')) return self.recognizeAfterNewline();
+
+        // TODO: temporarily ignoring --- rows to see how tables look
+        if (scanner.consume('\n')) {
+            if (scanner.consume('|')) {
+                if (scanner.consumeAny("-:")) |_| {
+                    _ = scanner.consumeUntilEol();
+                    return self.recognizeAfterNewline();
+                }
+                scanner.uneat();
+            }
+            return self.recognizeAfterNewline();
+        }
+
         return .@" | ";
     }
 
@@ -1658,6 +1667,7 @@ test "render empty table" {
     try expectRenderSuccess(html, "|", .{});
     try expectRenderSuccess(html, "||", .{});
     try expectRenderSuccess(html, "| |", .{});
+    try expectRenderSuccess(html, "|  |", .{});
 }
 
 test "render basic table" {
