@@ -282,7 +282,8 @@ const Tokenizer = struct {
                 _ = self.recognizeAfterNewline();
                 return .@"* * *\n";
             },
-            '!' => if (scanner.consume('[')) if (self.recognizeBracketed(.figure)) |token| return token,
+            '!' => if (scanner.consume('['))
+                if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '|' => {
                 scanner.skipMany(' ');
                 return .@"| ";
@@ -333,7 +334,7 @@ const Tokenizer = struct {
                 while (scanner.next()) |c| if (c == '$') break;
                 return .{ .text = scanner.source[self.token_start..scanner.offset] };
             },
-            '[' => return self.recognizeBracketed(.link),
+            '[' => return self.recognizeAfterOpenBracket(.link),
             ']' => {
                 if (self.link_depth == 0) {
                     if (!self.in_top_caption_figure) return null;
@@ -390,7 +391,7 @@ const Tokenizer = struct {
         return .@"\n";
     }
 
-    fn recognizeBracketed(self: *Tokenizer, kind: enum { link, figure }) ?Token {
+    fn recognizeAfterOpenBracket(self: *Tokenizer, kind: enum { link, figure }) ?Token {
         const scanner = self.scanner;
         if (scanner.consume('^')) return switch (kind) {
             .link => if (scanner.consumeLineUntil(']')) |label| .{ .@"[^x]" = label } else null,
