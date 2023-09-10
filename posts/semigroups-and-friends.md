@@ -35,13 +35,13 @@ We still have six types of algebraic structure left to go, but instead of defini
 
 If you're comfortable with predicate logic, you may prefer this format:
 
-|| Name | Axiom |
-|:-:|:----:|:------|
-|1| Closure | $\forall a,b\in S\colon a\bullet b\in S$ |
-|2| Associativity | $\forall a,b,c\in S\colon a\bullet(b\bullet c)=(a\bullet b)\bullet c$ |
-|3| Identity | $\exists e\in S\colon\forall a\in S\colon a\bullet e=e\bullet a=a$ |
-|4| Inverse | $\forall a\in S\colon\exists b\in S\colon a\bullet b=b\bullet a=e$ |
-|5| Commutativity | $\forall a,b\in S\colon a\bullet b=b\bullet a$ |
+|     | Name          | Axiom                                                                 |
+| --- | ------------- | --------------------------------------------------------------------- |
+| 1   | Closure       | $\forall a,b\in S\colon a\bullet b\in S$                              |
+| 2   | Associativity | $\forall a,b,c\in S\colon a\bullet(b\bullet c)=(a\bullet b)\bullet c$ |
+| 3   | Identity      | $\exists e\in S\colon\forall a\in S\colon a\bullet e=e\bullet a=a$    |
+| 4   | Inverse       | $\forall a\in S\colon\exists b\in S\colon a\bullet b=b\bullet a=e$    |
+| 5   | Commutativity | $\forall a,b\in S\colon a\bullet b=b\bullet a$                        |
 
 Magmas, semigroups, monoids, groups, and Abelian groups build on top of each other. In fact, they're nothing more than shorthand for specifying how many of these five axioms to include:
 

@@ -36,12 +36,12 @@ Strings might seem uninteresting on their own, but we can interpret them in diff
 
 Instead of writing long lists of instructions by hand, we can generate them using an L-system. All we have to do is choose meanings for the symbols. Here is one possibility:
 
-| Symbol | Meaning |
-|:------:|:-------:|
-| F | move forward by 10 pixels |
-| + | rotate counterclockwise by 30º |
-| − | rotate clockwise by 30º |
-| _other_ | do nothing |
+| Symbol  | Meaning                        |
+| ------- | ------------------------------ |
+| F       | move forward by 10 pixels      |
+| +       | rotate counterclockwise by 30º |
+| −       | rotate clockwise by 30º        |
+| _other_ | do nothing                     |
 
 Of course, for this to work, we'd have to create an L-system that includes these three symbols in the strings it generates.
 

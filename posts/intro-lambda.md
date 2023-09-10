@@ -27,14 +27,14 @@ To interpret λ-expressions unambiguously, we need a few conventions:
 
 When we look at all the variables in a given λ-expression, we classify some as _free variables_. A variable by itself, such as _x_, is always a free variable. However, the _x_ in _λx.x_ is not free because the abstraction _binds_ it; we call these variables _bound variables_. All variables are free until they are bound in an enclosing abstraction. Let's look at some examples:
 
-| Expression | Free variables |
-|:----------:|:--------------:|
-| _x_ | _x_ |
-| _λx.x x_ | --- |
-| _λx.y_ | _y_ |
-| _λy.λx.y_ | --- |
+| Expression      | Free variables     |
+| --------------- | ------------------ |
+| _x_             | _x_                |
+| _λx.x x_        | ---                |
+| _λx.y_          | _y_                |
+| _λy.λx.y_       | ---                |
 | _a_ (_b c_) _d_ | _a_, _b_, _c_, _d_ |
-| (_λa.a b_) _a_ | _a_, _b_ |
+| (_λa.a b_) _a_  | _a_, _b_           |
 
 Be careful with that last example. Clearly _b_ is a free variable, but what about _a_? It looks like _a_ occurs three times, but there are actually two distinct variables here! The _a_ that occurs in the abstraction is a bound variable, while the rightmost _a_ is a free variable. When a variable is bound, everything inside the abstraction refers to this new bound variable, regardless of what the variable means outside. In these cases, we say that the new bound variable _shadows_ the free variable. To drive the point home, consider the expression _a λa._(_a λa._(_a λa.a_)). Here we have four distinct variables -- one free and three bound -- and they all reuse the letter _a_.
 
@@ -69,11 +69,11 @@ Their are two values in Boolean algebra: True and False. We'll represent True wi
 
 There are three principle Boolean operations: conjunction (And), disjunction (Or), and negation (Not). Here are their implementations:
 
-| Operation | Expression |
-|:---------:|:-----------|
-| And | _λa.λb.a b F_ |
-| Or  | _λa.λb.a T b_ |
-| Not | _λa.a F T_ |
+| Operation | Expression    |
+| --------- | ------------- |
+| And       | _λa.λb.a b F_ |
+| Or        | _λa.λb.a T b_ |
+| Not       | _λa.a F T_    |
 
 The operation And takes two Boolean parameters. It then applies _a_ to two arguments, which selects one based on the value of _a_. If _a_ is True, it returns _b_, and if _a_ is False, it returns False. Try doing the beta-reduction on paper for each of the four input combinations -- you'll see that it gives the correct answer every time! If you understand how And works, it shouldn't be too hard to figure out Or and Not.
 
@@ -83,12 +83,12 @@ The Booleans we implemented are actually called Church Booleans because they use
 
 We represent zero with _Z_&nbsp;:=&nbsp;_λh.λx.x_. One is _λh.λx.h x_, two is _λh.λx.h_&nbsp;(_h x_), five is _λh.λx.h_&nbsp;(_h_&nbsp;(_h_&nbsp;(_h_&nbsp;(_h x_)))), and so on. To represent some number, we simply apply _h_ that many times. With Church numerals, we can recover all of arithmetic! I'll implement the successor operator (adds one) as well as addition, multiplication, and exponentiation:
 
-| Operation | Expression |
-|:---------:|:-----------|
-| Succ | _λn.λh.λx.h (n h x)_ |
-| Add  | _λn.λm.λh.λx.n f (m f x)_ |
-| Mult | _λn.λm.λh.n (m h)_ |
-| Pow  | _λn.λm.m n_ |
+| Operation | Expression                |
+| --------- | ------------------------- |
+| Succ      | _λn.λh.λx.h (n h x)_      |
+| Add       | _λn.λm.λh.λx.n f (m f x)_ |
+| Mult      | _λn.λm.λh.n (m h)_        |
+| Pow       | _λn.λm.m n_               |
 
 If you taught someone the rules of the λ-calculus, you could have them compute sums, products, and powers, and they would have no idea they were doing it! It looks like mindless symbol-manipulation, but it corresponds directly to our usual arithmetic.
 

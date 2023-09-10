@@ -68,13 +68,13 @@ The most difficult part of analyzing these distributions was identifying the per
 I arbitrarily decided that ascending order would correspond to zero and descending order would have the highest value, _n_! − 1. Here's what the mapping should look like for _n_&nbsp;= 3:
 
 | permutation | value | FNS |
-|:-----------:|:-----:|:---:|
-| 0, 1, 2 | 0 | 000 |
-| 0, 2, 1 | 1 | 010 |
-| 1, 0, 2 | 2 | 100 |
-| 1, 2, 0 | 3 | 110 |
-| 2, 0, 1 | 4 | 200 |
-| 2, 1, 0 | 5 | 210 |
+| ----------- | ----- | --- |
+| 0, 1, 2     | 0     | 000 |
+| 0, 2, 1     | 1     | 010 |
+| 1, 0, 2     | 2     | 100 |
+| 1, 2, 0     | 3     | 110 |
+| 2, 0, 1     | 4     | 200 |
+| 2, 1, 0     | 5     | 210 |
 
 It just so happened that I recently read about the [factorial number system][fac]. This is essentially what we have here, but with a twist: the digits don't count for their literal value -- you have to subtract the number of integers below that have already been used. This corresponds to the striking-out step in the Fisher--Yates algorithm. If you make that change, you get the numbers I placed in the "FNS" column. That's how you count in the factorial number system. One peculiarity of this system is that the rightmost digit is always zero. This makes perfect sense in our case, because a permutation is completely determined once you get to the second-to-last item -- there is only one choice for the last one!
 
