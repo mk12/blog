@@ -37,7 +37,7 @@ First, we'll define `detect-cycle`, which will put the tortoise and hare in thei
   (define (race t h) ...)
   (define (find-mu t h) ...)
   (define (find-lambda t h) ...)
-  (if (or (null? x0) (null? (cdr x0)) (null?  (cddr x0)))
+  (if (or (null? x0) (null? (cdr x0)) (null? (cddr x0)))
     #f
     (race (cdr x0) (cddr x0))))
 ```
