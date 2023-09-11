@@ -12,7 +12,8 @@ const MathML = @This();
 
 // TODO: CodeRenderer, MathRenderer?
 
-kind: Kind,
+// TODO maybe is_display
+kind: Kind = undefined,
 
 const Kind = enum {
     @"inline",
@@ -50,4 +51,10 @@ fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !v
 
 // test "empty input" {
 //     try expectSuccess("<math>\n</math>", "", .@"inline");
+//     try expectSuccess("<math display=\"block\">\n</math>", "", .display);
+// }
+
+// test "variable" {
+//     try expectSuccess("<math>\n<mi>x</mi>\n</math>", "x", .@"inline");
+//     try expectSuccess("<math display=\"block\">\n</math>", "", .display);
 // }

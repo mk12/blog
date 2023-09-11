@@ -30,6 +30,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Highlighter = @import("Highlighter.zig");
 const Language = Highlighter.Language;
+const MathML = @import("MathML.zig");
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
@@ -800,11 +801,20 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
     var highlighter = Highlighter{};
+    var mathml = MathML{};
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
         var all_open = num_blocks_open == blocks.len();
+        // TODO now also need to consider mathml.active
+        // really, just want to avoid next() when that would steal from code/math renderer
+        // but for code, currently tokenizer is recognizing the final ```
+        // instead, could do:
+        // special = highlighter.active or mathml.active
+        // set token only if !(all_open and special)
+        // handle special below
+        // then token.? is ok after that
         var token = tokenizer.next(all_open and highlighter.active);
         while (!all_open) {
             switch (blocks.get(num_blocks_open)) {
@@ -853,7 +863,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     break try highlighter.begin(writer, language);
                 },
                 .stay_in_code_block, .@"```\n" => unreachable,
-                .@"$$" => unreachable,
+                .@"$$" => try mathml.begin(writer, .display),
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
@@ -889,7 +899,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 ._ => try inlines.toggle(writer, .em),
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
-                .@"$" => unreachable,
+                .@"$" => try mathml.begin(writer, .@"inline"),
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
