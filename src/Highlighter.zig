@@ -15,8 +15,8 @@ const Highlighter = @This();
 
 active: bool = false,
 language: ?Language = null,
-mode: ?Mode = null,
 class: ?Class = null,
+mode: ?Mode = null,
 pending_newlines: usize = 0,
 pending_spaces: ?[]const u8 = null,
 
@@ -28,22 +28,6 @@ pub const Language = enum {
 
     pub fn from(name: []const u8) ?Language {
         return std.meta.stringToEnum(Language, name);
-    }
-};
-
-const Mode = union(enum) {
-    in_string: u8,
-    in_line_comment,
-    in_haskell_signature: HaskellSignatureState,
-    in_scheme_quote: SchemeQuoteState,
-
-    fn class(self: Mode) ?Class {
-        return switch (self) {
-            .in_string => .constant,
-            .in_line_comment => .comment,
-            .in_haskell_signature => |state| state.class,
-            .in_scheme_quote => .class_b,
-        };
     }
 };
 
@@ -223,13 +207,7 @@ fn recognize(self: *Highlighter, scanner: *Scanner) ?Token {
         .class => |c| return .{ .class = c },
         .mode => |m| m,
     };
-    const finished = switch (mode) {
-        .in_string => |delimiter| finishString(scanner, delimiter),
-        .in_line_comment => finishLine(scanner),
-        .in_haskell_signature => |*state| state.finish(scanner),
-        .in_scheme_quote => |*state| state.finish(scanner),
-    };
-    self.mode = if (finished) null else mode;
+    self.mode = if (mode.finish(scanner)) null else mode;
     return if (mode.class()) |c| .{ .class = c } else null;
 }
 
@@ -257,21 +235,21 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
             if (class) |c| return .{ .class = c };
         },
         '\'' => return switch (language) {
-            .scheme => .{ .mode = .{ .in_scheme_quote = SchemeQuoteState{} } },
-            else => .{ .mode = .{ .in_string = '\'' } },
+            .scheme => .{ .mode = .{ .scheme_quote = .{} } },
+            else => .{ .mode = .{ .string_literal = .{ .delimiter = '\'' } } },
         },
-        '"' => return .{ .mode = .{ .in_string = '"' } },
+        '"' => return .{ .mode = .{ .string_literal = .{ .delimiter = '"' } } },
         '#' => switch (language) {
-            .ruby => return .{ .mode = .in_line_comment },
+            .ruby => return .{ .mode = .line_comment },
             .scheme => if (scanner.consumeAny("tf")) |_| return .{ .class = .constant },
             else => {},
         },
         '/' => if (language == .c and scanner.consume('/')) {
-            return .{ .mode = .in_line_comment };
+            return .{ .mode = .line_comment };
         },
         ':' => switch (language) {
             .ruby => if (scanIdentifier(scanner, language)) |_| return .{ .class = .constant },
-            .haskell => if (scanner.consume(':')) return .{ .mode = .{ .in_haskell_signature = .{} } },
+            .haskell => if (scanner.consume(':')) return .{ .mode = .{ .haskell_signature = .{} } },
             else => {},
         },
         '@' => if (language == .ruby and scanIdentifier(scanner, language) != null)
@@ -282,6 +260,99 @@ fn dispatch(scanner: *Scanner, language: Language) union(enum) { none, class: Cl
     }
     return .none;
 }
+
+const Mode = union(enum) {
+    fn class(self: Mode) ?Class {
+        return switch (self) {
+            inline else => |active| if (@hasDecl(@TypeOf(active), "class"))
+                @TypeOf(active).class
+            else
+                active.class,
+        };
+    }
+
+    fn finish(self: *Mode, scanner: *Scanner) bool {
+        return switch (self.*) {
+            inline else => |*active| active.finish(scanner),
+        };
+    }
+
+    string_literal: struct {
+        const class = Class.constant;
+        delimiter: u8,
+        fn finish(self: @This(), scanner: *Scanner) bool {
+            var escape = false;
+            while (scanner.peek()) |char| {
+                if (char == '\n') break;
+                scanner.eat();
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                switch (char) {
+                    '\\' => escape = true,
+                    '<', '&' => break scanner.uneat(),
+                    else => if (char == self.delimiter) return true,
+                }
+            }
+            return false;
+        }
+    },
+
+    line_comment: struct {
+        const class = Class.comment;
+        fn finish(self: @This(), scanner: *Scanner) bool {
+            _ = self;
+            while (scanner.peek()) |char| switch (char) {
+                '\n' => break,
+                '<', '&' => return false,
+                else => scanner.eat(),
+            };
+            return true;
+        }
+    },
+
+    haskell_signature: struct {
+        class: ?Class = null,
+        fn finish(self: *@This(), scanner: *Scanner) bool {
+            if (scanIdentifier(scanner, .haskell)) |_| {
+                self.class = .class_a;
+                return scanner.peekEol();
+            }
+            self.class = null;
+            while (scanner.peek()) |char| switch (char) {
+                '\n' => break,
+                '<', '&', 'a'...'z', 'A'...'Z' => return false,
+                else => scanner.eat(),
+            };
+            return true;
+        }
+    },
+
+    scheme_quote: struct {
+        const class = Class.class_b;
+        depth: u32 = 0,
+        fn finish(self: *@This(), scanner: *Scanner) bool {
+            if (self.depth == 0 and scanner.peek() != '(') {
+                _ = scanIdentifier(scanner, .scheme);
+                return true;
+            }
+            while (scanner.peek()) |char| : (scanner.eat()) switch (char) {
+                '\n', '<', '&' => return false,
+                '(' => self.depth += 1,
+                ')' => {
+                    self.depth -= 1;
+                    if (self.depth == 0) {
+                        scanner.eat();
+                        return true;
+                    }
+                },
+                else => {},
+            };
+            return true;
+        }
+    },
+};
 
 fn isWordCharacter(char: ?u8) bool {
     return switch (char orelse return false) {
@@ -308,75 +379,6 @@ fn scanRestOfIdentifier(scanner: *Scanner, language: Language, start: usize) []c
     };
     return scanner.source[start..scanner.offset];
 }
-
-fn finishString(scanner: *Scanner, delimiter: u8) bool {
-    var escape = false;
-    while (scanner.peek()) |char| {
-        if (char == '\n') break;
-        scanner.eat();
-        if (escape) {
-            escape = false;
-            continue;
-        }
-        switch (char) {
-            '\\' => escape = true,
-            '<', '&' => break scanner.uneat(),
-            else => if (char == delimiter) return true,
-        }
-    }
-    return false;
-}
-
-fn finishLine(scanner: *Scanner) bool {
-    while (scanner.peek()) |char| switch (char) {
-        '\n' => break,
-        '<', '&' => return false,
-        else => scanner.eat(),
-    };
-    return true;
-}
-
-const HaskellSignatureState = struct {
-    class: ?Class = null,
-
-    fn finish(self: *HaskellSignatureState, scanner: *Scanner) bool {
-        if (scanIdentifier(scanner, .haskell)) |_| {
-            self.class = .class_a;
-            return scanner.peekEol();
-        }
-        self.class = null;
-        while (scanner.peek()) |char| switch (char) {
-            '\n' => break,
-            '<', '&', 'a'...'z', 'A'...'Z' => return false,
-            else => scanner.eat(),
-        };
-        return true;
-    }
-};
-
-const SchemeQuoteState = struct {
-    depth: u32 = 0,
-
-    fn finish(self: *SchemeQuoteState, scanner: *Scanner) bool {
-        if (self.depth == 0 and scanner.peek() != '(') {
-            _ = scanIdentifier(scanner, .scheme);
-            return true;
-        }
-        while (scanner.peek()) |char| : (scanner.eat()) switch (char) {
-            '\n', '<', '&' => return false,
-            '(' => self.depth += 1,
-            ')' => {
-                self.depth -= 1;
-                if (self.depth == 0) {
-                    scanner.eat();
-                    return true;
-                }
-            },
-            else => {},
-        };
-        return true;
-    }
-};
 
 fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Language) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
