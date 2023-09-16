@@ -12,23 +12,31 @@ const MathML = @This();
 
 // TODO: CodeRenderer, MathRenderer?
 
+active: bool = false,
 // TODO maybe is_display
 kind: Kind = undefined,
 
-const Kind = enum {
+pub const Kind = enum {
     @"inline",
     display,
+
+    pub fn delimiter(self: Kind) []const u8 {
+        return switch (self) {
+            .@"inline" => "$",
+            .display => "$$",
+        };
+    }
 };
 
 pub fn begin(self: *MathML, writer: anytype, kind: Kind) !void {
-    self.* = MathML{ .kind = kind };
     switch (kind) {
         .@"inline" => try writer.writeAll("<math>\n"),
         .display => try writer.writeAll("<math display=\"block\">\n"),
     }
+    self.* = MathML{ .kind = kind };
 }
 
-pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
+pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !void {
     _ = scanner;
     _ = writer;
     _ = self;

@@ -797,6 +797,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var inlines = Stack(InlineTag){};
     var highlighter = Highlighter{};
     var mathml = MathML{};
+    // enum Mode { .normal, .highlighter, .mathml }
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
@@ -821,6 +822,12 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             if (scanner.eof()) break;
             try if (scanner.consumeStringEol("```")) highlighter.end(writer) else highlighter.line(writer, scanner);
             continue;
+        }
+        if (mathml.active) {
+            if (non_opener) |_| return tokenizer.fail("missing closing {s}", .{mathml.kind.delimiter()});
+            const scanner = tokenizer.takeScanner();
+            if (scanner.eof()) break;
+            try mathml.feed(writer, scanner);
         }
         var token = non_opener orelse tokenizer.next();
         if (token == .eof) break;
@@ -915,6 +922,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     }
     assert(inlines.len() == 0);
     if (highlighter.active) return tokenizer.takeScanner().fail("missing closing ```", .{});
+    if (mathml.active) return tokenizer.takeScanner().fail("missing closing {s}", .{mathml.kind.delimiter()});
     try blocks.truncate(writer, 0);
 }
 
