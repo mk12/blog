@@ -819,7 +819,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
-        const non_opener = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+        const unconsumed_token = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
             const token = tokenizer.next();
             switch (blocks.get(num_blocks_open)) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break token,
@@ -834,23 +834,21 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             }
         } else null;
         if (mode) |*m| {
-            if (non_opener) |_| return tokenizer.fail("missing closing {s}", .{m.closingMarker()});
+            if (unconsumed_token) |_| return tokenizer.fail("missing closing {s}", .{m.closingMarker()});
             const scanner = tokenizer.takeScanner();
             if (scanner.eof()) break;
-            switch (m.*) {
-                .highlighter => |*highlighter| if (scanner.consumeStringEol("```")) {
-                    try highlighter.end(writer);
-                    mode = null;
-                } else {
-                    try highlighter.line(writer, scanner);
+            const finished = switch (m.*) {
+                .highlighter => |*highlighter| blk: {
+                    const end = scanner.consumeStringEol("```");
+                    try if (end) highlighter.end(writer) else highlighter.line(writer, scanner);
+                    break :blk end;
                 },
-                .mathml => |*mathml| if (try mathml.feed(writer, scanner)) {
-                    mode = null;
-                },
-            }
+                .mathml => |*mathml| try mathml.feed(writer, scanner),
+            };
+            if (finished) mode = null;
             if (m.consumesEol()) continue;
         }
-        var token = non_opener orelse tokenizer.next();
+        var token = unconsumed_token orelse tokenizer.next();
         if (token == .eof) break;
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
