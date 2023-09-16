@@ -13,8 +13,7 @@ const MathML = @This();
 // TODO: CodeRenderer, MathRenderer?
 
 active: bool = false,
-// TODO maybe is_display
-kind: Kind = undefined,
+kind: Kind = undefined, // TODO maybe is_display
 
 pub const Kind = enum {
     @"inline",
@@ -28,18 +27,19 @@ pub const Kind = enum {
     }
 };
 
-pub fn begin(self: *MathML, writer: anytype, kind: Kind) !void {
+pub fn begin(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
         .@"inline" => try writer.writeAll("<math>\n"),
         .display => try writer.writeAll("<math display=\"block\">\n"),
     }
-    self.* = MathML{ .kind = kind };
+    return MathML{ .kind = kind };
 }
 
-pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !void {
+pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     _ = scanner;
     _ = writer;
     _ = self;
+    return false;
 }
 
 fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {

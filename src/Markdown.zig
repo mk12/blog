@@ -119,11 +119,11 @@ test "parse with gaps between link definitions" {
 }
 
 const Token = union(enum) {
-    // End of file
+    // Special tokens
     eof,
+    @"\n",
 
     // Blocks tokens
-    @"\n",
     @"#": u8,
     @"-",
     @"1.",
@@ -792,12 +792,29 @@ fn maybeLookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, t
     };
 }
 
+const Mode = union(enum) {
+    highlighter: Highlighter,
+    mathml: MathML,
+
+    fn consumesEol(self: Mode) bool {
+        return switch (self) {
+            .highlighter => true,
+            .mathml => false,
+        };
+    }
+
+    fn closingMarker(self: Mode) []const u8 {
+        return switch (self) {
+            .highlighter => "```",
+            .mathml => |mathml| mathml.kind.delimiter(),
+        };
+    }
+};
+
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: HookContext, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
-    var highlighter = Highlighter{};
-    var mathml = MathML{};
-    // enum Mode { .normal, .highlighter, .mathml }
+    var mode: ?Mode = null;
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
@@ -816,18 +833,22 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
             }
         } else null;
-        if (highlighter.active) {
-            if (non_opener) |_| return tokenizer.fail("missing closing ```", .{});
+        if (mode) |*m| {
+            if (non_opener) |_| return tokenizer.fail("missing closing {s}", .{m.closingMarker()});
             const scanner = tokenizer.takeScanner();
             if (scanner.eof()) break;
-            try if (scanner.consumeStringEol("```")) highlighter.end(writer) else highlighter.line(writer, scanner);
-            continue;
-        }
-        if (mathml.active) {
-            if (non_opener) |_| return tokenizer.fail("missing closing {s}", .{mathml.kind.delimiter()});
-            const scanner = tokenizer.takeScanner();
-            if (scanner.eof()) break;
-            try mathml.feed(writer, scanner);
+            switch (m.*) {
+                .highlighter => |*highlighter| if (scanner.consumeStringEol("```")) {
+                    try highlighter.end(writer);
+                    mode = null;
+                } else {
+                    try highlighter.line(writer, scanner);
+                },
+                .mathml => |*mathml| if (try mathml.feed(writer, scanner)) {
+                    mode = null;
+                },
+            }
+            if (m.consumesEol()) continue;
         }
         var token = non_opener orelse tokenizer.next();
         if (token == .eof) break;
@@ -845,13 +866,15 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 need_implicit_block = false;
             }
             switch (token) {
+                // TODO: reorder cases
                 .eof, .@"\n" => break,
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
                 .@"```x\n" => |language_str| {
                     const language = if (options.highlight_code) Language.from(language_str) else null;
-                    break try highlighter.begin(writer, language);
+                    mode = .{ .highlighter = try Highlighter.begin(writer, language) };
+                    break;
                 },
-                .@"$$" => try mathml.begin(writer, .display),
+                .@"$$" => mode = .{ .mathml = try MathML.begin(writer, .display) },
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
@@ -887,7 +910,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 ._ => try inlines.toggle(writer, .em),
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
-                .@"$" => try mathml.begin(writer, .@"inline"),
+                .@"$" => mode = .{ .mathml = try MathML.begin(writer, .@"inline") },
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
@@ -921,8 +944,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (highlighter.active) return tokenizer.takeScanner().fail("missing closing ```", .{});
-    if (mathml.active) return tokenizer.takeScanner().fail("missing closing {s}", .{mathml.kind.delimiter()});
+    if (mode) |m| return tokenizer.takeScanner().fail("missing closing {s}", .{m.closingMarker()});
     try blocks.truncate(writer, 0);
 }
 

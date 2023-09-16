@@ -13,12 +13,11 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Highlighter = @This();
 
-active: bool = false,
-language: ?Language = undefined,
-class: ?Class = undefined,
-mode: ?Mode = undefined,
-pending_newlines: usize = undefined,
-pending_spaces: ?[]const u8 = undefined,
+language: ?Language,
+class: ?Class = null,
+mode: ?Mode = null,
+pending_newlines: usize = 0,
+pending_spaces: ?[]const u8 = null,
 
 pub const Language = enum {
     c,
@@ -126,16 +125,9 @@ const Token = union(enum) {
     @"&": ?Class,
 };
 
-pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
+pub fn begin(writer: anytype, language: ?Language) !Highlighter {
     try writer.writeAll("<pre>\n<code>");
-    self.* = Highlighter{
-        .active = true,
-        .language = language,
-        .class = null,
-        .mode = null,
-        .pending_newlines = 0,
-        .pending_spaces = null,
-    };
+    return Highlighter{ .language = language };
 }
 
 pub fn end(self: *Highlighter, writer: anytype) !void {
@@ -143,7 +135,7 @@ pub fn end(self: *Highlighter, writer: anytype) !void {
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
     try writer.writeAll("</code>\n</pre>");
-    self.* = Highlighter{};
+    self.* = undefined;
 }
 
 pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
@@ -396,8 +388,7 @@ fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Langu
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_html = std.ArrayList(u8).init(allocator);
     const writer = actual_html.writer();
-    var highlighter = Highlighter{};
-    try highlighter.begin(writer, language);
+    var highlighter = try Highlighter.begin(writer, language);
     while (!scanner.eof()) try highlighter.line(writer, &scanner);
     try highlighter.end(writer);
     try testing.expectEqualStrings(expected_html, actual_html.items);
@@ -411,8 +402,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const writer = std.io.null_writer;
-    var highlighter = Highlighter{};
-    try highlighter.begin(writer, language);
+    var highlighter = try Highlighter.begin(writer, language);
     const result = while (!scanner.eof()) highlighter.line(writer, &scanner) catch |err| break err;
     try highlighter.end(writer);
     try reporter.expectFailure(expected_message, result);
