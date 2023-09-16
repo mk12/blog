@@ -130,8 +130,6 @@ const Token = union(enum) {
     @">",
     @"* * *\n",
     @"```x\n": []const u8,
-    stay_in_code_block,
-    @"```\n",
     @"$$",
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
@@ -204,14 +202,7 @@ const Tokenizer = struct {
         return self.scanner.source[self.scanner.offset..];
     }
 
-    fn next(self: *Tokenizer, in_code_block: bool) Token {
-        if (in_code_block) {
-            assert(self.peeked == null);
-            self.token_start = self.scanner.offset;
-            if (self.scanner.eof()) return .eof;
-            if (self.scanner.consumeStringEol("```")) return .@"```\n";
-            return .stay_in_code_block;
-        }
+    fn next(self: *Tokenizer) Token {
         if (self.peeked) |peeked| {
             self.peeked = null;
             self.token_start = peeked.token_start;
@@ -455,7 +446,7 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     var actual = std.ArrayList(Token).init(allocator);
     var actual_tags = std.ArrayList(Tag).init(allocator);
     while (true) {
-        const token = tokenizer.next(false);
+        const token = tokenizer.next();
         try actual.append(token);
         try actual_tags.append(token);
         if (token == .eof) break;
@@ -805,42 +796,31 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
-        var all_open = num_blocks_open == blocks.len();
-        // TODO now also need to consider mathml.active
-        // really, just want to avoid next() when that would steal from code/math renderer
-        // but for code, currently tokenizer is recognizing the final ```
-        // instead, could do:
-        // special = highlighter.active or mathml.active
-        // set token only if !(all_open and special)
-        // handle special below
-        // then token.? is ok after that
-        var token = tokenizer.next(all_open and highlighter.active);
-        while (!all_open) {
+        const non_opener = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+            const token = tokenizer.next();
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break,
-                .ul => if (token != .@"-") break,
-                .ol => if (token != .@"1.") break,
-                .blockquote => if (token != .@">") break,
-                .table => if (token != .@"| ") break,
+                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break token,
+                .ul => if (token != .@"-") break token,
+                .ol => if (token != .@"1.") break token,
+                .blockquote => if (token != .@">") break token,
+                .table => if (token != .@"| ") break token,
                 .footnote_ol => switch (token) {
                     .@"[^x]: " => |label| footnote_label = label,
-                    else => break,
+                    else => break token,
                 },
             }
-            num_blocks_open += 1;
-            all_open = num_blocks_open == blocks.len();
-            token = tokenizer.next(all_open and highlighter.active);
-        }
-        if (token == .eof) break;
+        } else null;
         if (highlighter.active) {
-            if (!all_open) return tokenizer.fail("missing closing ```", .{});
-            switch (token) {
-                .stay_in_code_block => try highlighter.line(writer, tokenizer.scanner),
-                .@"```\n" => try highlighter.end(writer),
-                else => unreachable,
+            if (non_opener) |_| return tokenizer.fail("missing closing ```", .{});
+            switch (try highlighter.feed(writer, tokenizer.scanner)) {
+                .stay => {},
+                .done => {},
+                .eof => break,
             }
             continue;
         }
+        var token = non_opener orelse tokenizer.next();
+        if (token == .eof) break;
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
@@ -861,7 +841,6 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     const language = if (options.highlight_code) Language.from(language_str) else null;
                     break try highlighter.begin(writer, language);
                 },
-                .stay_in_code_block, .@"```\n" => unreachable,
                 .@"$$" => try mathml.begin(writer, .display),
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
@@ -926,13 +905,13 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
             }
-            token = tokenizer.next(false);
+            token = tokenizer.next();
         }
         if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (highlighter.active) return tokenizer.fail("missing closing ```", .{});
+    if (highlighter.active) return tokenizer.scanner.fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
 
