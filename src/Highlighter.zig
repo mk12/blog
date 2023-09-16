@@ -142,14 +142,14 @@ pub fn end(self: *Highlighter, writer: anytype) !void {
 pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
     while (true) {
         const start = scanner.offset;
-        const token = while (true) {
+        const token, const token_offset = while (true) {
             const offset = scanner.offset;
-            if (self.recognize(scanner)) |token| break .{ .offset = offset, .value = token };
+            if (self.recognize(scanner)) |token| break .{ token, offset };
         };
-        const normal_text = scanner.source[start..token.offset];
-        const token_text = scanner.source[token.offset..scanner.offset];
+        const normal_text = scanner.source[start..token_offset];
+        const token_text = scanner.source[token_offset..scanner.offset];
         if (normal_text.len > 0) try self.write(writer, normal_text, null);
-        switch (token.value) {
+        switch (token) {
             .eol => break,
             .spaces => self.pending_spaces = token_text,
             .class => |class| try self.write(writer, token_text, class),

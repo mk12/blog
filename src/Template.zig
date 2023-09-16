@@ -229,10 +229,9 @@ const ParseResult = ParseError!struct { template: Template, terminator: Terminat
 fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .source = scanner.source, .filename = scanner.filename };
-    var terminator_offset: usize = undefined;
-    const terminator: Terminator = while (true) {
-        terminator_offset = scanner.offset;
-        const token = try scan(scanner) orelse break .eof;
+    const terminator: Terminator, const terminator_offset = while (true) {
+        const offset = scanner.offset;
+        const token = try scan(scanner) orelse break .{ .eof, offset };
         const command: Command = switch (token) {
             .define => |variable| {
                 template.trimLastIfText();
@@ -242,8 +241,8 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 });
                 continue;
             },
-            .end => break .end,
-            .@"else" => break .@"else",
+            .end => break .{ .end, offset },
+            .@"else" => break .{ .@"else", offset },
             .text => |text| blk: {
                 if (trim == .trim_start and template.commands.items.len == 0) {
                     const trimmed = trimStart(text);
