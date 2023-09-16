@@ -131,17 +131,13 @@ pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
     self.* = Highlighter{ .active = true, .language = language };
 }
 
-pub fn feed(self: *Highlighter, writer: anytype, scanner: *Scanner) !enum { stay, done, eof } {
+pub fn check(scanner: *Scanner) enum { stay, done, eof } {
     if (scanner.eof()) return .eof;
-    if (scanner.consumeStringEol("```")) {
-        try self.end(writer);
-        return .done;
-    }
-    try self.line(writer, scanner);
+    if (scanner.consumeStringEol("```")) return .done;
     return .stay;
 }
 
-fn end(self: *Highlighter, writer: anytype) !void {
+pub fn end(self: *Highlighter, writer: anytype) !void {
     self.pending_newlines -|= 1;
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
@@ -149,7 +145,7 @@ fn end(self: *Highlighter, writer: anytype) !void {
     self.* = Highlighter{};
 }
 
-fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
+pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
     while (true) {
         const start = scanner.offset;
         const token, const token_offset = while (true) {

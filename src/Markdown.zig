@@ -812,9 +812,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         } else null;
         if (highlighter.active) {
             if (non_opener) |_| return tokenizer.fail("missing closing ```", .{});
-            switch (try highlighter.feed(writer, tokenizer.scanner)) {
-                .stay => {},
-                .done => {},
+            switch (Highlighter.check(tokenizer.scanner)) {
+                .stay => try highlighter.line(writer, tokenizer.scanner),
+                .done => try highlighter.end(writer),
                 .eof => break,
             }
             continue;
