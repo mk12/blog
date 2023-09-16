@@ -14,11 +14,11 @@ const Scanner = @import("Scanner.zig");
 const Highlighter = @This();
 
 active: bool = false,
-language: ?Language = null,
-class: ?Class = null,
-mode: ?Mode = null,
-pending_newlines: usize = 0,
-pending_spaces: ?[]const u8 = null,
+language: ?Language = undefined,
+class: ?Class = undefined,
+mode: ?Mode = undefined,
+pending_newlines: usize = undefined,
+pending_spaces: ?[]const u8 = undefined,
 
 pub const Language = enum {
     c,
@@ -128,13 +128,14 @@ const Token = union(enum) {
 
 pub fn begin(self: *Highlighter, writer: anytype, language: ?Language) !void {
     try writer.writeAll("<pre>\n<code>");
-    self.* = Highlighter{ .active = true, .language = language };
-}
-
-pub fn check(scanner: *Scanner) enum { stay, done, eof } {
-    if (scanner.eof()) return .eof;
-    if (scanner.consumeStringEol("```")) return .done;
-    return .stay;
+    self.* = Highlighter{
+        .active = true,
+        .language = language,
+        .class = null,
+        .mode = null,
+        .pending_newlines = 0,
+        .pending_spaces = null,
+    };
 }
 
 pub fn end(self: *Highlighter, writer: anytype) !void {

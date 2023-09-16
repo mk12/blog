@@ -193,6 +193,11 @@ const Tokenizer = struct {
         return Tokenizer{ .scanner = scanner, .token_start = scanner.offset };
     }
 
+    fn takeScanner(self: Tokenizer) *Scanner {
+        assert(self.peeked == null);
+        return self.scanner;
+    }
+
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
         return self.scanner.failAtOffset(self.token_start, format, args);
     }
@@ -812,11 +817,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         } else null;
         if (highlighter.active) {
             if (non_opener) |_| return tokenizer.fail("missing closing ```", .{});
-            switch (Highlighter.check(tokenizer.scanner)) {
-                .stay => try highlighter.line(writer, tokenizer.scanner),
-                .done => try highlighter.end(writer),
-                .eof => break,
-            }
+            const scanner = tokenizer.takeScanner();
+            if (scanner.eof()) break;
+            try if (scanner.consumeStringEol("```")) highlighter.end(writer) else highlighter.line(writer, scanner);
             continue;
         }
         var token = non_opener orelse tokenizer.next();
@@ -847,7 +850,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
+                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.push(writer, .figure);
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeByte('\n');
@@ -855,7 +858,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 .@"![^" => try blocks.append(writer, .{ .figure, .figcaption }),
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
+                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.popTag(writer, .figcaption);
                     try writer.writeByte('\n');
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
@@ -879,7 +882,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"`" => try inlines.toggle(writer, .code),
                 .@"$" => try mathml.begin(writer, .@"inline"),
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.scanner, links, url_or_label, tag);
+                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
                     try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeAll("\">");
@@ -911,7 +914,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (highlighter.active) return tokenizer.scanner.fail("missing closing ```", .{});
+    if (highlighter.active) return tokenizer.takeScanner().fail("missing closing ```", .{});
     try blocks.truncate(writer, 0);
 }
 
@@ -1458,6 +1461,20 @@ test "render code block with triple backticks inside" {
         \\```
         \\```not the end
         \\```
+    , .{});
+}
+
+test "render block element after code block" {
+    try expectRenderSuccess(
+        \\<pre>
+        \\<code>Some code</code>
+        \\</pre>
+        \\<h1>Heading</h1>
+    ,
+        \\```
+        \\Some code
+        \\```
+        \\# Heading
     , .{});
 }
 
