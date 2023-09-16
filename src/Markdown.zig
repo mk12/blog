@@ -864,7 +864,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 need_implicit_block = false;
             }
             switch (token) {
-                // TODO: reorder cases
+                // Line-ending tokens (must break)
                 .eof, .@"\n" => break,
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
                 .@"```x\n" => |language_str| {
@@ -872,11 +872,43 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     mode = .{ .highlighter = try Highlighter.begin(writer, language) };
                     break;
                 },
-                .@"$$" => mode = .{ .mathml = try MathML.begin(writer, .display) },
+                // Common block tokens
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
                 .@"1." => try blocks.push(writer, .ol),
                 .@">" => try blocks.push(writer, .blockquote),
+                // Common inline tokens
+                .text => |text| try writer.writeAll(text),
+                ._ => try inlines.toggle(writer, .em),
+                .@"**" => try inlines.toggle(writer, .strong),
+                .@"`" => try inlines.toggle(writer, .code),
+                // Math
+                .@"$" => mode = .{ .mathml = try MathML.begin(writer, .@"inline") },
+                .@"$$" => mode = .{ .mathml = try MathML.begin(writer, .display) },
+                // Footnotes
+                .@"[^x]" => |number| if (!options.first_block_only)
+                    try fmt.format(writer,
+                        \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
+                    , .{number}),
+                .@"[^x]: " => |label| {
+                    footnote_label = label;
+                    try blocks.push(writer, .footnote_ol);
+                },
+                // Links
+                inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
+                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    try writer.writeAll("<a href=\"");
+                    try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
+                    try writer.writeAll("\">");
+                    try inlines.pushWithoutWriting(.a);
+                },
+                .@"]" => if (inlines.top() == .a) {
+                    try inlines.pop(writer);
+                } else {
+                    try blocks.popTag(writer, .figcaption);
+                    try blocks.popTag(writer, .figure);
+                },
+                // Figures
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.push(writer, .figure);
@@ -892,42 +924,20 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try blocks.popTag(writer, .figure);
                 },
-                .@"[^x]: " => |label| {
-                    footnote_label = label;
-                    try blocks.push(writer, .footnote_ol);
-                },
+                // Tables
                 .@"| " => try blocks.append(writer, .{ .table, .tr, .th }),
-                .text => |text| try writer.writeAll(text),
-                .@"<" => try writer.writeAll("&lt;"),
-                .@"&" => try writer.writeAll("&amp;"),
-                .@"\\x" => |char| try writer.writeByte(char),
-                .@"[^x]" => |number| if (!options.first_block_only)
-                    try fmt.format(writer,
-                        \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
-                    , .{number}),
-                ._ => try inlines.toggle(writer, .em),
-                .@"**" => try inlines.toggle(writer, .strong),
-                .@"`" => try inlines.toggle(writer, .code),
-                .@"$" => mode = .{ .mathml = try MathML.begin(writer, .@"inline") },
-                inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
-                    try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
-                    try writer.writeAll("\">");
-                    try inlines.pushWithoutWriting(.a);
-                },
-                .@"]" => if (inlines.top() == .a) {
-                    try inlines.pop(writer);
-                } else {
-                    try blocks.popTag(writer, .figcaption);
-                    try blocks.popTag(writer, .figure);
-                },
                 .@" | " => {
                     const block = blocks.top().?;
                     assert(block == .td or block == .th);
                     try block.writeCloseTag(writer);
                     try block.writeOpenTag(writer);
                 },
+                // Escapes
+                .@"\\x" => |char| try writer.writeByte(char),
+                // HTML entities
+                .@"<" => try writer.writeAll("&lt;"),
+                .@"&" => try writer.writeAll("&amp;"),
+                // Smart typography
                 .lsquo => try writer.writeAll("‘"),
                 .rsquo => try writer.writeAll("’"),
                 .ldquo => try writer.writeAll("“"),
