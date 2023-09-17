@@ -793,20 +793,26 @@ fn maybeLookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, t
 }
 
 const Mode = union(enum) {
-    highlighter: Highlighter,
-    mathml: MathML,
+    code: Highlighter,
+    math: MathML,
 
-    fn consumesEol(self: Mode) bool {
-        return switch (self) {
-            .highlighter => true,
-            .mathml => false,
+    fn render(self: *Mode, writer: anytype, scanner: *Scanner) !bool {
+        return switch (self.*) {
+            inline else => |*mode| mode.render(writer, scanner),
         };
     }
 
-    fn closingMarker(self: Mode) []const u8 {
+    fn consumesEol(self: Mode) bool {
         return switch (self) {
-            .highlighter => Highlighter.terminator,
-            .mathml => |mathml| mathml.kind.delimiter(),
+            .code => true,
+            .math => false,
+        };
+    }
+
+    fn terminator(self: Mode) []const u8 {
+        return switch (self) {
+            .code => Highlighter.terminator,
+            .math => |math| math.kind.delimiter(),
         };
     }
 };
@@ -814,7 +820,7 @@ const Mode = union(enum) {
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: HookContext, links: LinkMap, options: Options) !void {
     var blocks = Stack(BlockTag){};
     var inlines = Stack(InlineTag){};
-    var mode: ?Mode = null;
+    var active_mode: ?Mode = null;
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
@@ -833,16 +839,13 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
             }
         } else null;
-        if (mode) |*m| {
-            if (unconsumed_token) |_| return tokenizer.fail("missing closing {s}", .{m.closingMarker()});
+        if (active_mode) |*mode| {
+            if (unconsumed_token) |_| return tokenizer.fail("missing closing {s}", .{mode.terminator()});
             const scanner = tokenizer.takeScanner();
             if (scanner.eof()) break;
-            const finished = switch (m.*) {
-                .highlighter => |*highlighter| try highlighter.feed(writer, scanner),
-                .mathml => |*mathml| try mathml.feed(writer, scanner),
-            };
-            if (finished) mode = null;
-            if (m.consumesEol()) continue;
+            const finished = try mode.render(writer, scanner);
+            if (finished) active_mode = null;
+            if (mode.consumesEol()) continue;
         }
         var token = unconsumed_token orelse tokenizer.next();
         if (token == .eof) break;
@@ -865,7 +868,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
                 .@"```x\n" => |language_str| {
                     const language = if (options.highlight_code) Language.from(language_str) else null;
-                    mode = .{ .highlighter = try Highlighter.begin(writer, language) };
+                    active_mode = .{ .code = try Highlighter.init(writer, language) };
                     break;
                 },
                 // Common block tokens
@@ -879,8 +882,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
-                .@"$" => mode = .{ .mathml = try MathML.begin(writer, .@"inline") },
-                .@"$$" => mode = .{ .mathml = try MathML.begin(writer, .display) },
+                .@"$" => active_mode = .{ .math = try MathML.init(writer, .@"inline") },
+                .@"$$" => active_mode = .{ .math = try MathML.init(writer, .display) },
                 // Footnotes
                 .@"[^x]" => |number| if (!options.first_block_only)
                     try fmt.format(writer,
@@ -948,7 +951,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         if (options.first_block_only) break;
     }
     assert(inlines.len() == 0);
-    if (mode) |m| return tokenizer.takeScanner().fail("missing closing {s}", .{m.closingMarker()});
+    if (active_mode) |mode| return tokenizer.takeScanner().fail("missing closing {s}", .{mode.terminator()});
     try blocks.truncate(writer, 0);
 }
 

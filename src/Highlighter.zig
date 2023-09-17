@@ -125,21 +125,21 @@ const Token = union(enum) {
     @"&": ?Class,
 };
 
-pub fn begin(writer: anytype, language: ?Language) !Highlighter {
+pub fn init(writer: anytype, language: ?Language) !Highlighter {
     try writer.writeAll("<pre>\n<code>");
     return Highlighter{ .language = language };
 }
 
 pub const terminator = "```";
 
-pub fn feed(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
+pub fn render(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
     const finished = scanner.consumeStringEol(terminator);
-    try if (finished) self.end(writer) else self.line(writer, scanner);
+    try if (finished) self.renderEnd(writer) else self.renderLine(writer, scanner);
     return finished;
 }
 
-fn end(self: *Highlighter, writer: anytype) !void {
+fn renderEnd(self: *Highlighter, writer: anytype) !void {
     self.pending_newlines -|= 1;
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
@@ -147,7 +147,7 @@ fn end(self: *Highlighter, writer: anytype) !void {
     self.* = undefined;
 }
 
-fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
+fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
     while (true) {
         const start = scanner.offset;
         const token, const token_offset = while (true) {
@@ -397,9 +397,9 @@ fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Langu
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_html = std.ArrayList(u8).init(allocator);
     const writer = actual_html.writer();
-    var highlighter = try Highlighter.begin(writer, language);
-    while (!scanner.eof()) try highlighter.line(writer, &scanner);
-    try highlighter.end(writer);
+    var highlighter = try init(writer, language);
+    while (!scanner.eof()) try highlighter.renderLine(writer, &scanner);
+    try highlighter.renderEnd(writer);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
@@ -411,9 +411,9 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const writer = std.io.null_writer;
-    var highlighter = try Highlighter.begin(writer, language);
-    const result = while (!scanner.eof()) highlighter.line(writer, &scanner) catch |err| break err;
-    try highlighter.end(writer);
+    var highlighter = try init(writer, language);
+    const result = while (!scanner.eof()) highlighter.renderLine(writer, &scanner) catch |err| break err;
+    try highlighter.renderEnd(writer);
     try reporter.expectFailure(expected_message, result);
 }
 

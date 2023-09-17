@@ -6,14 +6,13 @@
 
 const std = @import("std");
 const testing = std.testing;
+const assert = std.debug.assert;
 const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const MathML = @This();
 
-// TODO: CodeRenderer, MathRenderer?
-
 active: bool = false,
-kind: Kind = undefined, // TODO maybe is_display
+kind: Kind = undefined,
 
 pub const Kind = enum {
     @"inline",
@@ -27,7 +26,7 @@ pub const Kind = enum {
     }
 };
 
-pub fn begin(writer: anytype, kind: Kind) !MathML {
+pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
         .@"inline" => try writer.writeAll("<math>\n"),
         .display => try writer.writeAll("<math display=\"block\">\n"),
@@ -35,15 +34,19 @@ pub fn begin(writer: anytype, kind: Kind) !MathML {
     return MathML{ .kind = kind };
 }
 
-pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
-    _ = scanner;
-    _ = writer;
+pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     _ = self;
-    // const start = scanner.offset;
-    // while (scanner.next()) |char| switch (char) {
-    //     '$' => break,
-    // };
+    assert(!scanner.eof());
+    while (scanner.next()) |char| switch (char) {
+        '$' => return true,
+        else => try writer.writeByte(char),
+    };
     return false;
+}
+
+fn renderClose(self: *MathML, writer: anytype) !void {
+    _ = self;
+    try writer.writeAll("</math>");
 }
 
 fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
@@ -55,16 +58,16 @@ fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !v
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_mathml = std.ArrayList(u8).init(allocator);
     const writer = actual_mathml.writer();
-    var mathml = MathML{};
-    try mathml.begin(writer, kind);
-    try testing.expect(!try mathml.feed(writer, &scanner));
+    var math = try init(writer, kind);
+    while (!scanner.eof()) _ = try math.render(writer, &scanner);
+    try math.renderClose(writer);
     try testing.expectEqualStrings(expected_mathml, actual_mathml.items);
 }
 
-// test "empty input" {
-//     try expectSuccess("<math>\n</math>", "", .@"inline");
-//     try expectSuccess("<math display=\"block\">\n</math>", "", .display);
-// }
+test "empty input" {
+    try expectSuccess("<math>\n</math>", "", .@"inline");
+    try expectSuccess("<math display=\"block\">\n</math>", "", .display);
+}
 
 // test "variable" {
 //     try expectSuccess("<math>\n<mi>x</mi>\n</math>", "x", .@"inline");
