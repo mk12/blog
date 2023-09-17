@@ -2,8 +2,8 @@
 
 //! This module implements basic code highlighting, targeting HTML and CSS.
 //! When the language is null, it still does some work to escape "<" and "&".
-//! It is driven one line at a time so that it can be used by the Markdown
-//! renderer (where code blocks can be nested in blockquotes, for example).
+//! It scans input until a closing "```" delimiter, and it yields control when
+//! it encounters a newline, so it can be used by the Markdown renderer.
 
 const std = @import("std");
 const fmt = std.fmt;
