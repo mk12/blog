@@ -130,7 +130,16 @@ pub fn begin(writer: anytype, language: ?Language) !Highlighter {
     return Highlighter{ .language = language };
 }
 
-pub fn end(self: *Highlighter, writer: anytype) !void {
+pub const terminator = "```";
+
+pub fn feed(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
+    assert(!scanner.eof());
+    const finished = scanner.consumeStringEol(terminator);
+    try if (finished) self.end(writer) else self.line(writer, scanner);
+    return finished;
+}
+
+fn end(self: *Highlighter, writer: anytype) !void {
     self.pending_newlines -|= 1;
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
@@ -138,7 +147,7 @@ pub fn end(self: *Highlighter, writer: anytype) !void {
     self.* = undefined;
 }
 
-pub fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
+fn line(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
     while (true) {
         const start = scanner.offset;
         const token, const token_offset = while (true) {

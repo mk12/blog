@@ -39,6 +39,10 @@ pub fn feed(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     _ = scanner;
     _ = writer;
     _ = self;
+    // const start = scanner.offset;
+    // while (scanner.next()) |char| switch (char) {
+    //     '$' => break,
+    // };
     return false;
 }
 

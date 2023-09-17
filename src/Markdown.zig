@@ -805,7 +805,7 @@ const Mode = union(enum) {
 
     fn closingMarker(self: Mode) []const u8 {
         return switch (self) {
-            .highlighter => "```",
+            .highlighter => Highlighter.terminator,
             .mathml => |mathml| mathml.kind.delimiter(),
         };
     }
@@ -838,11 +838,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             const scanner = tokenizer.takeScanner();
             if (scanner.eof()) break;
             const finished = switch (m.*) {
-                .highlighter => |*highlighter| blk: {
-                    const end = scanner.consumeStringEol("```");
-                    try if (end) highlighter.end(writer) else highlighter.line(writer, scanner);
-                    break :blk end;
-                },
+                .highlighter => |*highlighter| try highlighter.feed(writer, scanner),
                 .mathml => |*mathml| try mathml.feed(writer, scanner),
             };
             if (finished) mode = null;
