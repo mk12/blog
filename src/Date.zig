@@ -69,7 +69,7 @@ fn parseField(
     @field(date, name) = value;
 }
 
-fn expectSuccess(expected: Date, source: []const u8) !void {
+fn expectParse(expected: Date, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var reporter = Reporter.init(arena.allocator());
@@ -78,7 +78,7 @@ fn expectSuccess(expected: Date, source: []const u8) !void {
     try testing.expectEqual(expected, try parse(&scanner));
 }
 
-fn expectFailure(expected_message: []const u8, source: []const u8) !void {
+fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var reporter = Reporter.init(arena.allocator());
@@ -87,22 +87,22 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
 }
 
 test "parse valid" {
-    try expectSuccess(
+    try expectParse(
         Date{ .year = 2002, .month = 12, .day = 31, .hour = 14, .minute = 59, .second = 1, .tz_offset_h = 0 },
         "2002-12-31T14:59:01+00:00",
     );
-    try expectSuccess(
+    try expectParse(
         Date{ .year = 2023, .month = 4, .day = 29, .hour = 10, .minute = 6, .second = 12, .tz_offset_h = -7 },
         "2023-04-29T10:06:12-07:00",
     );
 }
 
 test "parse invalid" {
-    try expectFailure("<input>:1:1: unexpected EOF parsing year", "");
-    try expectFailure("<input>:1:1: \"asdf\": invalid year", "asdf");
-    try expectFailure("<input>:1:5: expected \"-\", got \".\"", "2000.");
-    try expectFailure("<input>:1:12: \"1z\": invalid hour", "2023-04-29T1z:06:12-07:00");
-    try expectFailure("<input>:1:6: \"00\": month must be from 1 to 12", "2023-00-29T10:06:12-07:00");
+    try expectParseFailure("<input>:1:1: unexpected EOF parsing year", "");
+    try expectParseFailure("<input>:1:1: \"asdf\": invalid year", "asdf");
+    try expectParseFailure("<input>:1:5: expected \"-\", got \".\"", "2000.");
+    try expectParseFailure("<input>:1:12: \"1z\": invalid hour", "2023-04-29T1z:06:12-07:00");
+    try expectParseFailure("<input>:1:6: \"00\": month must be from 1 to 12", "2023-00-29T10:06:12-07:00");
 }
 
 test "comptime from" {

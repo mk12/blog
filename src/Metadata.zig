@@ -38,7 +38,7 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     return meta;
 }
 
-fn expectSuccess(expected: Metadata, source: []const u8) !void {
+fn expect(expected: Metadata, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var reporter = Reporter.init(arena.allocator());
@@ -56,7 +56,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
 }
 
 test "draft" {
-    try expectSuccess(Metadata{
+    try expect(Metadata{
         .title = "The title",
         .subtitle = "The subtitle",
         .category = "Category",
@@ -72,7 +72,7 @@ test "draft" {
 }
 
 test "published" {
-    try expectSuccess(Metadata{
+    try expect(Metadata{
         .title = "The title",
         .subtitle = "The subtitle",
         .category = "Category",

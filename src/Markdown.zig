@@ -955,11 +955,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     try blocks.truncate(writer, 0);
 }
 
-fn expectRenderSuccess(expected_html: []const u8, source: []const u8, options: Options) !void {
-    try expectRenderSuccessWithHooks(expected_html, source, options, .{});
+fn expect(expected_html: []const u8, source: []const u8, options: Options) !void {
+    try expectWithHooks(expected_html, source, options, .{});
 }
 
-fn expectRenderSuccessWithHooks(expected_html: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
+fn expectWithHooks(expected_html: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -972,11 +972,11 @@ fn expectRenderSuccessWithHooks(expected_html: []const u8, source: []const u8, o
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
-fn expectRenderFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
-    try expectRenderFailureWithHooks(expected_message, source, options, .{});
+fn expectFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
+    try expectFailureWithHooks(expected_message, source, options, .{});
 }
 
-fn expectRenderFailureWithHooks(expected_message: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
+fn expectFailureWithHooks(expected_message: []const u8, source: []const u8, options: Options, hooks: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -990,17 +990,17 @@ fn expectRenderFailureWithHooks(expected_message: []const u8, source: []const u8
 }
 
 test "render empty string" {
-    try expectRenderSuccess("", "", .{});
-    try expectRenderSuccess("", "", .{ .is_inline = true });
-    try expectRenderSuccess("", "", .{ .first_block_only = true });
-    try expectRenderSuccess("", "", .{ .is_inline = true, .first_block_only = true });
+    try expect("", "", .{});
+    try expect("", "", .{ .is_inline = true });
+    try expect("", "", .{ .first_block_only = true });
+    try expect("", "", .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render text" {
-    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{});
-    try expectRenderSuccess("Hello world!", "Hello world!", .{ .is_inline = true });
-    try expectRenderSuccess("<p>Hello world!</p>", "Hello world!", .{ .first_block_only = true });
-    try expectRenderSuccess("Hello world!", "Hello world!", .{ .is_inline = true, .first_block_only = true });
+    try expect("<p>Hello world!</p>", "Hello world!", .{});
+    try expect("Hello world!", "Hello world!", .{ .is_inline = true });
+    try expect("<p>Hello world!</p>", "Hello world!", .{ .first_block_only = true });
+    try expect("Hello world!", "Hello world!", .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render first block only" {
@@ -1009,8 +1009,8 @@ test "render first block only" {
         \\
         \\This is the second paragraph.
     ;
-    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
-    try expectRenderSuccess("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
+    try expect("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
+    try expect("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render first block only with gap" {
@@ -1020,17 +1020,21 @@ test "render first block only with gap" {
         \\
         \\This is the second paragraph.
     ;
-    try expectRenderSuccess("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
-    try expectRenderSuccess("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
+    try expect("<p>This is the first paragraph.</p>", source, .{ .first_block_only = true });
+    try expect("This is the first paragraph.", source, .{ .is_inline = true, .first_block_only = true });
 }
 
 test "render backslash at end" {
-    try expectRenderSuccess("<p>\\</p>", "\\", .{});
-    try expectRenderSuccess("<p>Foo\\</p>", "Foo\\", .{});
+    try expect("<p>\\</p>", "\\", .{});
+    try expect("<p>Foo\\</p>", "Foo\\", .{});
+}
+
+test "render backslash before newline" {
+    try expect("<p>\\</p>", "\\\n", .{});
 }
 
 test "render backslash scapes" {
-    try expectRenderSuccess(
+    try expect(
         \\<p># _nice_ `stuff` \</p>
     ,
         \\\# \_nice\_ \`stuff\` \\
@@ -1038,31 +1042,31 @@ test "render backslash scapes" {
 }
 
 test "render inline raw html" {
-    try expectRenderSuccess("<p><cite>Foo</cite></p>", "<cite>Foo</cite>", .{});
+    try expect("<p><cite>Foo</cite></p>", "<cite>Foo</cite>", .{});
 }
 
 test "render Markdown within raw inline html" {
-    try expectRenderSuccess("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{});
+    try expect("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{});
 }
 
 test "render entities" {
-    try expectRenderSuccess("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{});
+    try expect("<p>1 + 1 &lt; 3, X>Y, AT&T</p>", "1 + 1 < 3, X>Y, AT&T", .{});
 }
 
 test "render raw entities" {
-    try expectRenderSuccess("<p>I want a &dollar;</p>", "I want a &dollar;", .{});
+    try expect("<p>I want a &dollar;</p>", "I want a &dollar;", .{});
 }
 
 test "render inline element after false raw inline html" {
-    try expectRenderSuccess("<p>x&lt;y<em>z</em></p>", "x<y_z_", .{});
+    try expect("<p>x&lt;y<em>z</em></p>", "x<y_z_", .{});
 }
 
 test "render inline element after false raw block html" {
-    try expectRenderSuccess("<p>&lt;div jk not a <em>div</em></p>", "<div jk not a _div_", .{});
+    try expect("<p>&lt;div jk not a <em>div</em></p>", "<div jk not a _div_", .{});
 }
 
 test "render raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<div id="foo">
         \\Just in a div.
         \\</div>
@@ -1074,7 +1078,7 @@ test "render raw block html" {
 }
 
 test "render text around raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Before</p>
         \\<block>
         \\After (part of block)
@@ -1086,7 +1090,7 @@ test "render text around raw block html" {
 }
 
 test "render inlines around raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<p><em>Before</em></p>
         \\<block>
         \\<em>After (part of block)</em>
@@ -1098,7 +1102,7 @@ test "render inlines around raw block html" {
 }
 
 test "render text after exiting raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<block>
         \\<p>After (not part of block)</p>
     ,
@@ -1109,7 +1113,7 @@ test "render text after exiting raw block html" {
 }
 
 test "render text before and after exiting raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<block>
         \\After (part of block)
         \\<p>After (not part of block)</p>
@@ -1122,7 +1126,7 @@ test "render text before and after exiting raw block html" {
 }
 
 test "render inlines before and after exiting raw block html" {
-    try expectRenderSuccess(
+    try expect(
         \\<block>
         \\<em>After (part of block)</em>
         \\<p><em>After (not part of block)</em></p>
@@ -1135,7 +1139,7 @@ test "render inlines before and after exiting raw block html" {
 }
 
 test "render raw block html with inline elements" {
-    try expectRenderSuccess(
+    try expect(
         \\<div id="foo">
         \\Just in a <strong>div</strong>.
         \\</div>
@@ -1147,7 +1151,7 @@ test "render raw block html with inline elements" {
 }
 
 test "render raw block html with nested paragraph" {
-    try expectRenderSuccess(
+    try expect(
         \\<div>
         \\<p>Paragraph.</p>
         \\</div>
@@ -1161,7 +1165,7 @@ test "render raw block html with nested paragraph" {
 }
 
 test "render raw block html with nested blockquote and list" {
-    try expectRenderSuccess(
+    try expect(
         \\<div>
         \\<blockquote>
         \\<p>Paragraph.</p>
@@ -1180,7 +1184,7 @@ test "render raw block html with nested blockquote and list" {
 }
 
 test "render raw block html with nested thematic break" {
-    try expectRenderSuccess(
+    try expect(
         \\<div>
         \\<hr>
         \\No paragraph!
@@ -1194,7 +1198,7 @@ test "render raw block html with nested thematic break" {
 }
 
 test "render raw block html with nested thematic break and paragraph" {
-    try expectRenderSuccess(
+    try expect(
         \\<div>
         \\<hr>
         \\<p>Yes paragraph!</p>
@@ -1209,27 +1213,27 @@ test "render raw block html with nested thematic break and paragraph" {
 }
 
 test "render code" {
-    try expectRenderSuccess("<p><code>foo_bar</code></p>", "`foo_bar`", .{});
+    try expect("<p><code>foo_bar</code></p>", "`foo_bar`", .{});
 }
 
 test "render code with backslash" {
-    try expectRenderSuccess("<p><code>\\newline</code></p>", "`\\newline`", .{});
+    try expect("<p><code>\\newline</code></p>", "`\\newline`", .{});
 }
 
 test "render code with entities" {
-    try expectRenderSuccess("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{});
+    try expect("<p><code>&lt;foo> &amp;amp;</code></p>", "`<foo> &amp;`", .{});
 }
 
 test "render emphasis" {
-    try expectRenderSuccess("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{});
+    try expect("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{});
 }
 
 test "render strong" {
-    try expectRenderSuccess("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{});
+    try expect("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{});
 }
 
 test "render nested inlines" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>a <strong>b <em>c <code>d</code> e</em> f</strong> g</p>
     ,
         \\a **b _c `d` e_ f** g
@@ -1237,11 +1241,11 @@ test "render nested inlines" {
 }
 
 test "render inline link" {
-    try expectRenderSuccess("<p><a href=\"#bar\">foo</a></p>", "[foo](#bar)", .{});
+    try expect("<p><a href=\"#bar\">foo</a></p>", "[foo](#bar)", .{});
 }
 
 test "render reference link" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Look at <a href="https://example.com">foo</a>.</p>
     ,
         \\Look at [foo][bar].
@@ -1251,7 +1255,7 @@ test "render reference link" {
 }
 
 test "render shortcut reference link" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Look at <a href="https://example.com">foo</a>.</p>
     ,
         \\Look at [foo].
@@ -1261,7 +1265,7 @@ test "render shortcut reference link" {
 }
 
 test "render link with escaped brackets" {
-    try expectRenderSuccess(
+    try expect(
         \\<p><a href="1">]</a></p>
         \\<p><a href="2"><code>]</code></a></p>
         \\<p><a href="3"><code>\</code></a></p>
@@ -1275,11 +1279,11 @@ test "render link with escaped brackets" {
 }
 
 test "render heading" {
-    try expectRenderSuccess("<h1>This is h1</h1>", "# This is h1", .{});
+    try expect("<h1>This is h1</h1>", "# This is h1", .{});
 }
 
 test "render all headings" {
-    try expectRenderSuccess(
+    try expect(
         \\<h1>This is h1</h1>
         \\<h2>This is h2</h2>
         \\<h3>This is h3</h3>
@@ -1299,19 +1303,19 @@ test "render all headings" {
 }
 
 test "render false heading without space" {
-    try expectRenderSuccess("<p>#1</p>", "#1", .{});
+    try expect("<p>#1</p>", "#1", .{});
 }
 
 test "render heading with multiple spaces" {
-    try expectRenderSuccess("<h1>  X</h1>", "#   X", .{});
+    try expect("<h1>  X</h1>", "#   X", .{});
 }
 
 test "render inline after false heading" {
-    try expectRenderSuccess("<p>####### <em>hi</em></p>", "####### _hi_", .{});
+    try expect("<p>####### <em>hi</em></p>", "####### _hi_", .{});
 }
 
 test "render heading id" {
-    try expectRenderSuccess(
+    try expect(
         \\<h1 id="this-is-h1">This is h1</h1>
         \\<h6 id="this-is-h6">This is h6</h6>
         \\<h2 id="abcxyz-abcxyz-0123456789">abcxyz ABCXYZ 0123456789</h2>
@@ -1325,23 +1329,23 @@ test "render heading id" {
 }
 
 test "render shifted heading (positive)" {
-    try expectRenderSuccess("<h2>Foo</h2>", "# Foo", .{ .shift_heading_level = 1 });
-    try expectRenderSuccess("<h3>Foo</h3>", "## Foo", .{ .shift_heading_level = 1 });
-    try expectRenderSuccess("<h6>Foo</h6>", "###### Foo", .{ .shift_heading_level = 1 });
+    try expect("<h2>Foo</h2>", "# Foo", .{ .shift_heading_level = 1 });
+    try expect("<h3>Foo</h3>", "## Foo", .{ .shift_heading_level = 1 });
+    try expect("<h6>Foo</h6>", "###### Foo", .{ .shift_heading_level = 1 });
 }
 
 test "render shifted heading (negative)" {
-    try expectRenderSuccess("<h1>Foo</h1>", "# Foo", .{ .shift_heading_level = -1 });
-    try expectRenderSuccess("<h1>Foo</h1>", "## Foo", .{ .shift_heading_level = -1 });
-    try expectRenderSuccess("<h5>Foo</h5>", "###### Foo", .{ .shift_heading_level = -1 });
+    try expect("<h1>Foo</h1>", "# Foo", .{ .shift_heading_level = -1 });
+    try expect("<h1>Foo</h1>", "## Foo", .{ .shift_heading_level = -1 });
+    try expect("<h5>Foo</h5>", "###### Foo", .{ .shift_heading_level = -1 });
 }
 
 test "render false block inside heading" {
-    try expectRenderSuccess("<h1>> Not a blockquote</h1>", "# > Not a blockquote", .{});
+    try expect("<h1>> Not a blockquote</h1>", "# > Not a blockquote", .{});
 }
 
 test "render unordered list" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Here is the list:</p>
         \\<ul>
         \\<li>Apples</li>
@@ -1356,7 +1360,7 @@ test "render unordered list" {
 }
 
 test "render ordered list" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Here is the list:</p>
         \\<ol>
         \\<li>Apples</li>
@@ -1371,7 +1375,7 @@ test "render ordered list" {
 }
 
 test "render multiple lists" {
-    try expectRenderSuccess(
+    try expect(
         \\<ol>
         \\<li>Apples</li>
         \\<li>Oranges</li>
@@ -1390,15 +1394,15 @@ test "render multiple lists" {
 }
 
 test "render two thematic breaks" {
-    try expectRenderSuccess("<hr>\n<hr>", "* * *\n* * *", .{});
+    try expect("<hr>\n<hr>", "* * *\n* * *", .{});
 }
 
 test "render three asterisks with text after" {
-    try expectRenderSuccess("<p>* * *foo</p>", "* * *foo", .{});
+    try expect("<p>* * *foo</p>", "* * *foo", .{});
 }
 
 test "render two thematic breaks in blockquote" {
-    try expectRenderSuccess(
+    try expect(
         \\<blockquote>
         \\<hr>
         \\<hr>
@@ -1410,7 +1414,7 @@ test "render two thematic breaks in blockquote" {
 }
 
 test "render blockquote with blank final line" {
-    try expectRenderSuccess(
+    try expect(
         \\<blockquote>
         \\<p>Hi</p>
         \\</blockquote>
@@ -1421,7 +1425,7 @@ test "render blockquote with blank final line" {
 }
 
 test "render a few things" {
-    try expectRenderSuccess(
+    try expect(
         \\<h1>Hello <strong>world</strong>!</h1>
         \\<p>Here is <em>some</em> text.</p>
         \\<hr>
@@ -1438,7 +1442,7 @@ test "render a few things" {
 }
 
 test "render nested blockquotes" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Quote:</p>
         \\<blockquote>
         \\<p>Some stuff.</p>
@@ -1466,19 +1470,19 @@ test "render nested blockquotes" {
 }
 
 test "render code block" {
-    try expectRenderSuccess("<pre>\n<code>Foo</code>\n</pre>", "```\nFoo\n```", .{});
+    try expect("<pre>\n<code>Foo</code>\n</pre>", "```\nFoo\n```", .{});
 }
 
 test "render code block with language but no highlighting" {
-    try expectRenderSuccess("<pre>\n<code>Foo</code>\n</pre>", "```html\nFoo\n```", .{});
+    try expect("<pre>\n<code>Foo</code>\n</pre>", "```html\nFoo\n```", .{});
 }
 
 test "render code block with blank lines" {
-    try expectRenderSuccess("<pre>\n<code>\n\n</code>\n</pre>", "```\n\n\n\n```", .{});
+    try expect("<pre>\n<code>\n\n</code>\n</pre>", "```\n\n\n\n```", .{});
 }
 
 test "render code block with special characters" {
-    try expectRenderSuccess(
+    try expect(
         \\<pre>
         \\<code>&lt;foo> [bar] `baz` _qux_ &amp; \</code>
         \\</pre>
@@ -1490,7 +1494,7 @@ test "render code block with special characters" {
 }
 
 test "render code block with triple backticks inside" {
-    try expectRenderSuccess(
+    try expect(
         \\<pre>
         \\<code>```not the end</code>
         \\</pre>
@@ -1502,7 +1506,7 @@ test "render code block with triple backticks inside" {
 }
 
 test "render block element after code block" {
-    try expectRenderSuccess(
+    try expect(
         \\<pre>
         \\<code>Some code</code>
         \\</pre>
@@ -1516,7 +1520,7 @@ test "render block element after code block" {
 }
 
 test "render code block in blockquote" {
-    try expectRenderSuccess(
+    try expect(
         \\<blockquote>
         \\<pre>
         \\<code>Some code
@@ -1534,19 +1538,19 @@ test "render code block in blockquote" {
 }
 
 test "unclosed code block" {
-    try expectRenderFailure("<input>:1:4: missing closing ```", "```", .{});
+    try expectFailure("<input>:1:4: missing closing ```", "```", .{});
 }
 
 test "unclosed code block in blockquote" {
-    try expectRenderFailure("<input>:1:6: missing closing ```", "> ```", .{});
+    try expectFailure("<input>:1:6: missing closing ```", "> ```", .{});
 }
 
 test "unclosed code block in blockquote with text after" {
-    try expectRenderFailure("<input>:2:1: missing closing ```", "> ```\n\nFoo", .{});
+    try expectFailure("<input>:2:1: missing closing ```", "> ```\n\nFoo", .{});
 }
 
 test "render smart typography" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>This—“that isn’t 1–2” … other.</p>
     ,
         \\This -- "that isn't 1--2" ... other.
@@ -1554,11 +1558,11 @@ test "render smart typography" {
 }
 
 test "render space-aware smart typography when space is already consumed" {
-    try expectRenderSuccess("<h1>– en dash not em</h1>", "# -- en dash not em", .{});
+    try expect("<h1>– en dash not em</h1>", "# -- en dash not em", .{});
 }
 
 test "render footnotes" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
         \\<p>Bar<sup id="fnref:2"><a href="#fn:2">2</a></sup>.</p>
         \\<hr>
@@ -1577,7 +1581,7 @@ test "render footnotes" {
 }
 
 test "no footnotes if first block only" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Foo.</p>
     ,
         \\Foo[^1].
@@ -1586,7 +1590,7 @@ test "no footnotes if first block only" {
 }
 
 test "render figure (url)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<img src="rabbit.jpg">
         \\<figcaption>Some caption</figcaption>
@@ -1597,7 +1601,7 @@ test "render figure (url)" {
 }
 
 test "render figure (reference)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<img src="rabbit.jpg">
         \\<figcaption>Some caption</figcaption>
@@ -1610,7 +1614,7 @@ test "render figure (reference)" {
 }
 
 test "render figure (shortcut)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<img src="rabbit.jpg">
         \\<figcaption>Some caption</figcaption>
@@ -1623,7 +1627,7 @@ test "render figure (shortcut)" {
 }
 
 test "render figure with link in caption" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<img src="rabbit.jpg">
         \\<figcaption>Some <a href="foo">caption</a> here</figcaption>
@@ -1635,7 +1639,7 @@ test "render figure with link in caption" {
 }
 
 test "render top-caption figure (url)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<figcaption>Some caption</figcaption>
         \\<img src="rabbit.jpg">
@@ -1646,7 +1650,7 @@ test "render top-caption figure (url)" {
 }
 
 test "render top-caption figure (reference)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<figcaption>Some caption</figcaption>
         \\<img src="rabbit.jpg">
@@ -1659,7 +1663,7 @@ test "render top-caption figure (reference)" {
 }
 
 test "render top-caption figure (attempting shortcut)" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<figcaption>Some caption</figcaption>
         \\<img src="">
@@ -1670,7 +1674,7 @@ test "render top-caption figure (attempting shortcut)" {
 }
 
 test "render top-caption figure with link in caption" {
-    try expectRenderSuccess(
+    try expect(
         \\<figure>
         \\<figcaption>Some <a href="foo">caption</a> here</figcaption>
         \\<img src="rabbit.jpg">
@@ -1682,11 +1686,11 @@ test "render top-caption figure with link in caption" {
 }
 
 test "render false figure inline" {
-    try expectRenderSuccess("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
+    try expect("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
 }
 
 test "render unbalanced right bracket" {
-    try expectRenderSuccess(
+    try expect(
         \\<p>Some ] out of nowhere</p>
     ,
         \\Some ] out of nowhere
@@ -1699,14 +1703,14 @@ test "render empty table" {
         \\<tr><th></th></tr>
         \\</table>
     ;
-    try expectRenderSuccess(html, "|", .{});
-    try expectRenderSuccess(html, "||", .{});
-    try expectRenderSuccess(html, "| |", .{});
-    try expectRenderSuccess(html, "|  |", .{});
+    try expect(html, "|", .{});
+    try expect(html, "||", .{});
+    try expect(html, "| |", .{});
+    try expect(html, "|  |", .{});
 }
 
 test "render basic table" {
-    try expectRenderSuccess(
+    try expect(
         \\<table>
         \\<tr><th>Fruit</th><th>Color</th></tr>
         \\<tr><td>Apple</td><td>Red</td></tr>
@@ -1720,7 +1724,7 @@ test "render basic table" {
 }
 
 test "render table with heading separator" {
-    try expectRenderSuccess(
+    try expect(
         \\<table>
         \\<tr><th>Fruit</th><th>Color</th></tr>
         \\<tr><td>Apple</td><td>Red</td></tr>
@@ -1735,7 +1739,7 @@ test "render table with heading separator" {
 }
 
 test "render table with weird spacing" {
-    try expectRenderSuccess(
+    try expect(
         \\<table>
         \\<tr><th>a</th><th>b</th></tr>
         \\<tr><td>c</td><td>d</td></tr>
@@ -1752,7 +1756,7 @@ test "render table with weird spacing" {
 }
 
 test "render table omitting pipes at end" {
-    try expectRenderSuccess(
+    try expect(
         \\<table>
         \\<tr><th>x</th><th>y</th></tr>
         \\<tr><td>z</td><td>w</td></tr>
@@ -1764,7 +1768,7 @@ test "render table omitting pipes at end" {
 }
 
 test "render table with inlines in cells" {
-    try expectRenderSuccess(
+    try expect(
         \\<table>
         \\<tr><th><em>x</em></th><th><code>this || that</code></th><th><a href="b">a</a></th></tr>
         \\</table>
@@ -1774,7 +1778,7 @@ test "render table with inlines in cells" {
 }
 
 test "unclosed inline at end" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:5: unclosed <em> tag
     ,
         \\_foo
@@ -1782,7 +1786,7 @@ test "unclosed inline at end" {
 }
 
 test "unclosed inline in middle" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:15: unclosed <strong> tag
     ,
         \\> Some **stuff
@@ -1792,7 +1796,7 @@ test "unclosed inline in middle" {
 }
 
 test "unclosed inline code" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:6: unclosed <code> tag
     ,
         \\`nice
@@ -1801,7 +1805,7 @@ test "unclosed inline code" {
 }
 
 test "exceed max inline tag depth" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:21: exceeded maximum tag depth (8)
     ,
         \\_ ** _ ** _ ** _ ** `
@@ -1809,7 +1813,7 @@ test "exceed max inline tag depth" {
 }
 
 test "exceed max inline tag depth with link" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:21: exceeded maximum tag depth (8)
     ,
         \\_ ** _ ** _ ** _ ** [foo](bar)
@@ -1817,7 +1821,7 @@ test "exceed max inline tag depth with link" {
 }
 
 test "exceed max block tag depth" {
-    try expectRenderFailure(
+    try expectFailure(
         \\<input>:1:17: exceeded maximum tag depth (8)
     ,
         \\> > > > > > > > -
@@ -1831,7 +1835,7 @@ test "writeUrl hook" {
             try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, context.filename, self.data });
         }
     }{};
-    try expectRenderSuccessWithHooks(
+    try expectWithHooks(
         \\<p><a href="hook got #foo in <input>, can access data">text</a></p>
     ,
         \\[text](#foo)
@@ -1846,7 +1850,7 @@ test "failure in writeUrl hook (inline)" {
             return context.fail("{s}: bad url", .{url});
         }
     }{};
-    try expectRenderFailureWithHooks(
+    try expectFailureWithHooks(
         \\<input>:1:18: xyz: bad url
     ,
         \\[some link text](xyz)
@@ -1861,7 +1865,7 @@ test "failure in writeUrl hook (reference)" {
             return context.fail("{s}: bad url", .{url});
         }
     }{};
-    try expectRenderFailureWithHooks(
+    try expectFailureWithHooks(
         \\<input>:3:8: xyz: bad url
     ,
         \\[some

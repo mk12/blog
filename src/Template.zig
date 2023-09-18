@@ -310,7 +310,7 @@ fn trimEnd(text: []const u8) []const u8 {
     return mem.trimRight(u8, text[0..index], whitespace_chars);
 }
 
-fn expectParseSuccess(allocator: Allocator, source: []const u8, include_map: std.StringHashMap(Template)) !Template {
+fn expectParse(allocator: Allocator, source: []const u8, include_map: std.StringHashMap(Template)) !Template {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
@@ -333,7 +333,7 @@ test "parse text" {
     const allocator = arena.allocator();
     const source = "foo";
     var include_map = std.StringHashMap(Template).init(allocator);
-    var template = try expectParseSuccess(allocator, source, include_map);
+    var template = try expectParse(allocator, source, include_map);
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
     try testing.expectEqualSlices(Command, &.{Command{ .text = source }}, template.commands.items);
 }
@@ -355,7 +355,7 @@ test "parse everything" {
     var include_map = std.StringHashMap(Template).init(allocator);
     try include_map.put("base.html", undefined);
     const base_template: *const Template = include_map.getPtr("base.html").?;
-    var template = try expectParseSuccess(allocator, source, include_map);
+    var template = try expectParse(allocator, source, include_map);
 
     const definitions = template.definitions.items;
     try testing.expectEqual(@as(usize, 1), definitions.len);
@@ -590,7 +590,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
     };
 }
 
-fn expectExecuteSuccess(expected: []const u8, source: []const u8, object: anytype, includes: anytype) !void {
+fn expectExecute(expected: []const u8, source: []const u8, object: anytype, includes: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -632,47 +632,47 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
 }
 
 test "execute text" {
-    try expectExecuteSuccess("", "", .{}, .{});
-    try expectExecuteSuccess("Hello world!", "Hello world!", .{}, .{});
+    try expectExecute("", "", .{}, .{});
+    try expectExecute("Hello world!", "Hello world!", .{}, .{});
 }
 
 test "execute variable" {
-    try expectExecuteSuccess("foo", "{{ . }}", "foo", .{});
-    try expectExecuteSuccess("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" }, .{});
+    try expectExecute("foo", "{{ . }}", "foo", .{});
+    try expectExecute("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" }, .{});
 }
 
 test "execute shadowing" {
-    try expectExecuteSuccess("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } }, .{});
-    try expectExecuteSuccess("aaa", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .z = "b" } }, .{});
+    try expectExecute("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } }, .{});
+    try expectExecute("aaa", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .z = "b" } }, .{});
 }
 
 test "execute definition" {
-    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{}, .{});
-    try expectExecuteSuccess("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" }, .{});
+    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{}, .{});
+    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" }, .{});
 }
 
 test "execute if" {
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ end }}", .{ .val = true }, .{});
-    try expectExecuteSuccess("", "{{ if val }}yes{{ end }}", .{ .val = false }, .{});
+    try expectExecute("yes", "{{ if val }}yes{{ end }}", .{ .val = true }, .{});
+    try expectExecute("", "{{ if val }}yes{{ end }}", .{ .val = false }, .{});
 }
 
 test "execute if-else bool" {
-    try expectExecuteSuccess("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true }, .{});
-    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false }, .{});
+    try expectExecute("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true }, .{});
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false }, .{});
 }
 
 test "execute if-else string" {
-    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
-    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
-    try expectExecuteSuccess("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) }, .{});
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) }, .{});
 }
 
 test "execute range" {
-    try expectExecuteSuccess("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" }, .{});
+    try expectExecute("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" }, .{});
 }
 
 test "execute range-else" {
-    try expectExecuteSuccess("empty!", "{{ range . }}{{ . }},{{ else }}empty!{{ end }}", .{}, .{});
+    try expectExecute("empty!", "{{ range . }}{{ . }},{{ else }}empty!{{ end }}", .{}, .{});
 }
 
 test "execute not a string" {
@@ -684,7 +684,7 @@ test "execute variable not found" {
 }
 
 test "execute everything" {
-    try expectExecuteSuccess(
+    try expectExecute(
         \\From base:
         \\        Value: inner bar,
         \\        Value: foo,

@@ -67,7 +67,7 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
     try writer.writeAll("</math>");
 }
 
-fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
+fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -83,11 +83,11 @@ fn expectSuccess(expected_mathml: []const u8, source: []const u8, kind: Kind) !v
 }
 
 test "empty input" {
-    try expectSuccess("<math></math>", "", .@"inline");
-    try expectSuccess("<math display=\"block\"></math>", "", .display);
+    try expect("<math></math>", "", .@"inline");
+    try expect("<math display=\"block\"></math>", "", .display);
 }
 
 test "variable" {
-    try expectSuccess("<math><mi>x</mi></math>", "x", .@"inline");
-    try expectSuccess("<math display=\"block\"><mi>x</mi></math>", "x", .display);
+    try expect("<math><mi>x</mi></math>", "x", .@"inline");
+    try expect("<math display=\"block\"><mi>x</mi></math>", "x", .display);
 }

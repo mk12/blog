@@ -388,7 +388,7 @@ fn scanRestOfIdentifier(scanner: *Scanner, language: Language, start: usize) []c
     return scanner.source[start..scanner.offset];
 }
 
-fn expectSuccess(expected_html: []const u8, source: []const u8, language: ?Language) !void {
+fn expect(expected_html: []const u8, source: []const u8, language: ?Language) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -418,19 +418,19 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
 }
 
 test "empty input" {
-    try expectSuccess("<pre>\n<code></code>\n</pre>", "", null);
+    try expect("<pre>\n<code></code>\n</pre>", "", null);
 }
 
 test "empty line" {
-    try expectSuccess("<pre>\n<code></code>\n</pre>", "\n", null);
+    try expect("<pre>\n<code></code>\n</pre>", "\n", null);
 }
 
 test "blank line" {
-    try expectSuccess("<pre>\n<code>\n</code>\n</pre>", "\n\n", null);
+    try expect("<pre>\n<code>\n</code>\n</pre>", "\n\n", null);
 }
 
 test "two blank line" {
-    try expectSuccess("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
+    try expect("<pre>\n<code>\n\n</code>\n</pre>", "\n\n\n", null);
 }
 
 test "fails on trailing spaces" {
@@ -442,31 +442,31 @@ test "fails on trailing spaces after text" {
 }
 
 test "one line" {
-    try expectSuccess("<pre>\n<code>Foo</code>\n</pre>", "Foo", null);
+    try expect("<pre>\n<code>Foo</code>\n</pre>", "Foo", null);
 }
 
 test "escape with entities" {
-    try expectSuccess("<pre>\n<code>&lt;&amp;></code>\n</pre>", "<&>", null);
+    try expect("<pre>\n<code>&lt;&amp;></code>\n</pre>", "<&>", null);
 }
 
 test "two keywords in a row" {
-    try expectSuccess("<pre>\n<code><span class=\"kw\">def def</span></code>\n</pre>", "def def", .ruby);
+    try expect("<pre>\n<code><span class=\"kw\">def def</span></code>\n</pre>", "def def", .ruby);
 }
 
 test "two keywords on separate lines" {
-    try expectSuccess("<pre>\n<code><span class=\"kw\">def\ndef</span></code>\n</pre>", "def\ndef", .ruby);
+    try expect("<pre>\n<code><span class=\"kw\">def\ndef</span></code>\n</pre>", "def\ndef", .ruby);
 }
 
 test "two keywords on separate lines with indent" {
-    try expectSuccess("<pre>\n<code><span class=\"kw\">def\n  def</span></code>\n</pre>", "def\n  def", .ruby);
+    try expect("<pre>\n<code><span class=\"kw\">def\n  def</span></code>\n</pre>", "def\n  def", .ruby);
 }
 
 test "two keywords on separate lines with blank" {
-    try expectSuccess("<pre>\n<code><span class=\"kw\">def\n\ndef</span></code>\n</pre>", "def\n\ndef", .ruby);
+    try expect("<pre>\n<code><span class=\"kw\">def\n\ndef</span></code>\n</pre>", "def\n\ndef", .ruby);
 }
 
 test "highlight ruby" {
-    try expectSuccess(
+    try expect(
         \\<pre>
         \\<code><span class="co"># Comment</span>
         \\<span class="kw">def</span> hello()
@@ -482,7 +482,7 @@ test "highlight ruby" {
 }
 
 test "highlight haskell" {
-    try expectSuccess(
+    try expect(
         \\<pre>
         \\<code><span class="kw">import</span> Foo
         \\bar :: <span class="ca">This</span> -> <span class="ca">That</span>
