@@ -45,6 +45,12 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     //   might be on another line after a blockquote >
     // - is this needlessly complicated when probably will not be used in blockquotes?
     // - more realistic would be adjusting to support loose lists, or hard wrapping
+    // - pandoc markdown does allow hard wrapping $$ in > so that's a data point
+    // one strategy: buffer one token all the time. then can see if need mrow
+    // could just look ahead for ) or }, skipping over >
+    // if jumping ahead ( (x)^2 )^2, might as well track inner ones while doing outer
+    // -> leaders to stack with max depth
+    // note for -3, use <mrow><mo>-</mo><mn>3</mn></mrow>
     assert(!scanner.eof());
     while (scanner.next()) |char| switch (char) {
         '$' => return true,
