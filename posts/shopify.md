@@ -30,7 +30,7 @@ I shipped a change to production that first Friday. It was a small change, but i
 
 # IPO & Hack Days
 
-An exciting part of interning at Shopify was experiencing its IPO. On Thursday, May 21, Shopify went public at $17 a share on the New York Stock Exchange. (If you had invested at that price, you would be very happy now, since [SHOP][5] is trading at nearly $150 as of early March 2018.) That day at work, we celebrated with a breakfast of bacon, eggs, pancakes, and mimosas. There were TVs showing what was going on in New York, so we saw them ring the bell to start the trading.
+An exciting part of interning at Shopify was experiencing its IPO. On Thursday, May 21, Shopify went public at \$17 a share on the New York Stock Exchange. (If you had invested at that price, you would be very happy now, since [SHOP][5] is trading at nearly \$150 as of early March 2018.) That day at work, we celebrated with a breakfast of bacon, eggs, pancakes, and mimosas. There were TVs showing what was going on in New York, so we saw them ring the bell to start the trading.
 
 The special occasion wasn't just the IPO. It was also Hack Days, the internal hackathon Shopify holds a few times a year. I had already joined a team with another intern and a full time employee. After breakfast, we reserved a room called Mushroom Kingdom and got to work. Our idea was to make an app that would use an alpha matting algorithm to automatically remove the background from an image. This could be useful for product images in a shop -- you can do it manually in Photoshop, but it's tedious. I didn't know anything about image processing, so I was happy to try this out and learn about it.
 

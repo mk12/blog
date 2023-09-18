@@ -12,8 +12,7 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const MathML = @This();
 
-active: bool = false,
-kind: Kind = undefined,
+kind: Kind,
 
 pub const Kind = enum {
     @"inline",
@@ -27,6 +26,128 @@ pub const Kind = enum {
     }
 };
 
+const Macro = union(enum) {
+    frac,
+    mo: []const u8,
+    mi: []const u8,
+    over: []const u8,
+    text,
+    mathrm,
+    mathbb,
+    mathbf,
+    mathcal,
+    lvert,
+    rvert,
+    langle,
+    rangle,
+};
+
+fn lookupMacro(name: []const u8) Macro {
+    const list = .{
+        .{ "sum", .{ .mo = "∑" } },
+        .{ "dots", .{ .mo = "…" } },
+        .{ "vdots", .{ .mo = "⋮" } },
+        .{ "ddots", .{ .mo = "⋱" } },
+        .{ "approx", .{ .mo = "≈" } },
+        .{ "circ", .{ .mi = "∘" } },
+        .{ "bigcirc", .{ .mi = "◯" } },
+        .{ "square", .{ .mi = "□" } },
+        .{ "bigtriangleup", .{ .mi = "△" } },
+        .{ "to", .{ .mo = "→" } },
+        .{ "mapsto", .{ .mo = "↦" } },
+        .{ "frac", .frac },
+        .{ "mathrm", .mathrm },
+        .{ "mathbb", .mathbb },
+        .{ "mathbf", .mathbf },
+        .{ "mathcal", .mathcal },
+        .{ "chi", .{ .mi = "χ" } },
+        .{ "aleph", .{ .mi = "ℵ" } },
+        .{ "gamma", .{ .mi = "γ" } },
+        .{ "lambda", .{ .mi = "λ" } },
+        .{ "mu", .{ .mi = "μ" } },
+        // TODO write this directly in markdown? (have to recognize UTF-8 a bit)
+        .{ "le", .{ .mo = "≤" } },
+        .{ "ge", .{ .mo = "≥" } },
+        .{ "ne", .{ .mo = "≠" } },
+        .{ "pm", .{ .mo = "±" } },
+        .{ "colon", .{ .mo = ":" } }, // FIXME write ":" directly?
+        .{ "epsilon", .{ .mi = "ϵ" } },
+        .{ "omega", .{ .mi = "ω" } },
+        .{ "infty", .{ .mi = "∞" } },
+        .{ "cup", .{ .mo = "∪" } },
+        .{ "cdot", .{ .mo = "⋅" } }, // mo
+        .{ "times", .{ .mo = "×" } },
+        .{ "partial", .{ .mi = "∂" } },
+        .{ "vec", .{ .over = "→" } },
+        .{ "hat", .{ .over = "^" } },
+        .{ "text", .text },
+        .{ "lvert", .lvert }, // TODO: lVert, rVert?
+        .{ "rvert", .rvert },
+        .{ "langle", .langle },
+        .{ "rangle", .rangle },
+        .{ "in", .{ .mo = "∈" } },
+        .{ "notin", .{ .mo = "∉" } },
+        .{ "subseteq", .{ .mo = "⊆" } },
+        .{ "setminus", .{ .mo = "∖" } },
+        .{ "ast", .{ .mo = "∗" } },
+        .{ "bullet", .{ .mo = "∙" } },
+        .{ "oplus", .{ .mo = "⊕" } },
+        .{ "forall", .{ .mi = "∀" } },
+        .{ "exists", .{ .mi = "∃" } },
+        // No \lim, \log.. backslash = <mi> for whole word
+    };
+    return std.ComptimeStringMap(Macro, list).get(name);
+}
+
+const Token = enum {
+    end,
+    variable,
+    operator,
+    mathbb,
+    @"_",
+    @"^",
+};
+
+const Tokenizer = struct {
+    peeked: ?Token,
+
+    fn init(scanner: *Scanner) Tokenizer {
+        return Tokenizer{ .peeked = scan(null, scanner) };
+    }
+
+    fn next(self: *Tokenizer, scanner: *Scanner) ?Token {
+        const token = self.peeked orelse return null;
+        self.peeked = scan(self.peeked, scanner);
+        return token;
+    }
+
+    fn scan(prev: ?Token, scanner: *Scanner) ?Token {
+        _ = scanner;
+        _ = prev;
+    }
+};
+
+fn expectTokens(expected: []const Token, source: []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
+    errdefer |err| reporter.showMessage(err);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    var tokenizer = Tokenizer.init(&scanner);
+    var actual = std.ArrayList(Token).init(allocator);
+    while (try tokenizer.next(&scanner)) |token| try actual.append(token);
+    try testing.expectEqualDeep(expected, actual.items);
+}
+
+test "scan empty string" {
+    try expectTokens(&[_]Token{}, "");
+}
+
+test "scan empty string" {
+    try expectTokens(&[_]Token{}, "");
+}
+
 pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
         .@"inline" => try writer.writeAll("<math>"),
@@ -37,20 +158,6 @@ pub fn init(writer: anytype, kind: Kind) !MathML {
 
 pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     _ = self;
-    // Challenges:
-    // - know when to use mrow (don't if only 1)
-    // - know when to use msup/msub (don't see ^ or _ at start)
-    //   - well, need (...) or {...} to use it far away
-    // - can yield at any moment... can't look ahead to find matching ),
-    //   might be on another line after a blockquote >
-    // - is this needlessly complicated when probably will not be used in blockquotes?
-    // - more realistic would be adjusting to support loose lists, or hard wrapping
-    // - pandoc markdown does allow hard wrapping $$ in > so that's a data point
-    // one strategy: buffer one token all the time. then can see if need mrow
-    // could just look ahead for ) or }, skipping over >
-    // if jumping ahead ( (x)^2 )^2, might as well track inner ones while doing outer
-    // -> leaders to stack with max depth
-    // note for -3, use <mrow><mo>-</mo><mn>3</mn></mrow>
     assert(!scanner.eof());
     while (scanner.next()) |char| switch (char) {
         '$' => return true,
