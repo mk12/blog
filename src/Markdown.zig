@@ -845,7 +845,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             if (scanner.eof()) break;
             const finished = try mode.render(writer, scanner);
             if (finished) active_mode = null;
-            if (mode.consumesEol()) continue;
+            if (!finished or mode.consumesEol()) continue;
         }
         var token = unconsumed_token orelse tokenizer.next();
         if (token == .eof) break;

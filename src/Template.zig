@@ -67,6 +67,7 @@ const Token = union(enum) {
     end,
 };
 
+// TODO maybe make eof a token
 fn scan(scanner: *Scanner) Reporter.Error!?Token {
     const braces = "{{";
     const text = scanUntilStringOrEof(scanner, braces);

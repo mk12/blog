@@ -26,106 +26,131 @@ pub const Kind = enum {
     }
 };
 
-const Macro = union(enum) {
-    frac,
+const Token = union(enum) {
+    end_of_file,
+    end_of_line,
+    end_of_math,
+    mtext,
+    msub,
+    msup,
+    mfrac,
     mo: []const u8,
     mi: []const u8,
-    over: []const u8,
-    text,
-    mathrm,
-    mathbb,
-    mathbf,
-    mathcal,
-    lvert,
-    rvert,
-    langle,
-    rangle,
+    mn: []const u8,
+    mover: []const u8,
+    mathvariant: []const u8,
+    open_stretchy,
+    close_stretchy,
+    open: Delimiter,
+    close: Delimiter,
+
+    fn notEof(self: Token) ?Token {
+        return if (self == .end_of_file) null else self;
+    }
 };
 
-fn lookupMacro(name: []const u8) Macro {
+const Delimiter = enum {
+    brace,
+    paren,
+    angle,
+    vert,
+    double_vert,
+};
+
+fn lookupMacro(name: []const u8) Token {
     const list = .{
-        .{ "sum", .{ .mo = "∑" } },
-        .{ "dots", .{ .mo = "…" } },
-        .{ "vdots", .{ .mo = "⋮" } },
-        .{ "ddots", .{ .mo = "⋱" } },
-        .{ "approx", .{ .mo = "≈" } },
-        .{ "circ", .{ .mi = "∘" } },
-        .{ "bigcirc", .{ .mi = "◯" } },
-        .{ "square", .{ .mi = "□" } },
-        .{ "bigtriangleup", .{ .mi = "△" } },
-        .{ "to", .{ .mo = "→" } },
-        .{ "mapsto", .{ .mo = "↦" } },
-        .{ "frac", .frac },
-        .{ "mathrm", .mathrm },
-        .{ "mathbb", .mathbb },
-        .{ "mathbf", .mathbf },
-        .{ "mathcal", .mathcal },
-        .{ "chi", .{ .mi = "χ" } },
+        // Special
+        .{ "text", .mtext },
+        .{ "frac", .mrac },
+        // Fonts
+        .{ "mathbb", .{ .mathvariant = "double-struck" } },
+        .{ "mathbf", .{ .mathvariant = "bold" } },
+        .{ "mathcal", .{ .mathvariant = "script" } },
+        .{ "mathrm", .{ .mathvariant = "normal" } },
+        // Delimiters
+        .{ "left", .open_stretchy },
+        .{ "right", .close_stretchy },
+        .{ "lvert", .{ .open = .vert } },
+        .{ "rvert", .{ .close = .vert } },
+        .{ "lVert", .{ .open = .double_vert } },
+        .{ "rVert", .{ .close = .double_vert } },
+        .{ "langle", .{ .open = .angle } },
+        .{ "rangle", .{ .open = .angle } },
+        // Accents
+        .{ "vec", .{ .mover = "→" } },
+        .{ "hat", .{ .mover = "^" } },
+        // Letters
         .{ "aleph", .{ .mi = "ℵ" } },
+        .{ "chi", .{ .mi = "χ" } },
+        .{ "epsilon", .{ .mi = "ϵ" } },
         .{ "gamma", .{ .mi = "γ" } },
         .{ "lambda", .{ .mi = "λ" } },
         .{ "mu", .{ .mi = "μ" } },
-        // TODO write this directly in markdown? (have to recognize UTF-8 a bit)
-        .{ "le", .{ .mo = "≤" } },
-        .{ "ge", .{ .mo = "≥" } },
-        .{ "ne", .{ .mo = "≠" } },
-        .{ "pm", .{ .mo = "±" } },
-        .{ "colon", .{ .mo = ":" } }, // FIXME write ":" directly?
-        .{ "epsilon", .{ .mi = "ϵ" } },
         .{ "omega", .{ .mi = "ω" } },
+        // Symbols
+        .{ "bigcirc", .{ .mi = "◯" } },
+        .{ "bigtriangleup", .{ .mi = "△" } },
+        .{ "circ", .{ .mi = "∘" } },
+        .{ "ddots", .{ .mi = "⋱" } },
+        .{ "dots", .{ .mi = "…" } },
+        .{ "exists", .{ .mi = "∃" } },
+        .{ "forall", .{ .mi = "∀" } },
         .{ "infty", .{ .mi = "∞" } },
-        .{ "cup", .{ .mo = "∪" } },
-        .{ "cdot", .{ .mo = "⋅" } }, // mo
-        .{ "times", .{ .mo = "×" } },
         .{ "partial", .{ .mi = "∂" } },
-        .{ "vec", .{ .over = "→" } },
-        .{ "hat", .{ .over = "^" } },
-        .{ "text", .text },
-        .{ "lvert", .lvert }, // TODO: lVert, rVert?
-        .{ "rvert", .rvert },
-        .{ "langle", .langle },
-        .{ "rangle", .rangle },
-        .{ "in", .{ .mo = "∈" } },
-        .{ "notin", .{ .mo = "∉" } },
-        .{ "subseteq", .{ .mo = "⊆" } },
-        .{ "setminus", .{ .mo = "∖" } },
+        .{ "square", .{ .mi = "□" } },
+        .{ "vdots", .{ .mi = "⋮" } },
+        // Operators
+        .{ "approx", .{ .mo = "≈" } },
         .{ "ast", .{ .mo = "∗" } },
         .{ "bullet", .{ .mo = "∙" } },
+        .{ "cdot", .{ .mo = "⋅" } },
+        .{ "colon", .{ .mo = ":" } },
+        .{ "cup", .{ .mo = "∪" } },
+        .{ "ge", .{ .mo = "≥" } },
+        .{ "in", .{ .mo = "∈" } },
+        .{ "le", .{ .mo = "≤" } },
+        .{ "mapsto", .{ .mo = "↦" } },
+        .{ "ne", .{ .mo = "≠" } },
+        .{ "notin", .{ .mo = "∉" } },
         .{ "oplus", .{ .mo = "⊕" } },
-        .{ "forall", .{ .mi = "∀" } },
-        .{ "exists", .{ .mi = "∃" } },
-        // No \lim, \log.. backslash = <mi> for whole word
+        .{ "pm", .{ .mo = "±" } },
+        .{ "setminus", .{ .mo = "∖" } },
+        .{ "subseteq", .{ .mo = "⊆" } },
+        .{ "sum", .{ .mo = "∑" } },
+        .{ "times", .{ .mo = "×" } },
+        .{ "to", .{ .mo = "→" } },
     };
-    return std.ComptimeStringMap(Macro, list).get(name);
+    return std.ComptimeStringMap(Token, list).get(name) orelse .{ .mi = name };
 }
 
-const Token = enum {
-    end,
-    variable,
-    operator,
-    mathbb,
-    @"_",
-    @"^",
-};
-
-const Tokenizer = struct {
-    peeked: ?Token,
-
-    fn init(scanner: *Scanner) Tokenizer {
-        return Tokenizer{ .peeked = scan(null, scanner) };
+fn scan(scanner: *Scanner) Token {
+    const start = scanner.offset;
+    switch (scanner.next() orelse return .end_of_file) {
+        '\n' => return .end_of_line,
+        '$' => return .end_of_math,
+        '{' => return .{ .open = .brace },
+        '}' => return .{ .close = .brace },
+        '(' => return .{ .open = .paren },
+        ')' => return .{ .close = .paren },
+        '\\' => {
+            while (scanner.peek()) |char| switch (char) {
+                'a'...'z', 'A'...'Z' => scanner.eat(),
+                else => break,
+            };
+            // TODO exclude \, and handle case where no letters after
+            return lookupMacro(scanner.source[start..scanner.offset]);
+        },
+        '0'...'9' => {
+            while (scanner.peek()) |char| switch (char) {
+                '0'...'9', '.' => scanner.eat(),
+                else => break,
+            };
+            return .{ .mn = scanner.source[start..scanner.offset] };
+        },
+        'a'...'z', 'A'...'Z' => return .{ .mi = scanner.source[start..scanner.offset] },
+        '+', '-', '=', '<', '>', ',' => return .{ .mo = scanner.source[start..scanner.offset] },
     }
-
-    fn next(self: *Tokenizer, scanner: *Scanner) ?Token {
-        const token = self.peeked orelse return null;
-        self.peeked = scan(self.peeked, scanner);
-        return token;
-    }
-
-    fn scan(prev: ?Token, scanner: *Scanner) ?Token {
-        _ = scanner;
-        _ = prev;
-    }
-};
+}
 
 fn expectTokens(expected: []const Token, source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -134,9 +159,8 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var tokenizer = Tokenizer.init(&scanner);
     var actual = std.ArrayList(Token).init(allocator);
-    while (try tokenizer.next(&scanner)) |token| try actual.append(token);
+    while (scan(&scanner).notEof()) |token| try actual.append(token);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -144,9 +168,34 @@ test "scan empty string" {
     try expectTokens(&[_]Token{}, "");
 }
 
-test "scan empty string" {
-    try expectTokens(&[_]Token{}, "");
+test "scan variable" {
+    try expectTokens(&[_]Token{}, "x");
 }
+
+// x = - b \pm \frac{\sqrt{b^2 - 4 a c}}{2 a}
+// Tokens:
+// mi x
+// mo =
+// mo -
+// mi b
+// mi ±
+// mfrac
+// {
+// msqrt
+// {
+// msup   <-------
+// mi b
+// mn 2
+// mo -
+// mn 4
+// mi a
+// mi c
+// }
+// }
+// {
+// mn 2
+// mi a
+// }
 
 pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
@@ -166,6 +215,18 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
         '(', ')', '=' => try fmt.format(writer, "<mo>{c}</mo>", .{char}),
         else => try fmt.format(writer, "<mi>{c}</mi>", .{char}),
     };
+
+    // requirements:
+    // - skip over whitespace
+    // - state: whether currently in mrow (probably have stack)
+    // - remember prev (e.g. x+y or x,+y depends on lhs of +)
+    // - see next (to know whether we need an mrow, to know if ^ or _ comes next)
+    //   - or maybe not about mrow; seems unnecessary at top level
+    //   - still applies tho e.g. in mfrac
+    // - enforce \mathxx{V} can only have one character, that way
+    //   \mathbb{R}^2 sees ^ immediately after and the peeking/prev thing works
+    // - In (1+2)^2 z, want to see "(" "^" ... ")" z  (notice it skipped over ^ at end)
+    // - or make the ^ come first, then more like frac
     return false;
 }
 
