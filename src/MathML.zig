@@ -27,60 +27,64 @@ pub const Kind = enum {
 };
 
 const Token = union(enum) {
-    end_of_file,
-    end_of_line,
-    end_of_math,
+    // Terminators
+    eof,
+    @"\n",
+    @"$",
+    // Direct MathML
     mtext,
-    msub,
-    msup,
     mfrac,
+    msqrt,
+    mphantom,
     mo: []const u8,
     mi: []const u8,
     mn: []const u8,
     mover: []const u8,
+    mspace: []const u8,
     mathvariant: []const u8,
-    open_stretchy,
-    close_stretchy,
-    open: Delimiter,
-    close: Delimiter,
-
-    fn notEof(self: Token) ?Token {
-        return if (self == .end_of_file) null else self;
-    }
+    mo_nonstretchy: []const u8,
+    // Other
+    @"{",
+    @"}",
+    stretchy,
+    _,
+    @"^",
+    boxed,
 };
 
-const Delimiter = enum {
-    brace,
-    paren,
-    angle,
-    vert,
-    double_vert,
-};
-
-fn lookupMacro(name: []const u8) Token {
+fn lookupMacro(name: []const u8) ?Token {
     const list = .{
         // Special
         .{ "text", .mtext },
-        .{ "frac", .mrac },
+        .{ "frac", .mfrac },
+        .{ "sqrt", .msqrt },
+        .{ "phantom", .mphantom },
+        .{ "boxed", .boxed },
+        // Spacing
+        .{ "quad", .{ .mspace = "1em " } },
         // Fonts
         .{ "mathbb", .{ .mathvariant = "double-struck" } },
         .{ "mathbf", .{ .mathvariant = "bold" } },
         .{ "mathcal", .{ .mathvariant = "script" } },
         .{ "mathrm", .{ .mathvariant = "normal" } },
         // Delimiters
-        .{ "left", .open_stretchy },
-        .{ "right", .close_stretchy },
-        .{ "lvert", .{ .open = .vert } },
-        .{ "rvert", .{ .close = .vert } },
-        .{ "lVert", .{ .open = .double_vert } },
-        .{ "rVert", .{ .close = .double_vert } },
-        .{ "langle", .{ .open = .angle } },
-        .{ "rangle", .{ .open = .angle } },
+        .{ "left", .stretchy },
+        .{ "right", .stretchy },
+        .{ "lvert", .{ .mo_nonstretchy = "|" } },
+        .{ "rvert", .{ .mo_nonstretchy = "|" } },
+        .{ "lVert", .{ .mo_nonstretchy = "‖" } },
+        .{ "rVert", .{ .mo_nonstretchy = "‖" } },
+        .{ "langle", .{ .mo_nonstretchy = "⟨" } },
+        .{ "rangle", .{ .mo_nonstretchy = "⟩" } },
         // Accents
         .{ "vec", .{ .mover = "→" } },
         .{ "hat", .{ .mover = "^" } },
+        // Functions
+        .{ "log", .{ .mi = "log" } },
+        .{ "lim", .{ .mi = "lim" } },
         // Letters
         .{ "aleph", .{ .mi = "ℵ" } },
+        .{ "alpha", .{ .mi = "α" } },
         .{ "chi", .{ .mi = "χ" } },
         .{ "epsilon", .{ .mi = "ϵ" } },
         .{ "gamma", .{ .mi = "γ" } },
@@ -112,6 +116,7 @@ fn lookupMacro(name: []const u8) Token {
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
+        .{ "odot", .{ .mo = "⊙" } },
         .{ "oplus", .{ .mo = "⊕" } },
         .{ "pm", .{ .mo = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
@@ -120,36 +125,35 @@ fn lookupMacro(name: []const u8) Token {
         .{ "times", .{ .mo = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
-    return std.ComptimeStringMap(Token, list).get(name) orelse .{ .mi = name };
+    return std.ComptimeStringMap(Token, list).get(name);
 }
 
-fn scan(scanner: *Scanner) Token {
+fn scan(scanner: *Scanner) !Token {
+    scanner.skipMany(' ');
     const start = scanner.offset;
-    switch (scanner.next() orelse return .end_of_file) {
-        '\n' => return .end_of_line,
-        '$' => return .end_of_math,
-        '{' => return .{ .open = .brace },
-        '}' => return .{ .close = .brace },
-        '(' => return .{ .open = .paren },
-        ')' => return .{ .close = .paren },
-        '\\' => {
-            while (scanner.peek()) |char| switch (char) {
-                'a'...'z', 'A'...'Z' => scanner.eat(),
-                else => break,
-            };
-            // TODO exclude \, and handle case where no letters after
-            return lookupMacro(scanner.source[start..scanner.offset]);
-        },
-        '0'...'9' => {
+    return switch (scanner.next() orelse return .eof) {
+        inline '\n', '$', '{', '}', '_', '^' => |char| @field(Token, &.{char}),
+        'a'...'z', 'A'...'Z' => .{ .mi = scanner.source[start..scanner.offset] },
+        '(', ')', '[', ']', '+', '-', '=', '<', '>', ',' => .{ .mo = scanner.source[start..scanner.offset] },
+        '0'...'9' => blk: {
             while (scanner.peek()) |char| switch (char) {
                 '0'...'9', '.' => scanner.eat(),
                 else => break,
             };
-            return .{ .mn = scanner.source[start..scanner.offset] };
+            break :blk .{ .mn = scanner.source[start..scanner.offset] };
         },
-        'a'...'z', 'A'...'Z' => return .{ .mi = scanner.source[start..scanner.offset] },
-        '+', '-', '=', '<', '>', ',' => return .{ .mo = scanner.source[start..scanner.offset] },
-    }
+        '\\' => blk: {
+            const macro_start = scanner.offset;
+            while (scanner.peek()) |char| switch (char) {
+                'a'...'z', 'A'...'Z' => scanner.eat(),
+                else => break,
+            };
+            const name = scanner.source[macro_start..scanner.offset];
+            if (name.len == 0) return scanner.fail("expected a macro name", .{});
+            break :blk lookupMacro(name) orelse scanner.failOn(name, "unknown macro", .{});
+        },
+        else => scanner.failOn(scanner.source[start..scanner.offset], "unexpected character", .{}),
+    };
 }
 
 fn expectTokens(expected: []const Token, source: []const u8) !void {
@@ -160,42 +164,51 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual = std.ArrayList(Token).init(allocator);
-    while (scan(&scanner).notEof()) |token| try actual.append(token);
+    for (expected) |_| try actual.append(try scan(&scanner));
     try testing.expectEqualDeep(expected, actual.items);
 }
 
 test "scan empty string" {
-    try expectTokens(&[_]Token{}, "");
+    try expectTokens(&[_]Token{.eof}, "");
+}
+
+test "scan blank line" {
+    try expectTokens(&[_]Token{ .@"\n", .eof }, "\n");
 }
 
 test "scan variable" {
-    try expectTokens(&[_]Token{}, "x");
+    try expectTokens(&[_]Token{ .{ .mi = "x" }, .eof }, "x");
 }
 
-// x = - b \pm \frac{\sqrt{b^2 - 4 a c}}{2 a}
-// Tokens:
-// mi x
-// mo =
-// mo -
-// mi b
-// mi ±
-// mfrac
-// {
-// msqrt
-// {
-// msup   <-------
-// mi b
-// mn 2
-// mo -
-// mn 4
-// mi a
-// mi c
-// }
-// }
-// {
-// mn 2
-// mi a
-// }
+test "scan quadratic formula" {
+    try expectTokens(&[_]Token{
+        .{ .mi = "x" },
+        .{ .mo = "=" },
+        .{ .mo = "-" },
+        .{ .mi = "b" },
+        .{ .mo = "±" },
+        .mfrac,
+        .@"{",
+        .msqrt,
+        .@"{",
+        .{ .mi = "b" },
+        .@"^",
+        .{ .mn = "2" },
+        .{ .mo = "-" },
+        .{ .mn = "4" },
+        .{ .mi = "a" },
+        .{ .mi = "c" },
+        .@"}",
+        .@"}",
+        .@"{",
+        .{ .mn = "2" },
+        .{ .mi = "a" },
+        .@"}",
+        .eof,
+    },
+        \\x = -b \pm \frac{\sqrt{b^2 - 4ac}}{2a}
+    );
+}
 
 pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
@@ -217,16 +230,26 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     };
 
     // requirements:
-    // - skip over whitespace
+    // + skip over whitespace
     // - state: whether currently in mrow (probably have stack)
     // - remember prev (e.g. x+y or x,+y depends on lhs of +)
     // - see next (to know whether we need an mrow, to know if ^ or _ comes next)
     //   - or maybe not about mrow; seems unnecessary at top level
-    //   - still applies tho e.g. in mfrac
+    //   - still applies tho e.g. in mfrac (if next is }, don't bother with mrow)
     // - enforce \mathxx{V} can only have one character, that way
     //   \mathbb{R}^2 sees ^ immediately after and the peeking/prev thing works
-    // - In (1+2)^2 z, want to see "(" "^" ... ")" z  (notice it skipped over ^ at end)
-    // - or make the ^ come first, then more like frac
+    //   ... or not. just work generally with { ... } ?
+    //   also what if \mathbf { x } separate lines
+    // - In (1+2)^2 z, want to see "^" "(" ... ")" z  (notice it skipped over ^ at end)
+    //
+    // \sum_1^2 is munderover
+    // \int_1^2 is msubsup
+    // \mathbb{R}^2 common
+
+    // Deciding to do it the lazy way, e.g. |x+y|^2, just the final | is in the msup
+    // Then don't need to track parens at all, can just be mo's
+    // for \mathbb{R}^2, can have renderer fetch more tokens and assert?
+    // \sum_{...}^{...} is hard
     return false;
 }
 

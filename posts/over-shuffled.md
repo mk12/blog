@@ -11,6 +11,7 @@ How hard can it be to shuffle a deck of cards? You may have been accused of unde
 
 # Simple shuffle
 
+**TODO** use math or <var>n</var>
 Suppose we want to shuffle a deck of _n_ distinct cards. There are many shuffling techniques out there, but most are not defined precisely enough for our purposes. Let's go with something simple: repeated swapping. Here's an algorithm you might come up with:
 
 1. Pick two random cards.

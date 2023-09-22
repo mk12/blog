@@ -53,6 +53,7 @@ L-systems are perfect for drawing fractal curves -- shapes that have repeating p
 
 Technically, the real curve is the result of taking this process to infinity. Once we arrive there, it has an amazing property: its perimeter is infinite, despite enclosing a finite area.
 
+**TODO** Don't use math here (search for all &nbsp;):
 We can draw approximations of the Koch curve using an L-system with the axiom F++F++F and a single rule, F&nbsp;$\to$&nbsp;F--F++F--F. In this case, F means go forward one unit, plus means rotate counterclockwise by 60º, and minus means rotate clockwise by 60º.
 
 # Space-filling curves
