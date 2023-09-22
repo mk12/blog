@@ -63,16 +63,17 @@ const Token = union(enum) {
     variable: Variable,
     define: Variable,
     start: Variable, // "if" or "range"
-    @"else",
-    end,
+    terminator: Terminator,
 };
 
+const Terminator = enum { eof, end, @"else" };
+
 // TODO maybe make eof a token
-fn scan(scanner: *Scanner) Reporter.Error!?Token {
+fn scan(scanner: *Scanner) Reporter.Error!Token {
     const braces = "{{";
     const text = scanUntilStringOrEof(scanner, braces);
     if (text.len > 0) return .{ .text = text };
-    if (scanner.eof()) return null;
+    if (scanner.eof()) return .{ .terminator = .eof };
     scanner.offset += braces.len;
     scanner.skipMany(' ');
     const word = try scanIdentifier(scanner);
@@ -104,8 +105,8 @@ fn scan(scanner: *Scanner) Reporter.Error!?Token {
                 break :blk variable;
             },
         },
-        .@"else" => .@"else",
-        .end => .end,
+        .@"else" => .{ .terminator = .@"else" },
+        .end => .{ .terminator = .end },
     };
     try scanner.expectString("}}");
     return token;
@@ -135,16 +136,16 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual = std.ArrayList(Token).init(allocator);
-    while (try scan(&scanner)) |token| try actual.append(token);
+    for (expected) |_| try actual.append(try scan(&scanner));
     try testing.expectEqualDeep(expected, actual.items);
 }
 
 test "scan empty string" {
-    try expectTokens(&[_]Token{}, "");
+    try expectTokens(&[_]Token{.{ .terminator = .eof }}, "");
 }
 
 test "scan text" {
-    try expectTokens(&[_]Token{.{ .text = "foo\n" }}, "foo\n");
+    try expectTokens(&[_]Token{ .{ .text = "foo\n" }, .{ .terminator = .eof } }, "foo\n");
 }
 
 test "scan text and variable" {
@@ -152,6 +153,7 @@ test "scan text and variable" {
         .{ .text = "Hello " },
         .{ .variable = "name" },
         .{ .text = "!" },
+        .{ .terminator = .eof },
     },
         \\Hello {{ name }}!
     );
@@ -167,13 +169,14 @@ test "scan everything" {
         .{ .text = "\n        Value: " },
         .{ .start = "bar" },
         .{ .variable = "." },
-        .@"else",
+        .{ .terminator = .@"else" },
         .{ .text = "Fallback" },
-        .end,
+        .{ .terminator = .end },
         .{ .text = ",\n    " },
-        .end,
+        .{ .terminator = .end },
         .{ .text = "\n" },
-        .end,
+        .{ .terminator = .end },
+        .{ .terminator = .eof },
     },
         \\{{ include "base.html" }}
         \\{{ define var }}
@@ -223,17 +226,16 @@ fn parseUntil(ctx: ParseContext, terminator: Terminator, trim: Trim) !Template {
     return result.template;
 }
 
-const Terminator = enum { end, @"else", eof };
 const ParseError = Reporter.Error || Allocator.Error;
 const ParseResult = ParseError!struct { template: Template, terminator: Terminator };
 
 fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
     const scanner = ctx.scanner;
     var template = Template{ .source = scanner.source, .filename = scanner.filename };
-    const terminator: Terminator, const terminator_offset = while (true) {
+    const terminator: Terminator, const offset = while (true) {
         const offset = scanner.offset;
-        const token = try scan(scanner) orelse break .{ .eof, offset };
-        const command: Command = switch (token) {
+        const command: Command = switch (try scan(scanner)) {
+            .terminator => |terminator| break .{ terminator, offset },
             .define => |variable| {
                 template.trimLastIfText();
                 try template.definitions.append(ctx.allocator, Definition{
@@ -242,8 +244,6 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 });
                 continue;
             },
-            .end => break .{ .end, offset },
-            .@"else" => break .{ .@"else", offset },
             .text => |text| blk: {
                 if (trim == .trim_start and template.commands.items.len == 0) {
                     const trimmed = trimStart(text);
@@ -277,7 +277,7 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
     };
     template.trimLastIfText();
     if (!allowed_terminators.contains(terminator)) {
-        return scanner.failAtOffset(terminator_offset, "unexpected {s}", .{
+        return scanner.failAtOffset(offset, "unexpected {s}", .{
             switch (terminator) {
                 .end => "{{ end }}",
                 .@"else" => "{{ else }}",
