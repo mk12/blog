@@ -32,17 +32,17 @@ const Token = union(enum) {
     @"\n",
     @"$",
     // Direct MathML
-    mtext,
+    mtext, // TODO: inside, need to just take whole slice of text
     mfrac,
     msqrt,
     mphantom,
-    mo: []const u8,
-    mi: []const u8,
     mn: []const u8,
+    mi: []const u8,
+    mo: []const u8,
+    mo_nonstretchy: []const u8,
     mover: []const u8,
     mspace: []const u8,
     mathvariant: []const u8,
-    mo_nonstretchy: []const u8,
     // Other
     @"{",
     @"}",
@@ -134,7 +134,8 @@ fn scan(scanner: *Scanner) !Token {
     return switch (scanner.next() orelse return .eof) {
         inline '\n', '$', '{', '}', '_', '^' => |char| @field(Token, &.{char}),
         'a'...'z', 'A'...'Z' => .{ .mi = scanner.source[start..scanner.offset] },
-        '(', ')', '[', ']', '+', '-', '=', '<', '>', ',' => .{ .mo = scanner.source[start..scanner.offset] },
+        '+', '-', '=', '<', '>', ',' => .{ .mo = scanner.source[start..scanner.offset] },
+        '(', ')', '[', ']' => .{ .mo_nonstretchy = scanner.source[start..scanner.offset] },
         '0'...'9' => blk: {
             while (scanner.peek()) |char| switch (char) {
                 '0'...'9', '.' => scanner.eat(),
@@ -210,6 +211,17 @@ test "scan quadratic formula" {
     );
 }
 
+const Container = enum {
+    mfrac,
+    mphantom,
+    mrow,
+    msqrt,
+    msub,
+    msup,
+    mtext,
+    munderover,
+};
+
 pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
         .@"inline" => try writer.writeAll("<math>"),
@@ -281,4 +293,36 @@ test "empty input" {
 test "variable" {
     try expect("<math><mi>x</mi></math>", "x", .@"inline");
     try expect("<math display=\"block\"><mi>x</mi></math>", "x", .display);
+}
+
+test "quadratic formula" {
+    try expect(
+        \\<math display="block">
+        \\<mi>x</mi>
+        \\<mo>=</mo>
+        \\<mrow>
+        \\<mo>-</mo>
+        \\<mi>b</mi>
+        \\</mrow>
+        \\<mo>±</mo>
+        \\<mfrac>
+        \\<msqrt>
+        \\<msup>
+        \\<mi>b</mi>
+        \\<mn>2</mn>
+        \\</msup>
+        \\<mo>-</mo>
+        \\<mn>4</mn>
+        \\<mi>a</mi>
+        \\<mi>c</mi>
+        \\</msqrt>
+        \\<mrow>
+        \\<mn>2</mn>
+        \\<mi>a</mi>
+        \\</mrow>
+        \\</mfrac>
+        \\</math>
+    ,
+        \\x = -b \pm \frac{\sqrt{b^2 - 4ac}}{2a}
+    , .display);
 }
