@@ -6,6 +6,7 @@
 //! The "skip" methods are like "consume" but return void.
 //! The "expect" methods are like "consume" but report an error on failure.
 //! The "until" methods advance past the delimiter but exclude it from the result.
+//! The "stop" methods are like "until" but don't advance past the delimiter.
 
 const std = @import("std");
 const mem = std.mem;
@@ -80,7 +81,7 @@ pub fn consumeStringEol(self: *Scanner, string: []const u8) bool {
 
 pub fn consumeAny(self: *Scanner, chars: []const u8) ?u8 {
     const c = self.peek() orelse return null;
-    _ = std.mem.indexOfScalar(u8, chars, c) orelse return null;
+    _ = mem.indexOfScalar(u8, chars, c) orelse return null;
     self.eat();
     return c;
 }
@@ -102,6 +103,23 @@ pub fn consumeLineUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
     return null;
 }
 
+pub fn consumeStopString(self: *Scanner, delimiter: []const u8) ?[]const u8 {
+    const end = mem.indexOfPos(u8, self.source, self.offset, delimiter) orelse return null;
+    defer self.offset = end;
+    return self.source[self.offset..end];
+}
+
+pub fn consumeStopAny(self: *Scanner, delimiters: []const u8) ?[]const u8 {
+    const end = mem.indexOfAnyPos(u8, self.source, self.offset, delimiters) orelse return null;
+    defer self.offset = end;
+    return self.source[self.offset..end];
+}
+
+pub fn consumeRest(self: *Scanner) []const u8 {
+    defer self.offset = self.source.len;
+    return self.source[self.offset..];
+}
+
 pub fn consumeUntilEol(self: *Scanner) []const u8 {
     const start = self.offset;
     while (self.next()) |c| if (c == '\n') return self.source[start .. self.offset - 1];
@@ -109,7 +127,7 @@ pub fn consumeUntilEol(self: *Scanner) []const u8 {
 }
 
 pub fn consumeWhileAny(self: *Scanner, chars: []const u8) []const u8 {
-    const end = std.mem.indexOfNonePos(u8, self.source, self.offset, chars) orelse self.source.len;
+    const end = mem.indexOfNonePos(u8, self.source, self.offset, chars) orelse self.source.len;
     defer self.offset = end;
     return self.source[self.offset..end];
 }
@@ -295,6 +313,46 @@ test "everything" {
         try testing.expectEqual(@as(?[]const u8, null), scanner.consumeLineUntil('.'));
         try testing.expectEqual(@as(?u8, '\n'), scanner.next());
         try testing.expectEqualStrings("bar", scanner.consumeLineUntil('.').?);
+        try testing.expect(scanner.eof());
+    }
+
+    // consumeStopString
+    {
+        var scanner = Scanner{ .source = "this and that.", .reporter = &reporter };
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeStopString("---"));
+        try testing.expectEqualStrings("", scanner.consumeStopString("").?);
+        try testing.expectEqualStrings("this", scanner.consumeStopString(" and ").?);
+        try testing.expectEqualStrings("", scanner.consumeStopString(" and ").?);
+        try scanner.expectString(" and ");
+        try testing.expectEqualStrings("that", scanner.consumeStopString(".").?);
+        try testing.expectEqualStrings("", scanner.consumeStopString(".").?);
+        try testing.expect(scanner.consume('.'));
+        try testing.expect(scanner.eof());
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeStopString("x"));
+        try testing.expectEqualStrings("", scanner.consumeStopString("").?);
+    }
+
+    // consumeStopAny
+    {
+        var scanner = Scanner{ .source = "foo.bar\nbaz", .reporter = &reporter };
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeStopAny(""));
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeStopAny("!"));
+        try testing.expectEqualStrings("foo", scanner.consumeStopAny("\n.").?);
+        try testing.expectEqualStrings("", scanner.consumeStopAny("\n.").?);
+        try testing.expect(scanner.consume('.'));
+        try testing.expectEqualStrings("bar", scanner.consumeStopAny("\n.").?);
+        try testing.expectEqualStrings("", scanner.consumeStopAny("\n.").?);
+        try testing.expect(scanner.consume('\n'));
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeStopAny("\n."));
+    }
+
+    // consumeRest
+    {
+        var scanner = Scanner{ .source = "foo\nbar", .reporter = &reporter };
+        try testing.expect(scanner.consume('f'));
+        try testing.expectEqualStrings("oo\nbar", scanner.consumeRest());
+        try testing.expect(scanner.eof());
+        try testing.expectEqualStrings("", scanner.consumeRest());
         try testing.expect(scanner.eof());
     }
 

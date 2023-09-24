@@ -68,10 +68,9 @@ const Token = union(enum) {
 
 const Terminator = enum { eof, end, @"else" };
 
-// TODO maybe make eof a token
 fn scan(scanner: *Scanner) Reporter.Error!Token {
     const braces = "{{";
-    const text = scanUntilStringOrEof(scanner, braces);
+    const text = scanner.consumeStopString(braces) orelse scanner.consumeRest();
     if (text.len > 0) return .{ .text = text };
     if (scanner.eof()) return .{ .terminator = .eof };
     scanner.offset += braces.len;
@@ -110,12 +109,6 @@ fn scan(scanner: *Scanner) Reporter.Error!Token {
     };
     try scanner.expectString("}}");
     return token;
-}
-
-fn scanUntilStringOrEof(scanner: *Scanner, string: []const u8) []const u8 {
-    const start = scanner.offset;
-    scanner.offset = mem.indexOfPos(u8, scanner.source, scanner.offset, string) orelse scanner.source.len;
-    return scanner.source[start..scanner.offset];
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
