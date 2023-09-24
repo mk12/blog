@@ -26,6 +26,7 @@
 const std = @import("std");
 const fmt = std.fmt;
 const testing = std.testing;
+const tag_stack = @import("tag_stack.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Highlighter = @import("Highlighter.zig");
@@ -34,6 +35,7 @@ const MathML = @import("MathML.zig");
 const Reporter = @import("Reporter.zig");
 const Location = Reporter.Location;
 const Scanner = @import("Scanner.zig");
+const TagStack = tag_stack.TagStack;
 const Markdown = @This();
 
 text: []const u8,
@@ -623,68 +625,15 @@ pub fn render(
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
     const hook_ctx = HookContext{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename };
     return renderImpl(&tokenizer, writer, full_hooks, hook_ctx, self.context.links, options) catch |err| switch (err) {
-        error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{max_tag_depth}),
+        error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{tag_stack.max_depth}),
         else => return err,
-    };
-}
-
-const max_tag_depth = 8;
-
-fn Stack(comptime Tag: type) type {
-    return struct {
-        const Self = @This();
-        items: std.BoundedArray(Tag, max_tag_depth) = .{},
-
-        fn len(self: Self) usize {
-            return self.items.len;
-        }
-
-        fn get(self: Self, i: usize) Tag {
-            return self.items.get(i);
-        }
-
-        fn top(self: Self) ?Tag {
-            return if (self.len() == 0) null else self.items.get(self.len() - 1);
-        }
-
-        fn push(self: *Self, writer: anytype, item: Tag) !void {
-            try item.writeOpenTag(writer);
-            try self.pushWithoutWriting(item);
-        }
-
-        fn pushWithoutWriting(self: *Self, item: Tag) !void {
-            self.items.append(item) catch |err| return switch (err) {
-                error.Overflow => error.ExceededMaxTagDepth,
-            };
-        }
-
-        fn append(self: *Self, writer: anytype, items: anytype) !void {
-            inline for (items) |item| try self.push(writer, item);
-        }
-
-        fn pop(self: *Self, writer: anytype) !void {
-            try self.items.pop().writeCloseTag(writer);
-        }
-
-        fn popTag(self: *Self, writer: anytype, tag: std.meta.Tag(Tag)) !void {
-            assert(self.top().? == tag);
-            try self.pop(writer);
-        }
-
-        fn toggle(self: *Self, writer: anytype, item: Tag) !void {
-            try if (self.top() == item) self.pop(writer) else self.push(writer, item);
-        }
-
-        fn truncate(self: *Self, writer: anytype, new_len: usize) !void {
-            while (self.items.len > new_len) try self.pop(writer);
-        }
     };
 }
 
 const BlockTag = union(enum) {
     p,
     li,
-    // I'm making this fit in 8 bytes just because I can.
+    // I'm making this fit in 16 bytes just because I can.
     h: struct { source: ?[*]const u8, source_len: u32, level: u8 },
     ul,
     ol,
@@ -726,7 +675,7 @@ const BlockTag = union(enum) {
         };
     }
 
-    fn writeOpenTag(self: BlockTag, writer: anytype) !void {
+    pub fn writeOpenTag(self: BlockTag, writer: anytype) !void {
         switch (self) {
             .h => |h| if (h.source) |source_ptr| {
                 try fmt.format(writer, "<h{} id=\"", .{h.level});
@@ -742,7 +691,7 @@ const BlockTag = union(enum) {
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
     }
 
-    fn writeCloseTag(self: BlockTag, writer: anytype) !void {
+    pub fn writeCloseTag(self: BlockTag, writer: anytype) !void {
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
         switch (self) {
             .h => |h| try fmt.format(writer, "</h{}>", .{h.level}),
@@ -759,11 +708,11 @@ const InlineTag = enum {
     code,
     a,
 
-    fn writeOpenTag(self: InlineTag, writer: anytype) !void {
+    pub fn writeOpenTag(self: InlineTag, writer: anytype) !void {
         try fmt.format(writer, "<{s}>", .{@tagName(self)});
     }
 
-    fn writeCloseTag(self: InlineTag, writer: anytype) !void {
+    pub fn writeCloseTag(self: InlineTag, writer: anytype) !void {
         try fmt.format(writer, "</{s}>", .{@tagName(self)});
     }
 };
@@ -802,7 +751,7 @@ const Mode = union(enum) {
         };
     }
 
-    fn consumesEol(self: Mode) bool {
+    fn consumesFinalEol(self: Mode) bool {
         return switch (self) {
             .code => true,
             .math => false,
@@ -818,8 +767,8 @@ const Mode = union(enum) {
 };
 
 fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: HookContext, links: LinkMap, options: Options) !void {
-    var blocks = Stack(BlockTag){};
-    var inlines = Stack(InlineTag){};
+    var blocks = TagStack(BlockTag){};
+    var inlines = TagStack(InlineTag){};
     var active_mode: ?Mode = null;
     var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
@@ -845,7 +794,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             if (scanner.eof()) break;
             const finished = try mode.render(writer, scanner);
             if (finished) active_mode = null;
-            if (!finished or mode.consumesEol()) continue;
+            if (!finished or mode.consumesFinalEol()) continue;
         }
         var token = unconsumed_token orelse tokenizer.next();
         if (token == .eof) break;
