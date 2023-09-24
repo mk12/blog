@@ -18,8 +18,10 @@ kind: Kind,
 tokenizer: Tokenizer = .{},
 prev_token: Token = .null,
 stack: TagStack(Tag) = .{},
+variant_stack: std.BoundedArray(Variant, max_nested_variants) = .{},
 buffer: ?std.BoundedArray(Token, max_buffered_tokens) = null,
 
+const max_nested_variants = 4;
 const max_buffered_tokens = 8;
 
 pub const Kind = enum {
@@ -61,12 +63,13 @@ const Token = union(enum) {
     stretchy,
     boxed,
     accent: []const u8,
-    variant: ?Variant,
+    variant: Variant,
     begin: Environment,
     end: Environment,
 };
 
 const Variant = enum {
+    normal,
     bold,
     double_struck,
     script,
@@ -90,7 +93,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "mathbb", .{ .variant = .double_struck } },
         .{ "mathbf", .{ .variant = .bold } },
         .{ "mathcal", .{ .variant = .script } },
-        .{ "mathrm", .{ .variant = null } },
+        .{ "mathrm", .{ .variant = .normal } },
         // Delimiters
         .{ "left", .stretchy },
         .{ "right", .stretchy },
@@ -171,7 +174,10 @@ const Tokenizer = struct {
         const start = scanner.offset;
         return switch (scanner.next() orelse return .eol) {
             '\n' => .eol,
-            inline '$', '{', '}', '_', '^' => |char| @field(Token, &.{char}),
+            inline '$', '{', '}', '_', '^' => |char| {
+                if (char == '_' or char == '^') self.args_left = 1;
+                return @field(Token, &.{char});
+            },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
             '+', '-', '=', '<', '>', ',', ':', ';', '.' => .{ .mo = scanner.source[start..scanner.offset] },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
@@ -234,6 +240,16 @@ test "scan empty string" {
 
 test "scan variable" {
     try expectTokens(&[_]Token{ .{ .mi = "x" }, .eol }, "x");
+}
+
+test "scan subscript" {
+    try expectTokens(&[_]Token{
+        .{ .mi = "x" },
+        ._,
+        .{ .mn = "1" },
+        .{ .mn = "2345" },
+        .eol,
+    }, "x_12345");
 }
 
 test "scan fraction" {
@@ -308,7 +324,7 @@ const Tag = union(enum) {
     munderover,
     boxed,
     accent: []const u8,
-    variant: ?Variant,
+    variant: Variant,
 
     fn closesWithBrace(self: Tag) bool {
         return self == .brace or self == .mrow;
@@ -367,6 +383,11 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
 fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
     // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[1], self.stack.items.buffer[0..self.stack.items.len] });
     const stack_len = self.stack.len();
+    switch (window[2]) {
+        ._ => try self.stack.push(writer, .msub),
+        .@"^" => try self.stack.push(writer, .msup),
+        else => {},
+    }
     switch (window[1]) {
         .null, .eol, .@"$" => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
@@ -378,16 +399,11 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
         .mtext_end => try self.stack.popTag(writer, .mtext),
         .mn => |text| try fmt.format(writer, "<mn>{s}</mn>", .{text}),
         .mi => |text| blk: {
-            // TODO failures
-            // TODO not just top. general case, need to associate each stack item with variant.
-            const character = if (self.stack.top()) |tag| switch (tag) {
-                .variant => |opt| if (opt) |variant|
-                    getVariantLetter(text, variant) orelse text
-                else
-                    break :blk try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-                else => text,
+            const styled = if (self.currentVariant()) |variant| switch (variant) {
+                .normal => break :blk try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
+                else => getVariantLetter(text, variant) orelse text,
             } else text;
-            try fmt.format(writer, "<mi>{s}</mi>", .{character});
+            try fmt.format(writer, "<mi>{s}</mi>", .{styled});
         },
         .mo => |text| try if (window[0] == .null or window[0] == .mo)
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
@@ -399,14 +415,16 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
-        .variant => |variant| try self.stack.push(writer, .{ .variant = variant }),
+        .variant => |variant| {
+            try self.stack.push(writer, .{ .variant = variant });
+            try self.variant_stack.append(variant);
+        },
         .@"{" => try self.stack.push(writer, .brace), // or mrow if necessary
         .@"}" => blk: {
             if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
             unreachable; // fail
         },
-        ._ => unreachable,
-        .@"^" => unreachable,
+        ._, .@"^" => return,
         .@"&" => unreachable,
         .@"\\" => unreachable,
         .stretchy => {},
@@ -418,6 +436,7 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
         while (self.stack.top()) |tag| {
             if (tag.closesWithBrace()) break else try self.stack.popTag(writer, tag);
             if (tag == .mfrac_1) break;
+            if (tag == .variant) self.variant_stack.len -= 1;
         };
 }
 
@@ -425,6 +444,11 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
     _ = self;
     // check stack and buffer
     try writer.writeAll("</math>");
+}
+
+fn currentVariant(self: MathML) ?Variant {
+    const len = self.variant_stack.len;
+    return if (len == 0) null else self.variant_stack.get(len - 1);
 }
 
 fn getVariantLetter(char_str: []const u8, variant: Variant) ?[]const u8 {
@@ -435,6 +459,7 @@ fn getVariantLetter(char_str: []const u8, variant: Variant) ?[]const u8 {
         else => return null,
     };
     const letters: *const [26 * 4:0]u8 = switch (variant) {
+        .normal => unreachable,
         .bold => switch (base) {
             .a => "𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳",
             .A => "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙",
@@ -448,7 +473,7 @@ fn getVariantLetter(char_str: []const u8, variant: Variant) ?[]const u8 {
             .A => "𝒜ℬ.𝒞𝒟ℰ.ℱ.𝒢ℋ.ℐ.𝒥𝒦ℒ.ℳ.𝒩𝒪𝒫𝒬ℛ.𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵",
         },
     };
-    const slice = letters[char - @intFromEnum(base) ..];
+    const slice = letters[4 * (char - @intFromEnum(base)) ..];
     // For 3-byte characters we put a period at the end. All others are 4-byte.
     return if (slice[3] == '.') slice[0..3] else slice[0..4];
 }
@@ -481,6 +506,8 @@ test "variable" {
 
 test "prefix operator" {
     try expect("<math><mo form=\"prefix\">+</mo><mi>x</mi></math>", "+x", .@"inline");
+    try expect("<math><mo form=\"prefix\">-</mo><mi>x</mi></math>", "-x", .@"inline");
+    try expect("<math><mo form=\"prefix\">±</mo><mi>x</mi></math>", "\\pm x", .@"inline");
 }
 
 test "basic expression" {
@@ -491,11 +518,49 @@ test "text" {
     try expect("<math><mi>x</mi><mo>+</mo><mtext>one</mtext></math>", "x + \\text{one}", .@"inline");
 }
 
+test "delimiters" {
+    try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .@"inline");
+    try expect("<math><mo>(</mo><mi>A</mi><mo>)</mo></math>", "\\left(A\\right)", .@"inline");
+}
+
+test "sqrt" {
+    try expect("<math><msqrt><mn>2</mn></msqrt><mo>+</mo><msqrt><mi>x</mi><mi>y</mi></msqrt></math>", "\\sqrt2+\\sqrt{xy}", .@"inline");
+}
+
+test "phantom" {
+    try expect("<math><mphantom><mi>x</mi></mphantom></math>", "\\phantom x", .@"inline");
+}
+
 test "fractions" {
     try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac12", .@"inline");
     try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}{2}", .@"inline");
     try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac1{2}", .@"inline");
     try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}2", .@"inline");
+}
+
+test "subscripts" {
+    try expect("<math><msub><mi>a</mi><mn>1</mn></msub></math>", "a_1", .@"inline");
+    try expect("<math><msub><mi>a</mi><mn>1</mn></msub><mn>2</mn></math>", "a_12", .@"inline");
+    try expect("<math><msub><mi>a</mi><mn>12</mn></msub></math>", "a_{12}", .@"inline");
+}
+
+test "superscripts" {
+    try expect("<math><msup><mi>a</mi><mn>1</mn></msup></math>", "a^1", .@"inline");
+    try expect("<math><msup><mi>a</mi><mn>1</mn></msup><mn>2</mn></math>", "a^12", .@"inline");
+    try expect("<math><msup><mi>a</mi><mn>12</mn></msup></math>", "a^{12}", .@"inline");
+}
+
+test "squared expression" {
+    // It would be more correct to wrap the <msup> around the whole expression.
+    // We could do so by buffering tokens in parens like we do for braces.
+    // However, that could cause issues with unbalanced delimiters e.g. [1,5).
+    // The lazy way looks the same, and sounds the same (with macOS VoiceOver).
+    // MathJax and KaTeX do the lazy approach as well.
+    try expect(
+        "<math><mo stretchy=\"false\">(</mo><mi>x</mi><mo>+</mo><mi>y</mi><msup><mo stretchy=\"false\">)</mo><mn>2</mn></msup></math>",
+        "(x+y)^2",
+        .@"inline",
+    );
 }
 
 test "vectors" {
@@ -509,11 +574,31 @@ test "boxed" {
 }
 
 test "variant characters" {
+    try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .@"inline");
+    try expect("<math><mi>𝐚</mi></math>", "\\mathbf a", .@"inline");
+    try expect("<math><mi>𝕒</mi></math>", "\\mathbb a", .@"inline");
+    try expect("<math><mi>𝒶</mi></math>", "\\mathcal a", .@"inline");
     try expect("<math><mi mathvariant=\"normal\">A</mi></math>", "\\mathrm A", .@"inline");
     try expect("<math><mi>𝐀</mi></math>", "\\mathbf A", .@"inline");
     try expect("<math><mi>𝔸</mi></math>", "\\mathbb A", .@"inline");
     try expect("<math><mi>𝒜</mi></math>", "\\mathcal A", .@"inline");
 }
+
+test "nested variant characters" {
+    try expect(
+        "<math><mi>𝐚</mi><mi>𝕒</mi><mi>𝐚</mi><mi>𝕫</mi><mi>𝐳</mi><mi>z</mi></math>",
+        "\\mathbf{a\\mathbb{a\\mathbf{a}z}z}z",
+        .@"inline",
+    );
+}
+
+// test "mrows" {
+//     try expect(
+//         "<math><mfrac><mrow><mi>a</mi><mi>b</mi></mrow><mrow><mi>c</mi><mi>d</mi></mrow></mfrac></math>",
+//         "\\frac{ab}{cd}",
+//         .@"inline",
+//     );
+// }
 
 // test "quadratic formula" {
 //     try expect(
