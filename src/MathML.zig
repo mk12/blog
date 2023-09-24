@@ -16,10 +16,11 @@ const MathML = @This();
 
 kind: Kind,
 tokenizer: Tokenizer = .{},
-prev_token: Token = .null,
 stack: TagStack(Tag) = .{},
 variant_stack: std.BoundedArray(Variant, max_nested_variants) = .{},
 buffer: ?std.BoundedArray(Token, max_buffered_tokens) = null,
+next_is_prefix: bool = true,
+next_is_stretchy: bool = false,
 
 const max_nested_variants = 4;
 const max_buffered_tokens = 8;
@@ -359,9 +360,9 @@ pub fn init(writer: anytype, kind: Kind) !MathML {
 // TODO: Handle ExceededMaxTagDepth with error like Markdown does.
 pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
-    var window: [3]Token = .{ self.prev_token, try self.tokenizer.next(scanner), .null };
+    var window: [2]Token = .{ try self.tokenizer.next(scanner), .null };
     const finished = while (true) {
-        switch (window[1]) {
+        switch (window[0]) {
             .eol => break false,
             .@"$" => {
                 if (self.kind == .display) try scanner.expect('$');
@@ -369,26 +370,28 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
                 break true;
             },
             else => {
-                window[2] = try self.tokenizer.next(scanner);
+                window[1] = try self.tokenizer.next(scanner);
                 try self.renderOneToken(writer, window);
                 window[0] = window[1];
-                window[1] = window[2];
             },
         }
     };
-    self.prev_token = window[0];
     return finished;
 }
 
-fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
+fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
     // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[1], self.stack.items.buffer[0..self.stack.items.len] });
+    const prefix = self.next_is_prefix;
+    self.next_is_prefix = window[0] == .mo;
+    const stretchy = self.next_is_stretchy;
+    self.next_is_stretchy = window[0] == .stretchy;
     const stack_len = self.stack.len();
-    switch (window[2]) {
+    switch (window[1]) {
         ._ => try self.stack.push(writer, .msub),
         .@"^" => try self.stack.push(writer, .msup),
         else => {},
     }
-    switch (window[1]) {
+    switch (window[0]) {
         .null, .eol, .@"$" => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
         .msqrt => try self.stack.push(writer, .msqrt),
@@ -405,11 +408,11 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [3]Token) !void {
             } else text;
             try fmt.format(writer, "<mi>{s}</mi>", .{styled});
         },
-        .mo => |text| try if (window[0] == .null or window[0] == .mo)
+        .mo => |text| try if (prefix)
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo>{s}</mo>", .{text}),
-        .mo_delimiter => |text| try if (window[0] == .stretchy)
+        .mo_delimiter => |text| try if (stretchy)
             fmt.format(writer, "<mo>{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
