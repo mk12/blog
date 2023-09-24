@@ -44,25 +44,25 @@ We can generate a list of all rationals just by following the red arrows, as lon
 What about the real numbers: is $\mathbb{R}$ countably infinite? Suppose, for the sake of argument, that it is -- suppose we can map each natural number to a unique real number without missing any real numbers. This would give us a list of values that might look like this:
 
 $$
-\begin{alignat*}{3}
-x_0 &= 0.7812272323372748 & \dots \\
-x_1 &= 25.823506400277566 & \dots \\
-x_2 &= 7.4937386056237065 & \dots \\
-x_3 &= 3.1415926535897932 & \dots \\[-4pt]
-&\phantom{=} \,\vdots\quad\vdots\quad\vdots\quad\vdots\quad\vdots\quad\vdots\quad\vdots &\ddots
-\end{alignat*}
+\begin{matrix}
+x_0 = 0.7812272323372748 \; \dots \\
+x_1 = 25.823506400277566 \; \dots \\
+x_2 = 7.4937386056237065 \; \dots \\
+x_3 = 3.1415926535897932 \; \dots \\
+\vdots
+\end{matrix}
 $$
 
 These are decimal expansions of real numbers; the digits go on forever. We're assuming this is a bijection, so each real number must be unique.[^2] We can represent the digits in our hypothetical list with variables:
 
 $$
-\begin{alignat*}{3}
-x_0 &= \,?\,.\boxed{d_{11}}d_{12}d_{13}d_{14} & \dots \\
-x_1 &= \,?\,.d_{21}\boxed{d_{22}}d_{23}d_{24} & \dots \\
-x_2 &= \,?\,.d_{31}d_{32}\boxed{d_{33}}d_{34} & \dots \\
-x_3 &= \,?\,.d_{41}d_{42}d_{43}\boxed{d_{44}} & \dots \\[-4pt]
-&\phantom{=} \vdots\quad\vdots\quad\vdots\quad\vdots\quad\vdots &\ddots
-\end{alignat*}
+\begin{matrix}
+x_0 = ?.\boxed{d_{11}}d_{12}d_{13}d_{14} \; \dots \\
+x_1 = ?.d_{21}\boxed{d_{22}}d_{23}d_{24} \; \dots \\
+x_2 = ?.d_{31}d_{32}\boxed{d_{33}}d_{34} \; \dots \\
+x_3 = ?.d_{41}d_{42}d_{43}\boxed{d_{44}} \; \dots \\
+\vdots
+\end{matrix}
 $$
 
 I've put question marks before the decimal points because I only care about the fractional part. Now, this list is supposed to be complete -- every real number needs to be on it somewhere. But consider the real number $y=0.e_1e_2e_3e_4\dots$, where $e_1\ne d_{11}$, $e_2\ne d_{22}$, $e_3\ne d_{33}$, and so on. This still leaves us with eight symbols to choose from for each digit of $y$. Since the first digits differ, $y\ne x_0$. Similarly, $y\ne x_1$, because the second digits differ. Generalizing this to all the $x$ values, we realize that $y$ is not on the list. But $y$ is a real number! This is a contradiction, therefore our initial assumption was wrong: it is impossible to construct this list. In reality, $\lvert\mathbb{R}\rvert\ne\aleph_0$, so the set of real numbers is uncountably infinite.
@@ -74,10 +74,10 @@ The _continuum hypothesis_ states that $\lvert\mathbb{R}\rvert=\aleph_1$, which 
 Yet another counterintuitive fact about cardinalities is that $\lvert\mathbb{R}\rvert=\lvert\mathbb{R}^2\rvert$. In other words, there are just as many points on the real number line as there are on the Cartesian plane. This is true even even though we can divide the plane into infinitely many lines. Consider a point $(x,y)$ on the plane, where
 
 $$
-\begin{alignat*}{3}
-x &= \dots~& a_3a_2a_1&.d_1d_2d_3&~\dots\\
-y &= \dots~& b_3b_2b_1&.e_1e_2e_3&~\dots
-\end{alignat*}
+\begin{matrix}
+x = \dots \; a_3a_2a_1 . d_1d_2d_3 \; \dots \\
+y = \dots \; b_3b_2b_1 . e_1e_2e_3 \; \dots
+\end{matrix}
 $$
 
 We can construct a bijection[^4] $f\colon\mathbb{R}^2\to\mathbb{R}$ by interleaving the digits:
