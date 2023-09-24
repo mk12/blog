@@ -373,6 +373,13 @@ const Tag = union(enum) {
         return self == .brace or self == .mrow;
     }
 
+    fn hasMultipleArguments(self: Tag) bool {
+        return switch (self) {
+            .mfrac, .mfrac_1, .msub, .msup, .munderover, .munderover_1, .accent => true,
+            else => false,
+        };
+    }
+
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
             .brace, .mfrac_1, .munderover_1, .variant, .accent => {},
@@ -403,9 +410,8 @@ pub fn init(writer: anytype, kind: Kind) !MathML {
 // TODO: Handle ExceededMaxTagDepth with error like Markdown does.
 pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
-    var window: [2]Token = .{ try self.tokenizer.next(scanner), .null };
     const finished = while (true) {
-        switch (window[0]) {
+        switch (try self.tokenizer.next(scanner)) {
             .eof => break false,
             .@"\n" => {
                 try writer.writeByte('\n');
@@ -416,24 +422,20 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
                 try self.renderEnd(writer);
                 break true;
             },
-            else => {
-                window[1] = try self.tokenizer.next(scanner);
-                try self.renderOneToken(writer, window);
-                window[0] = window[1];
-            },
+            else => |token| try self.renderToken(writer, scanner, token),
         }
     };
     return finished;
 }
 
-fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
+fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[0], self.stack.items.buffer[0..self.stack.items.len] });
     // defer std.debug.print("stack'={any}\n", .{self.stack.items.buffer[0..self.stack.items.len]});
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = window[0] == .mo;
-    self.next_is_stretchy = window[0] == .stretchy;
-    switch (window[0]) {
+    self.next_is_prefix = token == .mo;
+    self.next_is_stretchy = token == .stretchy;
+    switch (token) {
         .@"}" => blk: {
             if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
             unreachable; // fail
@@ -441,16 +443,16 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         else => {},
     }
     const original_stack_len = self.stack.len();
-    switch (window[1]) {
-        ._ => try if (window[0] == .mo and window[0].mo.ptr == summation_symbol)
+    switch (scanner.peek() orelse 0) {
+        '_' => try if (token == .mo and token.mo.ptr == summation_symbol)
             self.stack.append(writer, .{ .munderover, .munderover_1 })
         else
             self.stack.push(writer, .msub),
-        .@"^" => if (self.stack.top() == null or self.stack.top().? != .munderover_1)
+        '^' => if (self.stack.top() == null or self.stack.top().? != .munderover_1)
             try self.stack.push(writer, .msup),
         else => {},
     }
-    switch (window[0]) {
+    switch (token) {
         .null, .eof, .@"\n", .@"$", .variant => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
         .msqrt => try self.stack.push(writer, .msqrt),
@@ -472,12 +474,11 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
-        .@"{" => try self.stack.push(writer, .brace), // or mrow if necessary
+        .@"{" => try self.stack.push(writer, .brace),
         .@"}" => {},
-        ._, .@"^" => return,
+        ._, .@"^", .stretchy => return,
         .@"&" => unreachable,
         .@"\\" => unreachable,
-        .stretchy => {},
         .begin => |_| unreachable,
         .end => |_| unreachable,
     }
@@ -597,6 +598,7 @@ test "squared expression" {
 test "vectors" {
     try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec x", .@"inline");
     try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{x}", .@"inline");
+    // try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
 }
 
 test "boxed" {
