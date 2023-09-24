@@ -104,6 +104,8 @@ fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
 // TODO implement environments
 const Environment = enum { matrix, bmatrix, cases };
 
+const summation_symbol = "∑";
+
 fn lookupMacro(name: []const u8) ?Token {
     const list = .{
         // Special
@@ -175,7 +177,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "pm", .{ .mo = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
-        .{ "sum", .{ .mo = "∑" } },
+        .{ "sum", .{ .mo = summation_symbol } },
         .{ "times", .{ .mo = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
@@ -362,6 +364,7 @@ const Tag = union(enum) {
     mtext,
     mover,
     munderover,
+    munderover_1,
     boxed,
     accent: [3:0]u8,
     variant: Variant,
@@ -372,7 +375,7 @@ const Tag = union(enum) {
 
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .brace, .mfrac_1, .variant, .accent => {},
+            .brace, .mfrac_1, .munderover_1, .variant, .accent => {},
             // TODO consider CSS classs instead
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
@@ -381,7 +384,7 @@ const Tag = union(enum) {
 
     pub fn writeCloseTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .brace, .mfrac_1, .variant => {},
+            .brace, .mfrac_1, .munderover_1, .variant => {},
             .accent => |text| try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
@@ -430,10 +433,21 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = window[0] == .mo;
     self.next_is_stretchy = window[0] == .stretchy;
-    const stack_len = self.stack.len();
+    switch (window[0]) {
+        .@"}" => blk: {
+            if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
+            unreachable; // fail
+        },
+        else => {},
+    }
+    const original_stack_len = self.stack.len();
     switch (window[1]) {
-        ._ => try self.stack.push(writer, .msub),
-        .@"^" => try self.stack.push(writer, .msup),
+        ._ => try if (window[0] == .mo and window[0].mo.ptr == summation_symbol)
+            self.stack.append(writer, .{ .munderover, .munderover_1 })
+        else
+            self.stack.push(writer, .msub),
+        .@"^" => if (self.stack.top() == null or self.stack.top().? != .munderover_1)
+            try self.stack.push(writer, .msup),
         else => {},
     }
     switch (window[0]) {
@@ -448,7 +462,7 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         .mn => |text| try fmt.format(writer, "<mn>{s}</mn>", .{text}),
         .mi => |text| try fmt.format(writer, "<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo => |text| try if (prefix)
+        .mo => |text| try if (prefix and text.ptr != summation_symbol)
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo>{s}</mo>", .{text}),
@@ -459,10 +473,7 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .@"{" => try self.stack.push(writer, .brace), // or mrow if necessary
-        .@"}" => blk: {
-            if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
-            unreachable; // fail
-        },
+        .@"}" => {},
         ._, .@"^" => return,
         .@"&" => unreachable,
         .@"\\" => unreachable,
@@ -471,10 +482,10 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         .end => |_| unreachable,
     }
     // or just return early when pushing so don't need to compare len
-    if (self.stack.len() <= stack_len)
+    if (self.stack.len() <= original_stack_len)
         while (self.stack.top()) |tag| {
             if (tag.closesWithBrace()) break else try self.stack.popTag(writer, tag);
-            if (tag == .mfrac_1) break;
+            if (tag == .mfrac_1 or tag == .munderover_1) break;
         };
 }
 
@@ -593,7 +604,18 @@ test "boxed" {
     try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed{x}", .@"inline");
 }
 
-test "summation" {}
+test "summation" {
+    try expect("<math><munderover><mo>∑</mo><mi>a</mi><mi>b</mi></munderover></math>", "\\sum_a^b", .@"inline");
+}
+
+// test "summation equation" {
+//     try expect(
+//         "<math><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" ++
+//             "<mo>=</mo><mfrac><mrow><mi>k</mi><mo>(</mo><mi>k</mi><mo>+</mo><mn>1</mn><mo>)</mo></mrow><mn>2</mn></mfrac></math>",
+//         "\\sum_{k=1}^nk=\\frac{k(k+1)}2",
+//         .@"inline",
+//     );
+// }
 
 test "variant characters" {
     try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .@"inline");
