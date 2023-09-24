@@ -17,13 +17,8 @@ const MathML = @This();
 kind: Kind,
 tokenizer: Tokenizer = .{},
 stack: TagStack(Tag) = .{},
-variant_stack: std.BoundedArray(Variant, max_nested_variants) = .{},
-buffer: ?std.BoundedArray(Token, max_buffered_tokens) = null,
 next_is_prefix: bool = true,
 next_is_stretchy: bool = false,
-
-const max_nested_variants = 4;
-const max_buffered_tokens = 8;
 
 pub const Kind = enum {
     @"inline",
@@ -53,6 +48,7 @@ const Token = union(enum) {
     mtext_end,
     mn: []const u8,
     mi: []const u8,
+    mi_normal: []const u8,
     mo: []const u8,
     mo_delimiter: []const u8,
     mspace: []const u8,
@@ -65,6 +61,7 @@ const Token = union(enum) {
     @"\\",
     stretchy,
     boxed,
+    // This is [3:0]u8 instead of []const u8 to save space in the Tag type.
     accent: [3:0]u8,
     variant: Variant,
     begin: Environment,
@@ -77,6 +74,32 @@ const Variant = enum {
     double_struck,
     script,
 };
+
+fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
+    const base: enum(u8) { a = 'a', A = 'A' } = switch (char) {
+        'a'...'z' => .a,
+        'A'...'Z' => .A,
+        else => return null,
+    };
+    const letters: *const [26 * 4:0]u8 = switch (variant) {
+        .normal => unreachable,
+        .bold => switch (base) {
+            .a => "𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳",
+            .A => "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙",
+        },
+        .double_struck => switch (base) {
+            .a => "𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫",
+            .A => "𝔸𝔹ℂ.𝔻𝔼𝔽𝔾ℍ.𝕀𝕁𝕂𝕃𝕄ℕ.𝕆ℙ.ℚ.ℝ.𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ.",
+        },
+        .script => switch (base) {
+            .a => "𝒶𝒷𝒸𝒹ℯ.𝒻ℊ.𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ.𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏",
+            .A => "𝒜ℬ.𝒞𝒟ℰ.ℱ.𝒢ℋ.ℐ.𝒥𝒦ℒ.ℳ.𝒩𝒪𝒫𝒬ℛ.𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵",
+        },
+    };
+    const slice = letters[4 * (char - @intFromEnum(base)) ..];
+    // For 3-byte characters we put a period at the end. All others are 4-byte.
+    return if (slice[3] == '.') slice[0..3] else slice[0..4];
+}
 
 // TODO implement environments
 const Environment = enum { matrix, bmatrix, cases };
@@ -212,6 +235,15 @@ const Tokenizer = struct {
                         try scanner.expect('}');
                         environment.* = std.meta.stringToEnum(Environment, env_name) orelse
                             return scanner.failOn(env_name, "unknown environment", .{});
+                    },
+                    .variant => |variant| {
+                        const open = scanner.consumeAny(" {") orelse return scanner.fail("expected space or '{{'", .{});
+                        const text = scanner.consumeLength(1) orelse return scanner.fail("unexpected EOF", .{});
+                        if (open == '{') try scanner.expect('}');
+                        return switch (variant) {
+                            .normal => .{ .mi_normal = text },
+                            else => .{ .mi = getVariantLetter(text[0], variant) orelse return scanner.failOn(text, "invalid letter", .{}) },
+                        };
                     },
                     .msqrt, .mphantom, .boxed => self.args_left = 1,
                     .mfrac => self.args_left = 2,
@@ -405,7 +437,7 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         else => {},
     }
     switch (window[0]) {
-        .null, .eof, .@"\n", .@"$" => unreachable,
+        .null, .eof, .@"\n", .@"$", .variant => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
         .msqrt => try self.stack.push(writer, .msqrt),
         .mphantom => try self.stack.push(writer, .mphantom),
@@ -414,13 +446,8 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         .mtext_content => |text| return writer.writeAll(text),
         .mtext_end => try self.stack.popTag(writer, .mtext),
         .mn => |text| try fmt.format(writer, "<mn>{s}</mn>", .{text}),
-        .mi => |text| blk: {
-            const styled = if (self.currentVariant()) |variant| switch (variant) {
-                .normal => break :blk try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-                else => getVariantLetter(text, variant) orelse text,
-            } else text;
-            try fmt.format(writer, "<mi>{s}</mi>", .{styled});
-        },
+        .mi => |text| try fmt.format(writer, "<mi>{s}</mi>", .{text}),
+        .mi_normal => |text| try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
         .mo => |text| try if (prefix)
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
         else
@@ -431,10 +458,6 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
-        .variant => |variant| {
-            try self.stack.push(writer, .{ .variant = variant });
-            try self.variant_stack.append(variant);
-        },
         .@"{" => try self.stack.push(writer, .brace), // or mrow if necessary
         .@"}" => blk: {
             if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
@@ -452,7 +475,6 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         while (self.stack.top()) |tag| {
             if (tag.closesWithBrace()) break else try self.stack.popTag(writer, tag);
             if (tag == .mfrac_1) break;
-            if (tag == .variant) self.variant_stack.len -= 1;
         };
 }
 
@@ -460,38 +482,6 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
     _ = self;
     // check stack and buffer
     try writer.writeAll("</math>");
-}
-
-fn currentVariant(self: MathML) ?Variant {
-    const len = self.variant_stack.len;
-    return if (len == 0) null else self.variant_stack.get(len - 1);
-}
-
-fn getVariantLetter(char_str: []const u8, variant: Variant) ?[]const u8 {
-    const char = if (char_str.len == 1) char_str[0] else return null;
-    const base: enum(u8) { a = 'a', A = 'A' } = switch (char) {
-        'a'...'z' => .a,
-        'A'...'Z' => .A,
-        else => return null,
-    };
-    const letters: *const [26 * 4:0]u8 = switch (variant) {
-        .normal => unreachable,
-        .bold => switch (base) {
-            .a => "𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳",
-            .A => "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙",
-        },
-        .double_struck => switch (base) {
-            .a => "𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫",
-            .A => "𝔸𝔹ℂ.𝔻𝔼𝔽𝔾ℍ.𝕀𝕁𝕂𝕃𝕄ℕ.𝕆ℙ.ℚ.ℝ.𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ.",
-        },
-        .script => switch (base) {
-            .a => "𝒶𝒷𝒸𝒹ℯ.𝒻ℊ.𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ.𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏",
-            .A => "𝒜ℬ.𝒞𝒟ℰ.ℱ.𝒢ℋ.ℐ.𝒥𝒦ℒ.ℳ.𝒩𝒪𝒫𝒬ℛ.𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵",
-        },
-    };
-    const slice = letters[4 * (char - @intFromEnum(base)) ..];
-    // For 3-byte characters we put a period at the end. All others are 4-byte.
-    return if (slice[3] == '.') slice[0..3] else slice[0..4];
 }
 
 fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
@@ -575,9 +565,9 @@ test "superscripts" {
     try expect("<math><msup><mi>a</mi><mn>12</mn></msup></math>", "a^{12}", .@"inline");
 }
 
-// test "R squared" {
-//     try expect("<math><msup><mi>ℝ</mi><mn>2</mn></msup></math>", "\\mathbb{R}^2", .@"inline");
-// }
+test "R squared" {
+    try expect("<math><msup><mi>ℝ</mi><mn>2</mn></msup></math>", "\\mathbb{R}^2", .@"inline");
+}
 
 test "squared expression" {
     // It would be more correct to wrap the <msup> around the whole expression.
@@ -612,14 +602,6 @@ test "variant characters" {
     try expect("<math><mi>𝐀</mi></math>", "\\mathbf A", .@"inline");
     try expect("<math><mi>𝔸</mi></math>", "\\mathbb A", .@"inline");
     try expect("<math><mi>𝒜</mi></math>", "\\mathcal A", .@"inline");
-}
-
-test "nested variant characters" {
-    try expect(
-        "<math><mi>𝐚</mi><mi>𝕒</mi><mi>𝐚</mi><mi>𝕫</mi><mi>𝐳</mi><mi>z</mi></math>",
-        "\\mathbf{a\\mathbb{a\\mathbf{a}z}z}z",
-        .@"inline",
-    );
 }
 
 // test "mrows" {
