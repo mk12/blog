@@ -37,10 +37,12 @@ pub const Kind = enum {
     }
 };
 
+// TODO reorder/reorganize these
 const Token = union(enum) {
     // Special
-    null,
-    eol,
+    null, // TODO reconsider if still needed, without window/prev_token
+    eof,
+    @"\n",
     @"$",
     // MathML tags
     mfrac,
@@ -63,7 +65,7 @@ const Token = union(enum) {
     @"\\",
     stretchy,
     boxed,
-    accent: []const u8,
+    accent: [3:0]u8,
     variant: Variant,
     begin: Environment,
     end: Environment,
@@ -76,6 +78,7 @@ const Variant = enum {
     script,
 };
 
+// TODO implement environments
 const Environment = enum { matrix, bmatrix, cases };
 
 fn lookupMacro(name: []const u8) ?Token {
@@ -105,8 +108,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "langle", .{ .mo_delimiter = "⟨" } },
         .{ "rangle", .{ .mo_delimiter = "⟩" } },
         // Accents
-        .{ "vec", .{ .accent = "→" } },
-        .{ "hat", .{ .accent = "^" } },
+        .{ "vec", .{ .accent = "→".* } },
+        .{ "hat", .{ .accent = "^\x00\x00".* } },
         // Functions
         .{ "log", .{ .mi = "log" } },
         .{ "lim", .{ .mi = "lim" } },
@@ -173,9 +176,8 @@ const Tokenizer = struct {
         self.args_left -|= 1;
         scanner.skipMany(' ');
         const start = scanner.offset;
-        return switch (scanner.next() orelse return .eol) {
-            '\n' => .eol,
-            inline '$', '{', '}', '_', '^' => |char| {
+        return switch (scanner.next() orelse return .eof) {
+            inline '\n', '$', '{', '}', '_', '^' => |char| {
                 if (char == '_' or char == '^') self.args_left = 1;
                 return @field(Token, &.{char});
             },
@@ -236,11 +238,15 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
 }
 
 test "scan empty string" {
-    try expectTokens(&[_]Token{.eol}, "");
+    try expectTokens(&[_]Token{.eof}, "");
+}
+
+test "scan blank line" {
+    try expectTokens(&[_]Token{ .@"\n", .eof }, "\n");
 }
 
 test "scan variable" {
-    try expectTokens(&[_]Token{ .{ .mi = "x" }, .eol }, "x");
+    try expectTokens(&[_]Token{ .{ .mi = "x" }, .eof }, "x");
 }
 
 test "scan subscript" {
@@ -249,7 +255,7 @@ test "scan subscript" {
         ._,
         .{ .mn = "1" },
         .{ .mn = "2345" },
-        .eol,
+        .eof,
     }, "x_12345");
 }
 
@@ -259,7 +265,7 @@ test "scan fraction" {
         .{ .mn = "1" },
         .{ .mn = "2" },
         .{ .mn = "345" },
-        .eol,
+        .eof,
     }, "\\frac12345");
 }
 
@@ -269,12 +275,12 @@ test "scan text" {
         .{ .mo = "+" },
         .mtext_start,
         .{ .mtext_content = "some stuff" },
-        .eol,
+        .@"\n",
         .{ .mtext_content = "more here" },
         .mtext_end,
         .{ .mo = "-" },
         .{ .mi = "y" },
-        .eol,
+        .eof,
     },
         \\x + \text{some stuff
         \\more here} - y
@@ -305,14 +311,15 @@ test "scan quadratic formula" {
         .{ .mn = "2" },
         .{ .mi = "a" },
         .@"}",
-        .eol,
+        .eof,
     },
         \\x = -b \pm \frac{\sqrt{b^2 - 4ac}}{2a}
     );
 }
 
+// TODO reorder/reorganize these
 const Tag = union(enum) {
-    brace,
+    brace, // TODO consider combining with mrow
     mfrac,
     mfrac_1,
     mrow,
@@ -324,7 +331,7 @@ const Tag = union(enum) {
     mover,
     munderover,
     boxed,
-    accent: []const u8,
+    accent: [3:0]u8,
     variant: Variant,
 
     fn closesWithBrace(self: Tag) bool {
@@ -334,6 +341,7 @@ const Tag = union(enum) {
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
             .brace, .mfrac_1, .variant, .accent => {},
+            // TODO consider CSS classs instead
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
         }
@@ -342,7 +350,7 @@ const Tag = union(enum) {
     pub fn writeCloseTag(self: Tag, writer: anytype) !void {
         switch (self) {
             .brace, .mfrac_1, .variant => {},
-            .accent => |text| try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
+            .accent => |text| try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
         }
@@ -363,7 +371,11 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     var window: [2]Token = .{ try self.tokenizer.next(scanner), .null };
     const finished = while (true) {
         switch (window[0]) {
-            .eol => break false,
+            .eof => break false,
+            .@"\n" => {
+                try writer.writeByte('\n');
+                break false;
+            },
             .@"$" => {
                 if (self.kind == .display) try scanner.expect('$');
                 try self.renderEnd(writer);
@@ -380,10 +392,11 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
 }
 
 fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
-    // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[1], self.stack.items.buffer[0..self.stack.items.len] });
+    // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[0], self.stack.items.buffer[0..self.stack.items.len] });
+    // defer std.debug.print("stack'={any}\n", .{self.stack.items.buffer[0..self.stack.items.len]});
     const prefix = self.next_is_prefix;
-    self.next_is_prefix = window[0] == .mo;
     const stretchy = self.next_is_stretchy;
+    self.next_is_prefix = window[0] == .mo;
     self.next_is_stretchy = window[0] == .stretchy;
     const stack_len = self.stack.len();
     switch (window[1]) {
@@ -392,7 +405,7 @@ fn renderOneToken(self: *MathML, writer: anytype, window: [2]Token) !void {
         else => {},
     }
     switch (window[0]) {
-        .null, .eol, .@"$" => unreachable,
+        .null, .eof, .@"\n", .@"$" => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
         .msqrt => try self.stack.push(writer, .msqrt),
         .mphantom => try self.stack.push(writer, .mphantom),
@@ -502,6 +515,11 @@ test "empty input" {
     try expect("<math display=\"block\"></math>", "", .display);
 }
 
+test "newlines passed through" {
+    try expect("<math>\n\n</math>", "\n\n", .@"inline");
+    try expect("<math display=\"block\">\n\n</math>", "\n\n", .display);
+}
+
 test "variable" {
     try expect("<math><mi>x</mi></math>", "x", .@"inline");
     try expect("<math display=\"block\"><mi>x</mi></math>", "x", .display);
@@ -527,7 +545,11 @@ test "delimiters" {
 }
 
 test "sqrt" {
-    try expect("<math><msqrt><mn>2</mn></msqrt><mo>+</mo><msqrt><mi>x</mi><mi>y</mi></msqrt></math>", "\\sqrt2+\\sqrt{xy}", .@"inline");
+    try expect(
+        "<math><msqrt><mn>2</mn></msqrt><mo>+</mo><msqrt><mi>x</mi><mi>y</mi></msqrt></math>",
+        "\\sqrt2+\\sqrt{xy}",
+        .@"inline",
+    );
 }
 
 test "phantom" {
@@ -553,6 +575,10 @@ test "superscripts" {
     try expect("<math><msup><mi>a</mi><mn>12</mn></msup></math>", "a^{12}", .@"inline");
 }
 
+// test "R squared" {
+//     try expect("<math><msup><mi>ℝ</mi><mn>2</mn></msup></math>", "\\mathbb{R}^2", .@"inline");
+// }
+
 test "squared expression" {
     // It would be more correct to wrap the <msup> around the whole expression.
     // We could do so by buffering tokens in parens like we do for braces.
@@ -560,7 +586,8 @@ test "squared expression" {
     // The lazy way looks the same, and sounds the same (with macOS VoiceOver).
     // MathJax and KaTeX do the lazy approach as well.
     try expect(
-        "<math><mo stretchy=\"false\">(</mo><mi>x</mi><mo>+</mo><mi>y</mi><msup><mo stretchy=\"false\">)</mo><mn>2</mn></msup></math>",
+        "<math><mo stretchy=\"false\">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>" ++
+            "<msup><mo stretchy=\"false\">)</mo><mn>2</mn></msup></math>",
         "(x+y)^2",
         .@"inline",
     );
