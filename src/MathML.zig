@@ -593,15 +593,28 @@ test "boxed" {
     try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed{x}", .@"inline");
 }
 
+test "summation" {}
+
 test "variant characters" {
     try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .@"inline");
     try expect("<math><mi>𝐚</mi></math>", "\\mathbf a", .@"inline");
     try expect("<math><mi>𝕒</mi></math>", "\\mathbb a", .@"inline");
     try expect("<math><mi>𝒶</mi></math>", "\\mathcal a", .@"inline");
+
+    try expect("<math><mi mathvariant=\"normal\">z</mi></math>", "\\mathrm{z}", .@"inline");
+    try expect("<math><mi>𝐳</mi></math>", "\\mathbf{z}", .@"inline");
+    try expect("<math><mi>𝕫</mi></math>", "\\mathbb{z}", .@"inline");
+    try expect("<math><mi>𝓏</mi></math>", "\\mathcal{z}", .@"inline");
+
     try expect("<math><mi mathvariant=\"normal\">A</mi></math>", "\\mathrm A", .@"inline");
     try expect("<math><mi>𝐀</mi></math>", "\\mathbf A", .@"inline");
     try expect("<math><mi>𝔸</mi></math>", "\\mathbb A", .@"inline");
     try expect("<math><mi>𝒜</mi></math>", "\\mathcal A", .@"inline");
+
+    try expect("<math><mi mathvariant=\"normal\">Z</mi></math>", "\\mathrm{Z}", .@"inline");
+    try expect("<math><mi>𝐙</mi></math>", "\\mathbf{Z}", .@"inline");
+    try expect("<math><mi>ℤ</mi></math>", "\\mathbb{Z}", .@"inline");
+    try expect("<math><mi>𝒵</mi></math>", "\\mathcal{Z}", .@"inline");
 }
 
 // test "mrows" {
