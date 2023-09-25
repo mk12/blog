@@ -62,10 +62,12 @@ const Token = union(enum) {
     boxed,
     // This is [3:0]u8 instead of []const u8 to save space in the Tag type.
     accent: [3:0]u8,
-    variant: Variant,
     begin: Environment,
     end: Environment,
+    variant: Variant,
 };
+
+const Environment = enum { matrix, bmatrix, cases };
 
 const Variant = enum {
     normal,
@@ -99,9 +101,6 @@ fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
     // For 3-byte characters we put a period at the end. All others are 4-byte.
     return if (slice[3] == '.') slice[0..3] else slice[0..4];
 }
-
-// TODO implement environments
-const Environment = enum { matrix, bmatrix, cases };
 
 const summation_symbol = "∑";
 
@@ -206,7 +205,8 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '+', '-', '=', '<', '>', ',', ':', ';', '.' => .{ .mo = scanner.source[start..scanner.offset] },
+            '+', '-', '=', '>', ',', ':', ';', '.' => .{ .mo = scanner.source[start..scanner.offset] },
+            '<' => .{ .mo = "&lt;" },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
             '0'...'9' => {
                 if (consume_multiple_digits) while (scanner.peek()) |char| switch (char) {
@@ -217,6 +217,7 @@ const Tokenizer = struct {
             },
             '\\' => {
                 if (scanner.consume('\\')) return .@"\\";
+                if (scanner.consume(';')) return .{ .mspace = "0.278em" };
                 if (scanner.consumeAny("{}")) |_| return .{ .mo = scanner.source[start..scanner.offset] };
                 const macro_start = scanner.offset;
                 while (scanner.peek()) |char| switch (char) {
@@ -446,7 +447,7 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = token == .mo;
+    self.next_is_prefix = token == .mo or token == .@"&" or token == .@"\\";
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -486,12 +487,16 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
-        .begin => |environment| switch (environment) {
-            .matrix => try self.stack.append(writer, .{ .mtable, .mtr, .mtd }),
-            else => unreachable,
+        .begin => |environment| {
+            switch (environment) {
+                .matrix => {},
+                .bmatrix => try writer.writeAll("<mo>[</mo>"),
+                .cases => try writer.writeAll("<mo>{</mo>"),
+            }
+            try self.stack.append(writer, .{ .mtable, .mtr, .mtd });
         },
-        .end => |environment| switch (environment) {
-            .matrix => switch (self.top()) {
+        .end => |environment| {
+            switch (self.top()) {
                 .mtd => {
                     // TODO maybe don't need to represent all in stack.
                     try self.stack.popTag(writer, .mtd);
@@ -499,8 +504,11 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                     try self.stack.popTag(writer, .mtable);
                 },
                 else => return scanner.fail("FIXME unclosed", .{}),
-            },
-            else => unreachable,
+            }
+            switch (environment) {
+                .matrix, .cases => {},
+                .bmatrix => try writer.writeAll("<mo>]</mo>"),
+            }
         },
         .@"&" => switch (self.top()) {
             .mtd => {
@@ -605,6 +613,10 @@ test "basic expression" {
     try expect("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", "x + 1", .@"inline");
 }
 
+test "entities" {
+    try expect("<math><mn>1</mn><mo>&lt;</mo><mi>x</mi><mo>></mo><mn>1</mn></math>", "1<x>1", .@"inline");
+}
+
 test "text" {
     try expect("<math><mi>x</mi><mo>+</mo><mtext>one</mtext></math>", "x + \\text{one}", .@"inline");
 }
@@ -620,6 +632,10 @@ test "sqrt" {
         "\\sqrt2+\\sqrt{xy}",
         .@"inline",
     );
+}
+
+test "spacing" {
+    try expect("<math><mspace width=\"1em\"/><mspace width=\"0.278em\"/></math>", "\\quad\\;", .@"inline");
 }
 
 test "phantom" {
@@ -745,6 +761,32 @@ test "matrix environment" {
     , .display);
 }
 
+test "bmatrix environment" {
+    try expect(
+        "<math><mo>[</mo><mtable><mtr><mtd><mi>x</mi></mtd></mtr></mtable><mo>]</mo></math>",
+        "\\begin{bmatrix}x\\end{bmatrix}",
+        .@"inline",
+    );
+}
+
+test "cases environment" {
+    try expect(
+        \\<math><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo>
+        \\<mo>{</mo><mtable><mtr><mtd>
+        \\<mn>1</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>></mo><mn>0</mn></mtd></mtr><mtr><mtd>
+        \\<mn>0</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>=</mo><mn>0</mn></mtd></mtr><mtr><mtd>
+        \\<mo form="prefix">-</mo><mn>1</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>&lt;</mo><mn>0</mn>
+        \\</mtd></mtr></mtable></math>
+    ,
+        \\f(x)=
+        \\\begin{cases}
+        \\1 & \text{if}\; x > 0 \\
+        \\0 & \text{if}\; x = 0 \\
+        \\-1 & \text{if}\; x < 0
+        \\\end{cases}
+    , .@"inline");
+}
+
 test "missing macro name" {
     try expectFailure("<input>:1:6: expected a macro name", "1 + \\", .@"inline");
 }
@@ -768,3 +810,5 @@ test "invalid close brace" {
 test "invalid empty braces" {
     try expectFailure("<input>:1:7: \"}\": unexpected character", "\\frac{}", .@"inline");
 }
+
+// TODO invalid end doesn't match begin env
