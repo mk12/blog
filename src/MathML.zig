@@ -201,7 +201,7 @@ const Tokenizer = struct {
         scanner.skipMany(' ');
         const start = scanner.offset;
         return switch (scanner.next() orelse return .eof) {
-            inline '\n', '$', '{', '}', '_', '^' => |char| {
+            inline '\n', '$', '{', '}', '_', '^', '&' => |char| {
                 if (char == '_' or char == '^') self.args_left = 1;
                 return @field(Token, &.{char});
             },
@@ -216,6 +216,7 @@ const Tokenizer = struct {
                 return .{ .mn = scanner.source[start..scanner.offset] };
             },
             '\\' => {
+                if (scanner.consume('\\')) return .@"\\";
                 if (scanner.consumeAny("{}")) |_| return .{ .mo = scanner.source[start..scanner.offset] };
                 const macro_start = scanner.offset;
                 while (scanner.peek()) |char| switch (char) {
@@ -233,7 +234,6 @@ const Tokenizer = struct {
                     .begin, .end => |*environment| {
                         try scanner.expect('{');
                         const env_name = scanner.consumeLineUntil('}') orelse return scanner.fail("expected '}}'", .{});
-                        try scanner.expect('}');
                         environment.* = std.meta.stringToEnum(Environment, env_name) orelse
                             return scanner.failOn(env_name, "unknown environment", .{});
                     },
@@ -365,15 +365,11 @@ const Tag = union(enum) {
     mover,
     munderover,
     munderover_arg,
+    mtable,
+    mtr,
+    mtd,
     boxed,
     accent: [3:0]u8,
-
-    fn isBrace(self: Tag) bool {
-        return switch (self) {
-            .mrow, .mrow_elide => true,
-            else => false,
-        };
-    }
 
     fn isArg(self: Tag) bool {
         return switch (self) {
@@ -384,8 +380,8 @@ const Tag = union(enum) {
 
     fn hasImplicitMrow(self: Tag) bool {
         return switch (self) {
-            .math, .mtext, .mover => unreachable,
-            .mrow, .mrow_elide, .msqrt, .mphantom, .boxed => true,
+            .math, .mtext, .mover, .mtable, .mtr => unreachable,
+            .mrow, .mrow_elide, .msqrt, .mphantom, .boxed, .mtd => true,
             .mfrac, .mfrac_arg, .msub, .msup, .munderover, .munderover_arg, .accent => false,
         };
     }
@@ -452,11 +448,10 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = token == .mo;
     self.next_is_stretchy = token == .stretchy;
-    if (token == .@"}")
-        if (self.top().isBrace())
-            try self.stack.pop(writer)
-        else
-            return scanner.failAtOffset(scanner.offset - 1, "unexpected '}}'", .{});
+    if (token == .@"}") switch (self.top()) {
+        .mrow, .mrow_elide => try self.stack.pop(writer),
+        else => return scanner.failAtOffset(scanner.offset - 1, "unexpected '}}'", .{}),
+    };
     const original_stack_len = self.stack.len();
     if (scanner.peek()) |char| switch (char) {
         '_' => try if (token == .mo and token.mo.ptr == summation_symbol)
@@ -491,15 +486,44 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
-        .@"&" => unreachable,
-        .@"\\" => unreachable,
-        .begin => |_| unreachable,
-        .end => |_| unreachable,
+        .begin => |environment| switch (environment) {
+            .matrix => try self.stack.append(writer, .{ .mtable, .mtr, .mtd }),
+            else => unreachable,
+        },
+        .end => |environment| switch (environment) {
+            .matrix => switch (self.top()) {
+                .mtd => {
+                    // TODO maybe don't need to represent all in stack.
+                    try self.stack.popTag(writer, .mtd);
+                    try self.stack.popTag(writer, .mtr);
+                    try self.stack.popTag(writer, .mtable);
+                },
+                else => return scanner.fail("FIXME unclosed", .{}),
+            },
+            else => unreachable,
+        },
+        .@"&" => switch (self.top()) {
+            .mtd => {
+                try self.stack.popTag(writer, .mtd);
+                try self.stack.push(writer, .mtd);
+            },
+            else => return scanner.fail("FIXME unclosed", .{}),
+        },
+        .@"\\" => switch (self.top()) {
+            .mtd => {
+                try self.stack.popTag(writer, .mtd);
+                try self.stack.popTag(writer, .mtr);
+                try self.stack.append(writer, .{ .mtr, .mtd });
+            },
+            else => return scanner.fail("FIXME unclosed", .{}),
+        },
     }
-    if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| {
-        if (tag.isBrace()) break;
-        try self.stack.popTag(writer, tag);
-        if (tag.isArg()) break;
+    if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| switch (tag) {
+        .mrow, .mrow_elide, .mtd => break,
+        else => {
+            try self.stack.popTag(writer, tag);
+            if (tag.isArg()) break;
+        },
     };
 }
 
@@ -707,19 +731,19 @@ test "quadratic formula" {
     , .display);
 }
 
-// test "matrix environment" {
-//     try expect(
-//         \\<math display="block"><mtable><mtr><mtd>
-//         \\a</mtd><mtd>b</mtd></mtr><mtd>
-//         \\c</mtd><mtd>d</mtd>
-//         \\</mtr></mtable></math>
-//     ,
-//         \\\begin{matrix}
-//         \\a & b \\
-//         \\c & d
-//         \\\end{matrix}
-//     , .display);
-// }
+test "matrix environment" {
+    try expect(
+        \\<math display="block"><mtable><mtr><mtd>
+        \\<mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd>
+        \\<mi>c</mi></mtd><mtd><mi>d</mi>
+        \\</mtd></mtr></mtable></math>
+    ,
+        \\\begin{matrix}
+        \\a & b \\
+        \\c & d
+        \\\end{matrix}
+    , .display);
+}
 
 test "missing macro name" {
     try expectFailure("<input>:1:6: expected a macro name", "1 + \\", .@"inline");
