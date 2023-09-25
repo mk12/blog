@@ -1728,6 +1728,10 @@ test "render table with inlines in cells" {
     , .{});
 }
 
+// test "inline math" {
+//     try expect("<p><math><mi>x</mi></math></p>", "$x$", .{});
+// }
+
 test "unclosed inline at end" {
     try expectFailure(
         \\<input>:1:5: unclosed <em> tag
