@@ -16,7 +16,7 @@ const MathML = @This();
 
 kind: Kind,
 tokenizer: Tokenizer = .{},
-stack: TagStack(Tag) = .{},
+stack: TagStack(Tag) = .{}, // TODO maybe have root tag?
 next_is_prefix: bool = true,
 next_is_stretchy: bool = false,
 
@@ -35,7 +35,6 @@ pub const Kind = enum {
 // TODO reorder/reorganize these
 const Token = union(enum) {
     // Special
-    null, // TODO reconsider if still needed, without window/prev_token
     eof,
     @"\n",
     @"$",
@@ -428,6 +427,12 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     return finished;
 }
 
+fn renderEnd(self: *MathML, writer: anytype) !void {
+    _ = self;
+    // check stack and buffer
+    try writer.writeAll("</math>");
+}
+
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[0], self.stack.items.buffer[0..self.stack.items.len] });
     // defer std.debug.print("stack'={any}\n", .{self.stack.items.buffer[0..self.stack.items.len]});
@@ -443,7 +448,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         else => {},
     }
     const original_stack_len = self.stack.len();
-    switch (scanner.peek() orelse 0) {
+    if (scanner.peek()) |char| switch (char) {
         '_' => try if (token == .mo and token.mo.ptr == summation_symbol)
             self.stack.append(writer, .{ .munderover, .munderover_1 })
         else
@@ -451,9 +456,9 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         '^' => if (self.stack.top() == null or self.stack.top().? != .munderover_1)
             try self.stack.push(writer, .msup),
         else => {},
-    }
+    };
     switch (token) {
-        .null, .eof, .@"\n", .@"$", .variant => unreachable,
+        .eof, .@"\n", .@"$", .variant => unreachable,
         .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
         .msqrt => try self.stack.push(writer, .msqrt),
         .mphantom => try self.stack.push(writer, .mphantom),
@@ -474,7 +479,10 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
-        .@"{" => try self.stack.push(writer, .brace),
+        .@"{" => try if (try self.shouldUseMrow(scanner))
+            self.stack.push(writer, .mrow)
+        else
+            self.stack.push(writer, .brace),
         .@"}" => {},
         ._, .@"^", .stretchy => return,
         .@"&" => unreachable,
@@ -490,10 +498,27 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         };
 }
 
-fn renderEnd(self: *MathML, writer: anytype) !void {
-    _ = self;
-    // check stack and buffer
-    try writer.writeAll("</math>");
+fn shouldUseMrow(self: MathML, scanner: *Scanner) !bool {
+    const top_token = self.stack.top() orelse return false;
+    if (!top_token.hasMultipleArguments()) return false;
+    const start = scanner.offset;
+    defer scanner.offset = start;
+    var tokenizer_copy = self.tokenizer;
+    const first = try tokenizer_copy.next(scanner);
+    if (first == .@"{" or first == .@"}")
+        return scanner.failOn(scanner.source[start..scanner.offset], "unexpected character", .{});
+    const second = try tokenizer_copy.next(scanner);
+    if (second == .@"}") return false;
+    // if (second != .@"{") return true;
+    // var depth: usize = 1;
+    // while (true) switch (try tokenizer_copy.next(scanner)) {
+    //     .@"{" => depth += 1,
+    //     .@"}" => {
+    //         depth -= 1;
+    //         if (depth == 0)
+    //     }
+    // };
+    return true;
 }
 
 fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
@@ -598,7 +623,7 @@ test "squared expression" {
 test "vectors" {
     try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec x", .@"inline");
     try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{x}", .@"inline");
-    // try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
+    try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
 }
 
 test "boxed" {
@@ -610,14 +635,17 @@ test "summation" {
     try expect("<math><munderover><mo>∑</mo><mi>a</mi><mi>b</mi></munderover></math>", "\\sum_a^b", .@"inline");
 }
 
-// test "summation equation" {
-//     try expect(
-//         "<math><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>" ++
-//             "<mo>=</mo><mfrac><mrow><mi>k</mi><mo>(</mo><mi>k</mi><mo>+</mo><mn>1</mn><mo>)</mo></mrow><mn>2</mn></mfrac></math>",
-//         "\\sum_{k=1}^nk=\\frac{k(k+1)}2",
-//         .@"inline",
-//     );
-// }
+test "summation equation" {
+    try expect(
+        \\<math><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>
+        \\<mi>k</mi><mo>=</mo><mfrac><mrow><mi>k</mi>
+        \\<mo stretchy="false">(</mo><mi>k</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo>
+        \\</mrow><mn>2</mn></mfrac></math>
+    ,
+        "\\sum_{k=1}^n\nk=\\frac{k\n(k+1)\n}2",
+        .@"inline",
+    );
+}
 
 test "variant characters" {
     try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .@"inline");
@@ -641,40 +669,40 @@ test "variant characters" {
     try expect("<math><mi>𝒵</mi></math>", "\\mathcal{Z}", .@"inline");
 }
 
-// test "mrows" {
-//     try expect(
-//         "<math><mfrac><mrow><mi>a</mi><mi>b</mi></mrow><mrow><mi>c</mi><mi>d</mi></mrow></mfrac></math>",
-//         "\\frac{ab}{cd}",
-//         .@"inline",
-//     );
-// }
+test "mrows" {
+    try expect(
+        "<math><mfrac><mrow><mi>a</mi><mi>b</mi></mrow><mrow><mi>c</mi><mi>d</mi></mrow></mfrac></math>",
+        "\\frac{ab}{cd}",
+        .@"inline",
+    );
+}
 
-// test "quadratic formula" {
-//     try expect(
-//         \\<math display="block">
-//         \\<mi>x</mi>
-//         \\<mo>=</mo>
-//         \\<mo form="prefix">-</mo>
-//         \\<mi>b</mi>
-//         \\<mo>±</mo>
-//         \\<mfrac>
-//         \\<msqrt>
-//         \\<msup>
-//         \\<mi>b</mi>
-//         \\<mn>2</mn>
-//         \\</msup>
-//         \\<mo>-</mo>
-//         \\<mn>4</mn>
-//         \\<mi>a</mi>
-//         \\<mi>c</mi>
-//         \\</msqrt>
-//         \\<mrow>
-//         \\<mn>2</mn>
-//         \\<mi>a</mi>
-//         \\</mrow>
-//         \\</mfrac>
-//         \\</math>
-//     ,
-//         \\x = -b \pm \frac{\sqrt{b^2 - 4ac}}{2a}
-//     , .display);
-// }
+test "quadratic formula with newlines" {
+    try expect(
+        \\<math display="block">
+        \\<mi>x</mi>
+        \\<mo>=</mo>
+        \\<mo form="prefix">-</mo>
+        \\<mi>b</mi>
+        \\<mo>±</mo>
+        \\<mfrac>
+        \\<mrow>
+        \\<msqrt>
+        \\<msup><mi>b</mi><mn>2</mn></msup>
+        \\<mo>-</mo>
+        \\<mn>4</mn>
+        \\<mi>a</mi>
+        \\<mi>c</mi>
+        \\</msqrt>
+        \\</mrow><mrow>
+        \\<mn>2</mn>
+        \\<mi>a</mi>
+        \\</mrow></mfrac>
+        \\</math>
+    ,
+        "\n x \n = \n - \n b \n \\pm \n \\frac \n{ \n " ++
+            "\\sqrt{ \n b^2 \n - \n 4 \n a \n c \n } \n } " ++
+            "{ \n 2 \n a \n } \n",
+        .display,
+    );
+}

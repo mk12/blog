@@ -831,6 +831,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
+                // TODO: we need to start rendering right away - next iteration will consume md tokens
+                // but can't break bc not necessarily at end of line?
                 .@"$" => active_mode = .{ .math = try MathML.init(writer, .@"inline") },
                 .@"$$" => active_mode = .{ .math = try MathML.init(writer, .display) },
                 // Footnotes
