@@ -16,7 +16,7 @@ const MathML = @This();
 
 kind: Kind,
 tokenizer: Tokenizer = .{},
-stack: TagStack(Tag) = .{}, // TODO maybe have root tag?
+stack: TagStack(Tag) = .{},
 next_is_prefix: bool = true,
 next_is_stretchy: bool = false,
 
@@ -352,36 +352,48 @@ test "scan quadratic formula" {
 
 // TODO reorder/reorganize these
 const Tag = union(enum) {
-    brace, // TODO consider combining with mrow
-    mfrac,
-    mfrac_1,
+    math,
     mrow,
-    mphantom,
+    mrow_elide,
+    mfrac,
+    mfrac_arg,
     msqrt,
+    mphantom,
     msub,
     msup,
     mtext,
     mover,
     munderover,
-    munderover_1,
+    munderover_arg,
     boxed,
     accent: [3:0]u8,
-    variant: Variant,
 
-    fn closesWithBrace(self: Tag) bool {
-        return self == .brace or self == .mrow;
+    fn isBrace(self: Tag) bool {
+        return switch (self) {
+            .mrow, .mrow_elide => true,
+            else => false,
+        };
     }
 
-    fn hasMultipleArguments(self: Tag) bool {
+    fn isArg(self: Tag) bool {
         return switch (self) {
-            .mfrac, .mfrac_1, .msub, .msup, .munderover, .munderover_1, .accent => true,
+            .mfrac_arg, .munderover_arg => true,
             else => false,
+        };
+    }
+
+    fn hasImplicitMrow(self: Tag) bool {
+        return switch (self) {
+            .math, .mtext, .mover => unreachable,
+            .mrow, .mrow_elide, .msqrt, .mphantom, .boxed => true,
+            .mfrac, .mfrac_arg, .msub, .msup, .munderover, .munderover_arg, .accent => false,
         };
     }
 
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .brace, .mfrac_1, .munderover_1, .variant, .accent => {},
+            .math => unreachable,
+            .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
             // TODO consider CSS classs instead
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
@@ -390,13 +402,18 @@ const Tag = union(enum) {
 
     pub fn writeCloseTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .brace, .mfrac_1, .munderover_1, .variant => {},
+            .math => unreachable,
+            .mrow_elide, .mfrac_arg, .munderover_arg => {},
             .accent => |text| try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
         }
     }
 };
+
+fn top(self: MathML) Tag {
+    return self.stack.top() orelse .math;
+}
 
 pub fn init(writer: anytype, kind: Kind) !MathML {
     switch (kind) {
@@ -409,22 +426,19 @@ pub fn init(writer: anytype, kind: Kind) !MathML {
 // TODO: Handle ExceededMaxTagDepth with error like Markdown does.
 pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
-    const finished = while (true) {
-        switch (try self.tokenizer.next(scanner)) {
-            .eof => break false,
-            .@"\n" => {
-                try writer.writeByte('\n');
-                break false;
-            },
-            .@"$" => {
-                if (self.kind == .display) try scanner.expect('$');
-                try self.renderEnd(writer);
-                break true;
-            },
-            else => |token| try self.renderToken(writer, scanner, token),
-        }
+    while (true) switch (try self.tokenizer.next(scanner)) {
+        .eof => return false,
+        .@"\n" => {
+            try writer.writeByte('\n');
+            return false;
+        },
+        .@"$" => {
+            if (self.kind == .display) try scanner.expect('$');
+            try self.renderEnd(writer);
+            return true;
+        },
+        else => |token| try self.renderToken(writer, scanner, token),
     };
-    return finished;
 }
 
 fn renderEnd(self: *MathML, writer: anytype) !void {
@@ -434,32 +448,30 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
 }
 
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
-    // std.debug.print("----------\ntoken={any}\nstack={any}\n", .{ window[0], self.stack.items.buffer[0..self.stack.items.len] });
-    // defer std.debug.print("stack'={any}\n", .{self.stack.items.buffer[0..self.stack.items.len]});
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = token == .mo;
     self.next_is_stretchy = token == .stretchy;
-    switch (token) {
-        .@"}" => blk: {
-            if (self.stack.top()) |tag| if (tag.closesWithBrace()) break :blk try self.stack.pop(writer);
-            unreachable; // fail
-        },
-        else => {},
-    }
+    if (token == .@"}")
+        if (self.top().isBrace())
+            try self.stack.pop(writer)
+        else
+            return scanner.failAtOffset(scanner.offset - 1, "unexpected '}}'", .{});
     const original_stack_len = self.stack.len();
     if (scanner.peek()) |char| switch (char) {
         '_' => try if (token == .mo and token.mo.ptr == summation_symbol)
-            self.stack.append(writer, .{ .munderover, .munderover_1 })
+            self.stack.append(writer, .{ .munderover, .munderover_arg })
         else
             self.stack.push(writer, .msub),
-        '^' => if (self.stack.top() == null or self.stack.top().? != .munderover_1)
-            try self.stack.push(writer, .msup),
+        '^' => if (self.top() != .munderover_arg) try self.stack.push(writer, .msup),
         else => {},
     };
     switch (token) {
         .eof, .@"\n", .@"$", .variant => unreachable,
-        .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_1 }),
+        ._, .@"^", .stretchy => return,
+        .@"{" => try self.stack.push(writer, try self.tagForOpenBrace(scanner)),
+        .@"}" => {},
+        .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_arg }),
         .msqrt => try self.stack.push(writer, .msqrt),
         .mphantom => try self.stack.push(writer, .mphantom),
         .boxed => try self.stack.push(writer, .boxed),
@@ -477,48 +489,42 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo>{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
-        .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
-        .@"{" => try if (try self.shouldUseMrow(scanner))
-            self.stack.push(writer, .mrow)
-        else
-            self.stack.push(writer, .brace),
-        .@"}" => {},
-        ._, .@"^", .stretchy => return,
+        .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .@"&" => unreachable,
         .@"\\" => unreachable,
         .begin => |_| unreachable,
         .end => |_| unreachable,
     }
-    // or just return early when pushing so don't need to compare len
-    if (self.stack.len() <= original_stack_len)
-        while (self.stack.top()) |tag| {
-            if (tag.closesWithBrace()) break else try self.stack.popTag(writer, tag);
-            if (tag == .mfrac_1 or tag == .munderover_1) break;
-        };
+    if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| {
+        if (tag.isBrace()) break;
+        try self.stack.popTag(writer, tag);
+        if (tag.isArg()) break;
+    };
 }
 
-fn shouldUseMrow(self: MathML, scanner: *Scanner) !bool {
-    const top_token = self.stack.top() orelse return false;
-    if (!top_token.hasMultipleArguments()) return false;
+fn tagForOpenBrace(self: MathML, scanner: *Scanner) !Tag {
+    if (self.top().hasImplicitMrow()) return .mrow_elide;
     const start = scanner.offset;
     defer scanner.offset = start;
-    var tokenizer_copy = self.tokenizer;
-    const first = try tokenizer_copy.next(scanner);
+    var tokenizer = self.tokenizer;
+    const first = try tokenizer.next(scanner);
     if (first == .@"{" or first == .@"}")
         return scanner.failOn(scanner.source[start..scanner.offset], "unexpected character", .{});
-    const second = try tokenizer_copy.next(scanner);
-    if (second == .@"}") return false;
-    // if (second != .@"{") return true;
-    // var depth: usize = 1;
-    // while (true) switch (try tokenizer_copy.next(scanner)) {
-    //     .@"{" => depth += 1,
-    //     .@"}" => {
-    //         depth -= 1;
-    //         if (depth == 0)
-    //     }
-    // };
-    return true;
+    var depth: usize = 1;
+    const second = switch (try tokenizer.next(scanner)) {
+        .@"{" => while (true) switch (try tokenizer.next(scanner)) {
+            .eof, .@"$" => return .mrow,
+            .@"{" => depth += 1,
+            .@"}" => {
+                depth -= 1;
+                if (depth == 0) break try tokenizer.next(scanner);
+            },
+            else => {},
+        },
+        else => |token| token,
+    };
+    return if (second == .@"}") .mrow_elide else .mrow;
 }
 
 fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
@@ -535,6 +541,19 @@ fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
         if (try math.render(writer, &scanner)) break;
     } else try math.renderEnd(writer);
     try testing.expectEqualStrings(expected_mathml, actual_mathml.items);
+}
+
+fn expectFailure(expected_message: []const u8, source: []const u8, kind: Kind) !void {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var reporter = Reporter.init(allocator);
+    var scanner = Scanner{ .source = source, .reporter = &reporter };
+    var math = try init(std.io.null_writer, kind);
+    const result = while (!scanner.eof()) {
+        if (math.render(std.io.null_writer, &scanner) catch |err| break err) break;
+    } else math.renderEnd(std.io.null_writer);
+    try reporter.expectFailure(expected_message, result);
 }
 
 test "empty input" {
@@ -607,17 +626,15 @@ test "R squared" {
 }
 
 test "squared expression" {
-    // It would be more correct to wrap the <msup> around the whole expression.
-    // We could do so by buffering tokens in parens like we do for braces.
-    // However, that could cause issues with unbalanced delimiters e.g. [1,5).
-    // The lazy way looks the same, and sounds the same (with macOS VoiceOver).
-    // MathJax and KaTeX do the lazy approach as well.
+    // It would be more correct to wrap the <msup> around the whole expression,
+    // but it's much easier to just wrap around the closing paren. This renders
+    // the same, and even sounds the same on macOS VoiceOver. MathJax and KaTeX
+    // take this lazy approach as well.
     try expect(
-        "<math><mo stretchy=\"false\">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>" ++
-            "<msup><mo stretchy=\"false\">)</mo><mn>2</mn></msup></math>",
-        "(x+y)^2",
-        .@"inline",
-    );
+        \\<math><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>
+        ++
+        \\<msup><mo stretchy="false">)</mo><mn>2</mn></msup></math>
+    , "(x+y)^2", .@"inline");
 }
 
 test "vectors" {
@@ -637,12 +654,13 @@ test "summation" {
 
 test "summation equation" {
     try expect(
-        \\<math><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>
+        \\<math><munderover><mo>∑</mo>
+        \\<mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>
         \\<mi>k</mi><mo>=</mo><mfrac><mrow><mi>k</mi>
         \\<mo stretchy="false">(</mo><mi>k</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo>
         \\</mrow><mn>2</mn></mfrac></math>
     ,
-        "\\sum_{k=1}^n\nk=\\frac{k\n(k+1)\n}2",
+        "\\sum_ \n {k=1}^n \n k=\\frac{k \n (k+1) \n }2",
         .@"inline",
     );
 }
@@ -677,32 +695,52 @@ test "mrows" {
     );
 }
 
-test "quadratic formula with newlines" {
+test "quadratic formula" {
     try expect(
-        \\<math display="block">
-        \\<mi>x</mi>
-        \\<mo>=</mo>
-        \\<mo form="prefix">-</mo>
-        \\<mi>b</mi>
-        \\<mo>±</mo>
-        \\<mfrac>
-        \\<mrow>
-        \\<msqrt>
-        \\<msup><mi>b</mi><mn>2</mn></msup>
-        \\<mo>-</mo>
-        \\<mn>4</mn>
-        \\<mi>a</mi>
-        \\<mi>c</mi>
-        \\</msqrt>
-        \\</mrow><mrow>
-        \\<mn>2</mn>
-        \\<mi>a</mi>
-        \\</mrow></mfrac>
-        \\</math>
+        \\<math display="block"><mi>x</mi><mo>=</mo><mo form="prefix">-</mo><mi>b</mi>
+        ++
+        \\<mo>±</mo><mfrac><msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>-</mo>
+        ++
+        \\<mn>4</mn><mi>a</mi><mi>c</mi></msqrt><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>
     ,
-        "\n x \n = \n - \n b \n \\pm \n \\frac \n{ \n " ++
-            "\\sqrt{ \n b^2 \n - \n 4 \n a \n c \n } \n } " ++
-            "{ \n 2 \n a \n } \n",
-        .display,
-    );
+        \\x = -b \pm \frac{\sqrt{b^2 - 4 a c}}{2 a}
+    , .display);
+}
+
+// test "matrix environment" {
+//     try expect(
+//         \\<math display="block"><mtable><mtr><mtd>
+//         \\a</mtd><mtd>b</mtd></mtr><mtd>
+//         \\c</mtd><mtd>d</mtd>
+//         \\</mtr></mtable></math>
+//     ,
+//         \\\begin{matrix}
+//         \\a & b \\
+//         \\c & d
+//         \\\end{matrix}
+//     , .display);
+// }
+
+test "missing macro name" {
+    try expectFailure("<input>:1:6: expected a macro name", "1 + \\", .@"inline");
+}
+
+test "invalid macro name" {
+    try expectFailure("<input>:1:2: \"foo\": unknown macro", "\\foo", .@"inline");
+}
+
+test "invalid variant letter" {
+    try expectFailure("<input>:1:9: \"0\": invalid letter", "\\mathbf{0}", .@"inline");
+}
+
+test "invalid character" {
+    try expectFailure("<input>:1:1: \"#\": unexpected character", "#", .@"inline");
+}
+
+test "invalid close brace" {
+    try expectFailure("<input>:1:1: unexpected '}'", "}", .@"inline");
+}
+
+test "invalid empty braces" {
+    try expectFailure("<input>:1:7: \"}\": unexpected character", "\\frac{}", .@"inline");
 }
