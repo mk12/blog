@@ -1,10 +1,18 @@
 - update README
+- redesign, retro
+- code block in narrow mode should still have background
+- consistent way of inserting edits/later comments
+- render footnotes as sidenotes (?)
+- first year OCD note
 - dark mode (including SVGs)
-- consider MathML instead of KaTeX
 - in index.xml, render links to other article in summaries with full URL
 - broken link http://lindenmayer.mitchellkember.com/koch/4
-- fix heading levels https://marked.js.org/using_pro#walk-tokens
-- server that uses websocket so that it can force refresh after watch + make
+- replace " " with `&nbsp;`?
+- math: more UTF-8 (e.g. `\ne`)
+- comma after math wraps
+x server that uses websocket so that it can force refresh after watch + make
+    x bun run serve.ts instead
++ consider MathML instead of KaTeX
 + Zig changes to scanner
     x non fallable. user of scanner reports errors. Scanner's job is mainly keeping track of line/col
         x no, it actually is useful for it to help with errors too

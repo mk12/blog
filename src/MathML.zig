@@ -59,6 +59,8 @@ const Token = union(enum) {
     @"&",
     @"\\",
     stretchy,
+    dot,
+    colon,
     boxed,
     // This is [3:0]u8 instead of []const u8 to save space in the Tag type.
     accent: [3:0]u8,
@@ -110,6 +112,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "end", .{ .end = undefined } },
         .{ "frac", .mfrac },
         .{ "sqrt", .msqrt },
+        .{ "colon", .colon },
         .{ "phantom", .mphantom },
         .{ "boxed", .boxed },
         // Spacing
@@ -160,7 +163,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "ast", .{ .mo = "∗" } },
         .{ "bullet", .{ .mo = "∙" } },
         .{ "cdot", .{ .mo = "⋅" } },
-        .{ "colon", .{ .mo = ":" } }, // TODO
+        .{ "coloneqq", .{ .mo = "≔" } },
         .{ "cup", .{ .mo = "∪" } },
         .{ "ge", .{ .mo = "≥" } },
         .{ "in", .{ .mo = "∈" } },
@@ -203,7 +206,8 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '+', '-', '=', '>', ',', ':', ';', '.' => .{ .mo = scanner.source[start..scanner.offset] },
+            '+', '-', '=', '>', ',', ':', ';', '/' => .{ .mo = scanner.source[start..scanner.offset] },
+            '.' => .dot,
             '<' => .{ .mo = "&lt;" },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
             '0'...'9' => {
@@ -213,6 +217,7 @@ const Tokenizer = struct {
                 };
                 return .{ .mn = scanner.source[start..scanner.offset] };
             },
+            "λ"[0] => if (scanner.consume("λ"[1])) .{ .mi = "λ" } else scanner.fail("unexpected UTF-8 sequence", .{}),
             '\\' => {
                 const after_backslash = scanner.offset;
                 if (scanner.consumeAny("\\;,{}")) |char| return switch (char) {
@@ -491,6 +496,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo>{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
+        .dot => try writer.writeAll("<mo lspace=\"0\" rspace=\"0\">.</mo>"),
+        .colon => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .begin => |environment| {
@@ -625,6 +632,15 @@ test "entities" {
 
 test "text" {
     try expect("<math><mi>x</mi><mo>+</mo><mtext>one</mtext></math>", "x + \\text{one}", .@"inline");
+}
+
+test "symbols" {
+    try expect("<math><mi>α</mi><mi>ω</mi></math>", "\\alpha\\omega", .@"inline");
+}
+
+test "lambda" {
+    // I support λ because I use it a lot in intro-lambda.md.
+    try expect("<math><mi>λ</mi><mi>λ</mi></math>", "\\lambdaλ", .@"inline");
 }
 
 test "delimiters" {
