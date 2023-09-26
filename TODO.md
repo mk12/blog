@@ -9,7 +9,9 @@
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - replace " " with `&nbsp;`?
 - math: more UTF-8 (e.g. `\ne`)
-- comma after math wraps
+- comma after math wrapsr
+- consider var for single character math element
+- UTF-8 mathvariants seem to have weird spacing :/
 x server that uses websocket so that it can force refresh after watch + make
     x bun run serve.ts instead
 + consider MathML instead of KaTeX

@@ -9,7 +9,7 @@ The tortoise and the hare is my favourite algorithm. It's such a neat solution, 
 
 # Introduction
 
-Also known as Floyd's cycle-finding algorithm, its purpose is to detect cycles in linked structures. If you don't know what a linked list is, you may want to look that up first. Picture a set of boxes (nodes), each having an arrow (pointer) to another box. The last box in the list points to nothing, which we refer to as <i>null</i>. To traverse the list, we simply follow the arrows. There's nothing to prevent arrows from pointing back to previous boxes, which is a problem because this makes the list infinite. If we follow a million arrows and the list keeps going, there's no way of knowing if it's infinite or if it just happens to be a million and one items long.
+Also known as Floyd's cycle-finding algorithm, its purpose is to detect cycles in linked structures. If you don't know what a linked list is, you may want to look that up first. Picture a set of boxes (nodes), each having an arrow (pointer) to another box. The last box in the list points to nothing, which we refer to as <dfn>null</dfn>. To traverse the list, we simply follow the arrows. There's nothing to prevent arrows from pointing back to previous boxes, which is a problem because this makes the list infinite. If we follow a million arrows and the list keeps going, there's no way of knowing if it's infinite or if it just happens to be a million and one items long.
 
 ![Box-and-arrow diagrams of a regular linked list (top) and one with a cycle (bottom)](../assets/svg/linked-lists.svg)
 

@@ -7,24 +7,23 @@ date: 2015-04-10T16:42:00-04:00
 
 How hard can it be to shuffle a deck of cards? You may have been accused of under-shuffling a deck, but have you ever been caught _over_-shuffling? This doesn't make any sense intuitively. You would think that the situation improves the longer we shuffle -- the more randomness, the better. But what do we even mean by "better"? How do we measure shuffled-ness?
 
-> **Edit**: Some time after writing this article, I rediscovered Jeff Atwood's blog post [The Danger of Naïveté][jeff] from 2007. I read it years ago; it was the clearly the inspiration for this article. Had I recalled it, instead of assuming I picked up the idea in some book, I probably wouldn't have written this. In any case, readers should consider this as an alternative presentation of the ideas in Jeff's article. --MK, 12 Aug. 2017
+> **Edit**: Some time after writing this article, I rediscovered Jeff Atwood's blog post [The Danger of Naïveté][jeff] from 2007. I read it years ago; it was the clearly the inspiration for this article. Had I recalled it, instead of assuming I picked up the idea in some book, I probably wouldn't have written this. In any case, readers should consider this as an alternative presentation of the ideas in Jeff's article. &mdash;MK, 12 Aug. 2017
 
 # Simple shuffle
 
-**TODO** use math or <var>n</var>
-Suppose we want to shuffle a deck of _n_ distinct cards. There are many shuffling techniques out there, but most are not defined precisely enough for our purposes. Let's go with something simple: repeated swapping. Here's an algorithm you might come up with:
+Suppose we want to shuffle a deck of $n$ distinct cards. There are many shuffling techniques out there, but most are not defined precisely enough for our purposes. Let's go with something simple: repeated swapping. Here's an algorithm you might come up with:
 
 1. Pick two random cards.
 2. Swap the cards.
-3. Repeat _n_ times.
+3. Repeat $n$ times.
 
-Why _n_ times? Well, larger decks should require more shuffling, so it makes sense to depend on _n_. Here's the bad news: this is an awful shuffling algorithm. To appreciate its abysmal qualities, we need to decide what defines a good shuffling algorithm.
+Why $n$ times? Well, larger decks should require more shuffling, so it makes sense to depend on $n$. Here's the bad news: this is an awful shuffling algorithm. To appreciate its abysmal qualities, we need to decide what defines a good shuffling algorithm.
 
-A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of _n_ cards, there are _n_! possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a _uniform distribution_ of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
+A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of $n$ cards, there are $n$! possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a <dfn>uniform distribution</dfn> of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
 
 ![^Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
-There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the _x_-axis. I used a million samples -- that's the number you get if you add up the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
+There are 2,432,902,008,176,640,000 ways of shuffling 20 cards. This histogram divides them up into 200 bins on the x-axis. I used a million samples -- that's the number you get if you add up the heights of all the bars. The green line represents a uniform distribution. It's at 5000 because if each bin had 5000, then the 200 bins would have 1,000,000 together.
 
 Now, that's pretty bad! There's a huge bias at the beginning. And what's up with those periodic spikes? The simple shuffling algorithm might seem to work, but in fact some permutations are far more likely than others. You could actually take advantage of this to get an unfair advantage in a game! The first permutation in the histogram is in ascending order, and the last is in descending order. Given that lower permutations are significantly more likely, meaning the cards are in roughly ascending order, you could give yourself a better hand by always dealing for yourself last. Of course, I am assuming the deck is sorted before the game begins.
 
@@ -40,7 +39,7 @@ The correct algorithm is actually very simple. It's much easier to see if we thi
 
 Fisher and Yates described this method in 1938, showing that it results in an unbiased permutation. It was a bit more complicated than this because they were talking about shuffling data with pen and paper, not shuffling physical cards. Something along these lines:
 
-1. Write down the numbers 1 to _n_.
+1. Write down the numbers 1 to $n$.
 2. Pick a random one of the numbers.
 3. Strike it out and write it down elsewhere.
 4. Repeat until all numbers are struck out.
@@ -49,7 +48,7 @@ The algorithm seems just as simple as the "simple shuffle," but the reason most 
 
 # Knuth shuffle
 
-The Fischer--Yates shuffle is also referred to as the Knuth shuffle because Donald Knuth included it in _The Art of Computer Programming_. He had computers in mind, not paper, so this version of the algorithm is more relevant for us:
+The Fischer--Yates shuffle is also referred to as the Knuth shuffle because Donald Knuth included it in <cite>The Art of Computer Programming</cite>. He had computers in mind, not paper, so this version of the algorithm is more relevant for us:
 
 1. Start at the first card.
 2. Choose a random card between that one and the last card.
@@ -60,13 +59,13 @@ Try to convince yourself that this is equivalent to the Fisher--Yates algorithm 
 
 ![^Distribution of permutations obtained by the Knuth shuffle](../assets/svg/knuth-shuffle.svg)
 
-Much better! The distribution is not perfectly uniform, but it is very close. If we used a trillion samples instead of a million, the histogram would probably look like a solid rectangle. Also, keep in mind that this graph is zoomed in on the _y_-axis quite a bit more than the other one, since it doesn't have to show that huge spike at the beginning. In any case, there is no sign of bias in the variation here, and that's the important thing.
+Much better! The distribution is not perfectly uniform, but it is very close. If we used a trillion samples instead of a million, the histogram would probably look like a solid rectangle. Also, keep in mind that this graph is zoomed in on the $y$-axis quite a bit more than the other one, since it doesn't have to show that huge spike at the beginning. In any case, there is no sign of bias in the variation here, and that's the important thing.
 
 # Identifying permutations
 
-The most difficult part of analyzing these distributions was identifying the permutations. I used a million samples, so I shuffled a deck a million times. You can't graph decks on the _x_-axis, though, so I had to assign a unique integer to each possible permutation.
+The most difficult part of analyzing these distributions was identifying the permutations. I used a million samples, so I shuffled a deck a million times. You can't graph decks on the x-axis, though, so I had to assign a unique integer to each possible permutation.
 
-I arbitrarily decided that ascending order would correspond to zero and descending order would have the highest value, _n_! − 1. Here's what the mapping should look like for _n_&nbsp;= 3:
+I arbitrarily decided that ascending order would correspond to zero and descending order would have the highest value, $n!-1$. Here's what the mapping should look like for $n=3$:
 
 | permutation | value | FNS |
 | ----------- | ----- | --- |

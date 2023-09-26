@@ -60,7 +60,8 @@ const Token = union(enum) {
     @"\\",
     stretchy,
     dot,
-    colon,
+    colon_rel,
+    colon_def,
     boxed,
     // This is [3:0]u8 instead of []const u8 to save space in the Tag type.
     accent: [3:0]u8,
@@ -112,7 +113,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "end", .{ .end = undefined } },
         .{ "frac", .mfrac },
         .{ "sqrt", .msqrt },
-        .{ "colon", .colon },
+        .{ "colon", .colon_def },
         .{ "phantom", .mphantom },
         .{ "boxed", .boxed },
         // Spacing
@@ -206,8 +207,9 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '+', '-', '=', '>', ',', ':', ';', '/' => .{ .mo = scanner.source[start..scanner.offset] },
+            '+', '-', '=', '>', ',', ';', '/', '!' => .{ .mo = scanner.source[start..scanner.offset] },
             '.' => .dot,
+            ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
             '0'...'9' => {
@@ -409,7 +411,10 @@ const Tag = union(enum) {
         switch (self) {
             .math => unreachable,
             .mrow_elide, .mfrac_arg, .munderover_arg => {},
-            .accent => |text| try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
+            .accent => |text| if (text[0] == "→"[0]) // TODO fix
+                try fmt.format(writer, "<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
+            else
+                try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
         }
@@ -455,7 +460,7 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = token == .mo or token == .@"&" or token == .@"\\";
+    self.next_is_prefix = (token == .mo and token.mo[0] != '!') or token == .@"&" or token == .@"\\";
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -490,6 +495,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         // TODO generalize into list of plus, minus, ...
         .mo => |text| try if (prefix and (text[0] == '+' or text[0] == '-' or std.mem.eql(u8, text, "±")))
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
+        else if (self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg))
+            fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo>{s}</mo>", .{text}),
         .mo_delimiter => |text| try if (stretchy)
@@ -497,7 +504,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         else
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .dot => try writer.writeAll("<mo lspace=\"0\" rspace=\"0\">.</mo>"),
-        .colon => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
+        .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
+        .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .begin => |environment| {

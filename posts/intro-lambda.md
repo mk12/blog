@@ -5,7 +5,7 @@ category: Math
 date: 2015-04-07T12:48:12-04:00
 ---
 
-Most people think of Newton and Leibniz's infinitesimal calculus when they hear the word <i>calculus</i>, but the term is actually more general than that. A calculus is a formal system of calculation or reasoning, usually involving the symbolic manipulation of expressions. The λ-calculus (<dfn>lambda calculus</dfn>) is one such system, and it is very important in computer science.
+Most people think of Newton and Leibniz's infinitesimal calculus when they hear the word <dfn>calculus</dfn>, but the term is actually more general than that. A calculus is a formal system of calculation or reasoning, usually involving the symbolic manipulation of expressions. The λ-calculus (<dfn>lambda calculus</dfn>) is one such system, and it is very important in computer science.
 
 # Expressions
 

@@ -11,14 +11,14 @@ They can't prove it, but the police know what you really did, so they give you a
 
 # Cooperate or defect?
 
-This is a classic example studied in _game theory_. The theory of games is all about competition, conflict, and cooperation between decision makers. Game theorists analyze mathematical models of such situations and consider the strategies that players may adopt. It has applications in psychology, economics, and biology, and it can also help us understand things we experience every day, as we'll see a bit later.
+This is a classic example studied in <dfn>game theory</dfn>. The theory of games is all about competition, conflict, and cooperation between decision makers. Game theorists analyze mathematical models of such situations and consider the strategies that players may adopt. It has applications in psychology, economics, and biology, and it can also help us understand things we experience every day, as we'll see a bit later.
 
-Returning to the dilemma: what would you do? You can either _cooperate_ by remaining silent, or _defect_ by betraying the other prisoner. Should you cooperate, and hope he does too? If you both defect, the police cannot set you both free, but they can't completely ignore their promise either, so you would both get two years. There are four possible outcomes:
+Returning to the dilemma: what would you do? You can either <dfn>cooperate</dfn> by remaining silent, or <dfn>defect</dfn> by betraying the other prisoner. Should you cooperate, and hope he does too? If you both defect, the police cannot set you both free, but they can't completely ignore their promise either, so you would both get two years. There are four possible outcomes:
 
-1. _Reward:_ you both remain silent (one year in prison).
-2. _Temptation:_ you betray the other prisoner (you're free).
-3. _Sucker's payoff:_ the other prisoner betrays you (three years).
-4. _Punishment:_ you both betray each other (two years).
+1. <dfn>Reward:</dfn> you both remain silent (one year in prison).
+2. <dfn>Temptation:</dfn> you betray the other prisoner (you're free).
+3. <dfn>Sucker's payoff:</dfn> the other prisoner betrays you (three years).
+4. <dfn>Punishment:</dfn> you both betray each other (two years).
 
 The outcomes look the same to the other prisoner, except the temptation and sucker's payoff are swapped. It's more clear in a matrix format:
 
@@ -38,13 +38,13 @@ The practice of doping in professional sports can also be modelled as a prisoner
 
 We have seen that the dominant strategy in the prisoner's dilemma is to always defect. It's too risky to cooperate, because we have no clue about the intentions of the other player. This all changes in the _iterated_ prisoner's dilemma. In this version, the same two players repeatedly play the game, choosing to cooperate or to defect on each turn.
 
-Before it was just a blind choice, but now there are infinitely many _strategies_ that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y\in\{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
+Before it was just a blind choice, but now there are infinitely many strategies that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y\in\{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
 
 $$M = \begin{bmatrix}R & S \\ T & P \end{bmatrix}$$
 
-is the payoff matrix that I mentioned earlier. Next, we define a _strategy_ to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By _history_ I mean the sequence of moves that have been made so far by both players. Consider two strategies $s_x$ and $s_y$ that generate the sequences  $x_i$ and $y_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
+is the payoff matrix that I mentioned earlier. Next, we define a <dfn>strategy</dfn> to be a function $s\colon H\to\{1,2\}$, where $H$ is the set of all possible histories. By <dfn>history</dfn> I mean the sequence of moves that have been made so far by both players. Consider two strategies $s_x$ and $s_y$ that generate the sequences  $x_i$ and $y_i$, where $i=0$ represents the first move in the game. Then we can quantitatively compare the strategies simply by keeping score as they play against each other. Specifically, we will calculate the quantity
 
-$$K(s_x,s_y) = \lim_{N\to\infty}\frac1N\sum_{i=0}^N A(x_i,y_i).$$
+$$K(s_x,s_y) = \lim_{N\to\infty}\,\frac1N\,\sum_{i=0}^N A(x_i,y_i).$$
 
 If $K(a,b)>K(b,a)$, then we conclude that the strategy $a$ generally wins against the strategy $b$. Note that this does not imply that one is "better" than the other. It's entirely possible that $a$ is a terrible strategy that happens to beat $b$ but loses against everyone else, whereas $b$ is vulnerable to $a$ but otherwise very good. Now, what is the meaning of $K(a,a)$? It tells us how well $a$ plays against itself, but swapping the arguments makes no difference, so we cannot say $a$ wins or loses against itself. In this case, we can interpret $K$ as a measure of cooperation, since by symmetry the temptation and sucker's payoff never occur -- the only payoffs are the reward and the punishment.[^2]
 
@@ -62,7 +62,7 @@ First, we'll define some constants from the payoff matrix:
 (define defect 2)
 ```
 
-Next, we'll implement the history object. A _history_ is a list of moves from newest to oldest. A _move_ is an object containing the choices made by both players on that turn, and we'll represent it by a list of two items:
+Next, we'll implement the history object. A <dfn>history</dfn> is a list of moves from newest to oldest. A <dfn>move</dfn> is an object containing the choices made by both players on that turn, and we'll represent it by a list of two items:
 
 ```scheme
 (define make-move list)
@@ -116,7 +116,7 @@ Notice that we maintain two history lists, since each strategy must see the hist
 
 # A few strategies
 
-Let's start with some extremely simple strategies. Recall that a strategy takes a history object as input and returns its choice (cooperate or defect). The _nice_ and _mean_ strategies are so simple that they don't even look at the history; _alternate_ is very slightly more sophisticated:
+Let's start with some extremely simple strategies. Recall that a strategy takes a history object as input and returns its choice (cooperate or defect). The <i>nice</i> and <i>mean</i> strategies are so simple that they don't even look at the history; <i>alternate</i> is very slightly more sophisticated:
 
 ```scheme
 (define (nice hist) cooperate)
@@ -127,7 +127,7 @@ Let's start with some extremely simple strategies. Recall that a strategy takes 
       defect))
 ```
 
-Another strategy is _tit for tat_. It starts off by cooperating, but after that it simply copies the last move made by its opponent. It seems simple, but it is surprisingly good!
+Another strategy is <i>tit for tat</i>. It starts off by cooperating, but after that it simply copies the last move made by its opponent. It seems simple, but it is surprisingly good!
 
 ```scheme
 (define (tit-for-tat hist)
@@ -142,9 +142,9 @@ Here's the matrix we get using the `tournament` function:
 
 # Conclusion
 
-We could get much more creative with these strategies. Our little tournament seemed to suggest that _mean_ is a good strategy, but  this is not entirely true. The numbers are misleading because they give equal weight to all the games. The score against _nice_, for example, shouldn't be taken too seriously since it is such a weak opponent. The _mean_ strategy may exploit kindness better than the others, but it does not fare well in the larger world of prisoner's dilemma strategies. In fact, it turns out that altruistic, forgiving strategies generally do much better than greedy strategies!
+We could get much more creative with these strategies. Our little tournament seemed to suggest that <i>mean</i> is a good strategy, but  this is not entirely true. The numbers are misleading because they give equal weight to all the games. The score against <i>nice</i>, for example, shouldn't be taken too seriously since it is such a weak opponent. The <i>mean</i> strategy may exploit kindness better than the others, but it does not fare well in the larger world of prisoner's dilemma strategies. In fact, it turns out that altruistic, forgiving strategies generally do much better than greedy strategies!
 
-I first learned about the prisoner's dilemma in the chapter "Nice guys finish first" of _The Selfish Gene_ by Richard Dawkins. His writing discusses many more strategies for the iterated game, making reference to an actual tournament between strategies submitted by experts in game theory, conducted by Robert Axelrod in the 1980s. He uses instances of the prisoner's dilemma in nature to explain why animals behave altruistically. If these games and strategies interest you, I highly recommend the book.
+I first learned about the prisoner's dilemma in the chapter "Nice guys finish first" of <cite>The Selfish Gene</cite> by Richard Dawkins. His writing discusses many more strategies for the iterated game, making reference to an actual tournament between strategies submitted by experts in game theory, conducted by Robert Axelrod in the 1980s. He uses instances of the prisoner's dilemma in nature to explain why animals behave altruistically. If these games and strategies interest you, I highly recommend the book.
 
 [^1]: Keep in mind that this is often a simplistic model. We are ignoring all factors of human psychology other than the ideas of rationality and self-interest.
 
