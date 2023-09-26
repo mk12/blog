@@ -102,8 +102,6 @@ fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
     return if (slice[3] == '.') slice[0..3] else slice[0..4];
 }
 
-const summation_symbol = "∑";
-
 fn lookupMacro(name: []const u8) ?Token {
     const list = .{
         // Special
@@ -175,7 +173,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "pm", .{ .mo = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
-        .{ "sum", .{ .mo = summation_symbol } },
+        .{ "sum", .{ .mo = "∑" } },
         .{ "times", .{ .mo = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
@@ -216,15 +214,16 @@ const Tokenizer = struct {
                 return .{ .mn = scanner.source[start..scanner.offset] };
             },
             '\\' => {
+                const after_backslash = scanner.offset;
                 if (scanner.consume('\\')) return .@"\\";
                 if (scanner.consume(';')) return .{ .mspace = "0.278em" };
-                if (scanner.consumeAny("{}")) |_| return .{ .mo = scanner.source[start..scanner.offset] };
-                const macro_start = scanner.offset;
+                if (scanner.consume(',')) return .{ .mspace = "0.1667em" };
+                if (scanner.consumeAny("{}")) |_| return .{ .mo = scanner.source[after_backslash..scanner.offset] };
                 while (scanner.peek()) |char| switch (char) {
                     'a'...'z', 'A'...'Z' => scanner.eat(),
                     else => break,
                 };
-                const name = scanner.source[macro_start..scanner.offset];
+                const name = scanner.source[after_backslash..scanner.offset];
                 if (name.len == 0) return scanner.fail("expected a macro name", .{});
                 var macro = lookupMacro(name) orelse return scanner.failOn(name, "unknown macro", .{});
                 switch (macro) {
@@ -440,7 +439,7 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
 
 fn renderEnd(self: *MathML, writer: anytype) !void {
     _ = self;
-    // check stack and buffer
+    // TODO: check stack and buffer
     try writer.writeAll("</math>");
 }
 
@@ -455,7 +454,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     };
     const original_stack_len = self.stack.len();
     if (scanner.peek()) |char| switch (char) {
-        '_' => try if (token == .mo and token.mo.ptr == summation_symbol)
+        '_' => try if (token == .mo and std.mem.eql(u8, token.mo, "∑"))
             self.stack.append(writer, .{ .munderover, .munderover_arg })
         else
             self.stack.push(writer, .msub),
@@ -477,7 +476,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try fmt.format(writer, "<mn>{s}</mn>", .{text}),
         .mi => |text| try fmt.format(writer, "<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo => |text| try if (prefix and text.ptr != summation_symbol)
+        // TODO generalize into list of plus, minus, ...
+        .mo => |text| try if (prefix and (text[0] == '+' or text[0] == '-' or std.mem.eql(u8, text, "±")))
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo>{s}</mo>", .{text}),
@@ -635,7 +635,9 @@ test "sqrt" {
 }
 
 test "spacing" {
-    try expect("<math><mspace width=\"1em\"/><mspace width=\"0.278em\"/></math>", "\\quad\\;", .@"inline");
+    try expect("<math><mspace width=\"1em\"/></math>", "\\quad", .@"inline");
+    try expect("<math><mspace width=\"0.278em\"/></math>", "\\;", .@"inline");
+    try expect("<math><mspace width=\"0.1667em\"/></math>", "\\,", .@"inline");
 }
 
 test "phantom" {
@@ -686,6 +688,10 @@ test "vectors" {
 test "boxed" {
     try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed x", .@"inline");
     try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed{x}", .@"inline");
+}
+
+test "set with braces" {
+    try expect("<math><mo>{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>}</mo></math>", "\\{1,2\\}", .@"inline");
 }
 
 test "summation" {

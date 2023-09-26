@@ -87,10 +87,12 @@ p { margin-bottom: 1.2em; }
 strong { font-weight: bold }
 em { font-style: italic; }
 
-.katex {
-  /* KaTeX CSS uses 1.21em, which is too big beside 1em Equity Text. */
+math[display="block"] { margin-bottom: 1.2em; }
+
+/* KaTeX CSS uses 1.21em, which is too big beside 1em Equity Text. */
+/* .katex {
   font-size: 1.08em;
-}
+} */
 
 blockquote {
   font-family: 'Concourse 3';
@@ -109,7 +111,7 @@ blockquote em {
 }
 
 figure {
-  margin: 2.0em 0;
+  margin: 2em 0;
 }
 
 figure img, figure svg {

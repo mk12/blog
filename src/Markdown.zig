@@ -774,10 +774,15 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
+        // TODO refactor
         const unconsumed_token = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+            switch (blocks.get(num_blocks_open)) {
+                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break null,
+                else => {},
+            }
             const token = tokenizer.next();
             switch (blocks.get(num_blocks_open)) {
-                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break token,
+                .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => unreachable,
                 .ul => if (token != .@"-") break token,
                 .ol => if (token != .@"1.") break token,
                 .blockquote => if (token != .@">") break token,
@@ -831,10 +836,15 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
-                // TODO: we need to start rendering right away - next iteration will consume md tokens
-                // but can't break bc not necessarily at end of line?
-                .@"$" => active_mode = .{ .math = try MathML.init(writer, .@"inline") },
-                .@"$$" => active_mode = .{ .math = try MathML.init(writer, .display) },
+                .@"$", .@"$$" => {
+                    // TODO have init do first render, return null if finished
+                    // maybe rename to render, resumeRender?
+                    var math = try MathML.init(writer, if (token == .@"$") .@"inline" else .display);
+                    if (!try math.render(writer, tokenizer.takeScanner())) {
+                        active_mode = .{ .math = math };
+                        break;
+                    }
+                },
                 // Footnotes
                 .@"[^x]" => |number| if (!options.first_block_only)
                     try fmt.format(writer,
@@ -1728,9 +1738,21 @@ test "render table with inlines in cells" {
     , .{});
 }
 
-// test "inline math" {
-//     try expect("<p><math><mi>x</mi></math></p>", "$x$", .{});
-// }
+test "inline math" {
+    try expect("<p><math><mi>x</mi></math></p>", "$x$", .{});
+}
+
+test "display math" {
+    try expect("<math display=\"block\"><mi>x</mi></math>", "$$x$$", .{});
+}
+
+test "inline math with newlines" {
+    try expect("<p><math><mi>x</mi>\n<mi>y</mi></math></p>", "$x\ny$", .{});
+}
+
+test "display math with newlines" {
+    try expect("<math display=\"block\"><mi>x</mi>\n<mi>y</mi></math>", "$$x\ny$$", .{});
+}
 
 test "unclosed inline at end" {
     try expectFailure(
