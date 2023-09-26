@@ -96,7 +96,7 @@ Every natural number is finite. The first infinite cardinal is $\aleph_0$, and w
 
 The _ordinal numbers_ are another way of extending the natural numbers to infinity. The definition is a bit more complex: two well-ordered sets represent the same ordinal if and only if they are order isomorphic, meaning there exists an order-preserving bijection between them. As a result, ordinals can discriminate infinities more finely than cardinals:
 
-$$0,1,\dots,n,\dots,\omega,\omega+1,\dots,\omega\!\cdot\!2,\omega\!\cdot\!3,\dots,\omega^2,\omega^3,\dots,\omega^\omega,\omega^{\omega^\omega},\dots,\epsilon_0$$
+$$0,1,\dots,n,\dots,\omega,\omega+1,\dots,\omega\cdot2,\omega\cdot3,\dots,\omega^2,\omega^3,\dots,\omega^\omega,\omega^{\omega^\omega},\dots,\epsilon_0$$
 
 As with cardinals, the finite ordinals are simply natural numbers. The least infinite ordinal is $\omega$, and it is equivalent to $\aleph_0$. Unlike the cardinals, $\omega+1$ is distinct from $\omega$, though both are countable. Strange as it may seem, there are uncountably many countably infinite ordinal numbers. We can add to $\omega$, multiply it, square it, raise it to the power $\omega$, ... each of these is a countable infinity greater than the last. The next step is to repeat the exponentiation using the recursive definition $\epsilon_0=\omega^{\epsilon_0}$.
 
