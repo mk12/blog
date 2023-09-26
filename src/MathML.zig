@@ -215,10 +215,13 @@ const Tokenizer = struct {
             },
             '\\' => {
                 const after_backslash = scanner.offset;
-                if (scanner.consume('\\')) return .@"\\";
-                if (scanner.consume(';')) return .{ .mspace = "0.278em" };
-                if (scanner.consume(',')) return .{ .mspace = "0.1667em" };
-                if (scanner.consumeAny("{}")) |_| return .{ .mo = scanner.source[after_backslash..scanner.offset] };
+                if (scanner.consumeAny("\\;,{}")) |char| return switch (char) {
+                    '\\' => .@"\\",
+                    ';' => .{ .mspace = "0.278em" },
+                    ',' => .{ .mspace = "0.1667em" },
+                    '{', '}' => .{ .mo_delimiter = scanner.source[after_backslash..scanner.offset] },
+                    else => unreachable,
+                };
                 while (scanner.peek()) |char| switch (char) {
                     'a'...'z', 'A'...'Z' => scanner.eat(),
                     else => break,
@@ -362,6 +365,7 @@ const Tag = union(enum) {
     msub,
     msup,
     mtext,
+    munder,
     mover,
     munderover,
     munderover_arg,
@@ -382,7 +386,7 @@ const Tag = union(enum) {
         return switch (self) {
             .math, .mtext, .mover, .mtable, .mtr => unreachable,
             .mrow, .mrow_elide, .msqrt, .mphantom, .boxed, .mtd => true,
-            .mfrac, .mfrac_arg, .msub, .msup, .munderover, .munderover_arg, .accent => false,
+            .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
         };
     }
 
@@ -456,6 +460,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     if (scanner.peek()) |char| switch (char) {
         '_' => try if (token == .mo and std.mem.eql(u8, token.mo, "∑"))
             self.stack.append(writer, .{ .munderover, .munderover_arg })
+        else if (token == .mi and std.mem.eql(u8, token.mi, "lim"))
+            self.stack.append(writer, .{.munder})
         else
             self.stack.push(writer, .msub),
         '^' => if (self.top() != .munderover_arg) try self.stack.push(writer, .msup),
@@ -691,7 +697,19 @@ test "boxed" {
 }
 
 test "set with braces" {
-    try expect("<math><mo>{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>}</mo></math>", "\\{1,2\\}", .@"inline");
+    try expect(
+        "<math><mo stretchy=\"false\">{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo stretchy=\"false\">}</mo></math>",
+        "\\{1,2\\}",
+        .@"inline",
+    );
+}
+
+test "limit" {
+    try expect(
+        "<math><munder><mi>lim</mi><mrow><mi>x</mi><mo>→</mo><mi>∞</mi></mrow></munder><mi>x</mi></math>",
+        "\\lim_{x\\to\\infty}x",
+        .@"inline",
+    );
 }
 
 test "summation" {

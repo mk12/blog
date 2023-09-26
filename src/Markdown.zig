@@ -836,10 +836,15 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
-                .@"$", .@"$$" => {
-                    // TODO have init do first render, return null if finished
-                    // maybe rename to render, resumeRender?
-                    var math = try MathML.init(writer, if (token == .@"$") .@"inline" else .display);
+                .@"$" => {
+                    var math = try MathML.init(writer, .@"inline");
+                    if (!try math.render(writer, tokenizer.takeScanner())) {
+                        active_mode = .{ .math = math };
+                        break;
+                    }
+                },
+                .@"$$" => {
+                    var math = try MathML.init(writer, .display);
                     if (!try math.render(writer, tokenizer.takeScanner())) {
                         active_mode = .{ .math = math };
                         break;
