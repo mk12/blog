@@ -12,6 +12,7 @@
 - comma after math wrapsr
 - consider var for single character math element
 - UTF-8 mathvariants seem to have weird spacing :/
+- lindenmayer heroku
 x server that uses websocket so that it can force refresh after watch + make
     x bun run serve.ts instead
 + consider MathML instead of KaTeX
