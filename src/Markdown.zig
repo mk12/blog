@@ -354,11 +354,11 @@ const Tokenizer = struct {
             '_' => return ._,
             '\'' => {
                 const prev = scanner.prev(1);
-                return if (prev == null or prev == ' ' or prev == '\n') .lsquo else .rsquo;
+                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(') .lsquo else .rsquo;
             },
             '"' => {
                 const prev = scanner.prev(1);
-                return if (prev == null or prev == ' ' or prev == '\n') .ldquo else .rdquo;
+                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(') .ldquo else .rdquo;
             },
             '-' => if (scanner.consume('-')) return .@"--",
             ' ' => {
