@@ -18,6 +18,7 @@ kind: Kind,
 tokenizer: Tokenizer = .{},
 stack: TagStack(Tag) = .{},
 next_is_prefix: bool = true,
+next_is_infix: bool = false,
 next_is_stretchy: bool = false,
 
 pub const Kind = enum {
@@ -52,6 +53,7 @@ const Token = union(enum) {
     mo_delimiter: []const u8,
     mo_prefix: []const u8,
     mo_postfix: []const u8,
+    mo_closed: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -61,7 +63,6 @@ const Token = union(enum) {
     @"&",
     @"\\",
     stretchy,
-    dot,
     colon_rel,
     colon_def,
     boxed,
@@ -163,8 +164,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "vdots", .{ .mi = "⋮" } },
         // Operators
         .{ "approx", .{ .mo = "≈" } },
-        .{ "ast", .{ .mo = "∗" } },
-        .{ "bullet", .{ .mo = "∙" } },
+        .{ "ast", .{ .mo_closed = "∗" } },
+        .{ "bullet", .{ .mo_closed = "∙" } },
         .{ "cdot", .{ .mo = "⋅" } },
         .{ "coloneqq", .{ .mo = "≔" } },
         .{ "cup", .{ .mo = "∪" } },
@@ -174,8 +175,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
-        .{ "odot", .{ .mo = "⊙" } },
-        .{ "oplus", .{ .mo = "⊕" } },
+        .{ "odot", .{ .mo_closed = "⊙" } },
+        .{ "oplus", .{ .mo_closed = "⊕" } },
         .{ "pm", .{ .mo = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
@@ -210,7 +211,7 @@ const Tokenizer = struct {
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
             '+', '-', '=', '>', ',', ';', '/', '!' => .{ .mo = scanner.source[start..scanner.offset] },
-            '.' => .dot,
+            '.' => .{ .mo_closed = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
@@ -461,8 +462,10 @@ fn renderEnd(self: *MathML, writer: anytype) !void {
 
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
+    const infix = self.next_is_infix;
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = (token == .mo and token.mo[0] != '!') or token == .@"&" or token == .@"\\";
+    self.next_is_infix = token == .mi or (token == .mo_delimiter and token.mo_delimiter[0] == ')');
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -507,7 +510,10 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
         .mo_prefix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
         .mo_postfix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
-        .dot => try writer.writeAll("<mo lspace=\"0\" rspace=\"0\">.</mo>"),
+        .mo_closed => |text| if (infix)
+            try fmt.format(writer, "<mo>{s}</mo>", .{text})
+        else
+            try fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
         .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
