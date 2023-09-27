@@ -13,6 +13,7 @@
 - consider var for single character math element
 - UTF-8 mathvariants seem to have weird spacing :/
 - lindenmayer heroku
+- consider fallible Markdown tokenizer for stricter checks
 x server that uses websocket so that it can force refresh after watch + make
     x bun run serve.ts instead
 + consider MathML instead of KaTeX

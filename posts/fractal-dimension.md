@@ -5,9 +5,9 @@ category: Math
 date: 2016-02-07T21:25:00-08:00
 ---
 
-Most of us are comfortable with the usual notion of _dimension_. We live in three-dimensional space, and we can easily picture one-dimensional lines and two-dimensional planes. Higher-dimensional spaces are much harder to visualize, but the generalization at least makes sense. Now what could it possibly mean to say that a space has 1.26186 dimensions?
+Most of us are comfortable with the usual notion of <i>dimension</i>. We live in three-dimensional space, and we can easily picture one-dimensional lines and two-dimensional planes. Higher-dimensional spaces are much harder to visualize, but the generalization at least makes sense. Now what could it possibly mean to say that a space has 1.26186 dimensions?
 
-One valid answer would be, "Nothing." Just because you can write it down doesn't mean it is meaningful. It would make just as much sense to talk about _green_ dimensions, as far as the mathematical definitions are concerned. It may be exciting to imagine a mysterious world between the familiar dimensions, but you could argue that whatever 1.26186 belongs to is a separate definition, even if we want to use the word _dimension_.
+One valid answer would be, "Nothing." Just because you can write it down doesn't mean it is meaningful. It would make just as much sense to talk about _green_ dimensions, as far as the mathematical definitions are concerned. It may be exciting to imagine a mysterious world between the familiar dimensions, but you could argue that whatever 1.26186 belongs to is a separate definition, even if we want to use the word <i>dimension</i>.
 
 To this imaginary, skeptical, pedantic reader, I grant all this. I am being a bit disingenuous when I talk about fractional dimensions, because they refer to a different property. There is no 2.5th dimension, in the sense that a vector cannot have 2.5 components. That being said, these fractional dimensions I want to talk about -- _fractal_ dimensions, actually -- are closely related to the ordinary concept of dimensions. They arise when we try to assign a topological dimension to fractal curves.
 
@@ -35,8 +35,8 @@ You might not be entirely convinced. Why should an excessively jagged snowflake 
 
 This is a space-filling curve: when we take the process to infinity, it becomes equivalent to the unit square. It should come as no surprise, then, that its fractal dimension is 2. It twists around in such a convoluted way that it covers every single point in the unit square. This is one of the things that make fractal dimensions interesting: at a basic level, they allow us to quantify how convoluted a fractal curve is.
 
-Fractal dimensions are a great example of how mathematics develops when strange discoveries challenge long-held intuitions. Consider non-Euclidean geometry: an entire world that remained undiscovered until someone tried swapping out Euclid's parallel postulate for something far stranger. And mathematics has no shortage of strangeness -- I invite you to look up the pathological Weierstrass function and the Monster group (also known as the Friendly Giant). Finally, if your curiosity about dimensions hasn't been satisfied, I highly recommend [_Flatland: A Romance of Many Dimensions_][flatland].
+Fractal dimensions are a great example of how mathematics develops when strange discoveries challenge long-held intuitions. Consider non-Euclidean geometry: an entire world that remained undiscovered until someone tried swapping out Euclid's parallel postulate for something far stranger. And mathematics has no shortage of strangeness -- I invite you to look up the pathological Weierstrass function and the Monster group (also known as the Friendly Giant). Finally, if your curiosity about dimensions hasn't been satisfied, I highly recommend [<cite>Flatland: A Romance of Many Dimensions</cite>][flatland].
 
 [linden]: lindenmayer.md
-[koch4]: http://lindenmayer.mitchellkember.com/koch/4
-[flatland]: http://www.geom.uiuc.edu/~banchoff/Flatland/
+[koch4]: https://lindenmayer.mitchellkember.com/koch/4
+[flatland]: https://www.gutenberg.org/ebooks/201
