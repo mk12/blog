@@ -86,8 +86,8 @@ Where many paths and errands meet.<br>
 And whither then? I cannot say.
 </p>
 
-[n2t]: http://www.nand2tetris.org
-[sb]: http://en.wikipedia.org/wiki/Scribbler_(robot)
+[n2t]: https://www.nand2tetris.org
+[sb]: https://en.wikipedia.org/wiki/Scribbler_(robot)
 [gh]: https://github.com/mk12/scribbler-bot
 [lam]: https://github.com/mk12/lam
-[wcpe]: http://theclassicalstation.org
+[wcpe]: https://theclassicalstation.org

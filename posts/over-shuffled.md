@@ -128,10 +128,10 @@ The unexpected failure of the simple shuffle demonstrates that we have high self
 [^2]: At first I tried a repeating sequence of the integers modulo 20, but with that change, every shuffle was identical. The solution was to _shuffle_ that sequence, introducing randomness while maintaining the uniform distribution.
 
 [jeff]: https://blog.codinghorror.com/the-danger-of-naivete/
-[fac]: http://en.wikipedia.org/wiki/Factorial_number_system
-[gf]: http://gadflyjl.org
-[jl]: http://julialang.org
+[fac]: https://en.wikipedia.org/wiki/Factorial_number_system
+[gf]: https://gadflyjl.org
+[jl]: https://julialang.org
 [al]: https://github.com/mk12/algorithms
-[sh]: https://github.com/mk12/algorithms/blob/master/shuffle.jl
+[sh]: https://github.com/mk12/algorithms/blob/main/shuffle.jl
 [lt]: http://lighttable.com
-[juno]: http://junolab.org
+[juno]: https://junolab.org

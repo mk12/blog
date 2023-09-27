@@ -112,5 +112,5 @@ I encourage you to try encrypting any English text you like and seeing if the cr
 [hs]: https://www.haskell.org/
 [go]: https://github.com/mk12/caesar
 [fold]: https://wiki.haskell.org/Fold
-[freqs]: http://norvig.com/mayzner.html
+[freqs]: https://norvig.com/mayzner.html
 [pf]: https://wiki.haskell.org/Pointfree

@@ -88,7 +88,7 @@ You now have almost all the tools you need to make a ray tracer. It may seem lik
 
 [^2]: There are either zero or infinity intersections in this case. It makes sense to just return a negative value in both cases, unless you really want to see a paper-thin line when the camera is precisely aligned inside a plane.
 
-[bl]: http://www.blender.org
-[gh]: http://en.wikipedia.org/wiki/Gabriel's_Horn
+[bl]: https://www.blender.org
+[gh]: https://en.wikipedia.org/wiki/Gabriel's_Horn
 [lum]: https://github.com/mk12/luminosity
-[sp]: http://www.kevinbeason.com/smallpt/
+[sp]: https://www.kevinbeason.com/smallpt/

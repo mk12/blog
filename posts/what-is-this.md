@@ -15,5 +15,5 @@ Speaking of future posts, I plan to write at least one article a week. I'll talk
 
 I don't plan to add a commenting system to this site, but feel free to email me in response to anything I write here!
 
-[1]: http://gohugo.io
-[2]: http://jekyllrb.com
+[1]: https://gohugo.io
+[2]: https://jekyllrb.com

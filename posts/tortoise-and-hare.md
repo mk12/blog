@@ -89,7 +89,7 @@ Recall that in `race` we started off the hare one jump ahead of the tortoise. If
 
 # Conclusion
 
-If you want to try out the Scheme implementation, I recommend [Racket][rkt] or [Gambit Scheme][gs]. Or, if you don't feel like leaving your browser, check out the great web app [repl.it][repl]. If you're interested in learning more about programming with Lisp, I highly recommend the computer science classic [_Structure and Interpretation of Computer Programs_][sicp]. You will easily pick up Scheme by reading it, but that's not its purpose at all -- Scheme's syntax is so simple that it needs little explanation, and this allows the book to focus on important concepts instead of the minutiae of a particular language. The full text is available on the MIT website, but if you're serious about reading it, do your eyes a favour and download the [pretty PDF version][spdf].
+If you want to try out the Scheme implementation, I recommend [Racket][rkt] or [Gambit Scheme][gs]. Or, if you don't feel like leaving your browser, check out the great web app [repl.it][repl]. If you're interested in learning more about programming with Lisp, I highly recommend the computer science classic [<cite>Structure and Interpretation of Computer Programs</cite>][sicp]. You will easily pick up Scheme by reading it, but that's not its purpose at all -- Scheme's syntax is so simple that it needs little explanation, and this allows the book to focus on important concepts instead of the minutiae of a particular language. The full text is available on the MIT website, but if you're serious about reading it, do your eyes a favour and download the [pretty PDF version][spdf].
 
 [^1]: To be clear, the nodes of the list are the boxes themselves. Each box will have some data associated with it, like the letters I put in the diagram, but we don't care about that for this algorithm.
 
@@ -97,8 +97,8 @@ If you want to try out the Scheme implementation, I recommend [Racket][rkt] or [
 
 [^3]: You could easily rewrite `find-mu` and `find-lambda` in an iterative style (allowing for tail-call optimization) by passing a count parameter. Both methods use recursion, but the iterative approach is more efficient.
 
-[rkt]: http://racket-lang.org
-[gs]: http://gambitscheme.org
-[repl]: http://repl.it/languages/Scheme
-[sicp]: https://mitpress.mit.edu/sicp/
+[rkt]: https://racket-lang.org
+[gs]: https://gambitscheme.org
+[repl]: https://repl.it/languages/Scheme
+[sicp]: https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/6515/sicp.zip/index.html
 [spdf]: https://sicpebook.wordpress.com/ebook/
