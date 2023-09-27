@@ -50,6 +50,8 @@ const Token = union(enum) {
     mi_normal: []const u8,
     mo: []const u8,
     mo_delimiter: []const u8,
+    mo_prefix: []const u8,
+    mo_postfix: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -126,8 +128,8 @@ fn lookupMacro(name: []const u8) ?Token {
         // Delimiters
         .{ "left", .stretchy },
         .{ "right", .stretchy },
-        .{ "lvert", .{ .mo_delimiter = "|" } },
-        .{ "rvert", .{ .mo_delimiter = "|" } },
+        .{ "lvert", .{ .mo_prefix = "|" } },
+        .{ "rvert", .{ .mo_postfix = "|" } },
         .{ "lVert", .{ .mo_delimiter = "‖" } },
         .{ "rVert", .{ .mo_delimiter = "‖" } },
         .{ "langle", .{ .mo_delimiter = "⟨" } },
@@ -503,6 +505,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             fmt.format(writer, "<mo>{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
+        .mo_prefix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
+        .mo_postfix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
         .dot => try writer.writeAll("<mo lspace=\"0\" rspace=\"0\">.</mo>"),
         .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
         .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),

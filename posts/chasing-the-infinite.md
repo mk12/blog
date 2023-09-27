@@ -9,7 +9,7 @@ What is infinity? Perhaps, like me, you were told that it's just a _concept_ to 
 
 # Cardinality and bijections
 
-In order to understand infinity, we need to make a detour to set theory. A _set_ is a collection of objects, and the _cardinality_ of a set is the number of unique objects it contains. For example, the set $S=\{\bigcirc,\square,\bigtriangleup\}$ has cardinality $\lvert S \rvert = 3$. Two sets have the same cardinality if and only if their objects can be paired off without leaving any out. This pairing-off is a called a _bijection_ or a _one-to-one correspondence_, technically defined as a function that is both injective and surjective.[^1] For example, given the set $B=\{2,3,5\}$, we can prove that $\lvert S \rvert = \lvert B \rvert$ by constructing a bijection $f\colon S\to B$ that maps $\bigcirc$ to 2, $\square$ to 3, and $\bigtriangleup$ to 5.
+In order to understand infinity, we need to make a detour to set theory. A <dfn>set</dfn> is a collection of objects, and the <dfn>cardinality</dfn> of a set is the number of unique objects it contains. For example, the set $S=\{\bigcirc,\square,\bigtriangleup\}$ has cardinality $\lvert S \rvert = 3$. Two sets have the same cardinality if and only if their objects can be paired off without leaving any out. This pairing-off is a called a <dfn>bijection</dfn> or a <dfn>one-to-one correspondence</dfn>, technically defined as a function that is both injective and surjective.[^1] For example, given the set $B=\{2,3,5\}$, we can prove that $\lvert S \rvert = \lvert B \rvert$ by constructing a bijection $f\colon S\to B$ that maps $\bigcirc$ to 2, $\square$ to 3, and $\bigtriangleup$ to 5.
 
 Of course it's obvious that both sets contain three objects, but the power of this method is that it allows us to compare infinite sets. Given that infinity plus one is still infinity, can we conclude that all infinities are the same? Common sense says yes: how can anything possibly be _bigger_ than infinity? However, as is often the case in mathematics, we really need to throw common sense out the window if we want to discover the truth.
 
@@ -25,7 +25,7 @@ Soon afterwards, an infinite number of people arrive and cram in the hotel recep
 
 # Countability
 
-Hilbert's hotel illustrates that adding one to a regular infinity, or even multiplying it by two, leaves you with the same infinity. This value is the cardinality of the natural numbers $\mathbb{N}=\{0,1,2,\dots\}$, and we denote it by $\lvert\mathbb{N}\rvert=\aleph_0$ (pronounced _aleph nought_). If a set's cardinality is equal to $\aleph_0$, then we call it a _countable infinity_, because it's possible to count off all its objects by association with natural numbers. Roughly speaking, if you can generate a list of all objects in a set by following some pattern, then the set is countably infinite. All other infinities are larger, and called _uncountable_.
+Hilbert's hotel illustrates that adding one to a regular infinity, or even multiplying it by two, leaves you with the same infinity. This value is the cardinality of the natural numbers $\mathbb{N}=\{0,1,2,\dots\}$, and we denote it by $\lvert\mathbb{N}\rvert=\aleph_0$ (pronounced <i>aleph nought</i>). If a set's cardinality is equal to $\aleph_0$, then we call it a <dfn>countable infinity</dfn>, because it's possible to count off all its objects by association with natural numbers. Roughly speaking, if you can generate a list of all objects in a set by following some pattern, then the set is countably infinite. All other infinities are larger, and called <dfn>uncountable</dfn>.
 
 Another way of interpreting the hotel example is this: _there are just as many even numbers as natural numbers_. In a way this seems wrong -- surely there are _twice_ as many natural numbers? But both sets are countably infinite, so their cardinalities must be the same: we prove this by constructing the bijection $f(n)=2n$. You might argue that this is just a matter of definition, and that it is meaningless to say that two infinities are equal. Perhaps, but that is a philosophical question, not a mathematical one. Whether you subscribe to the formalist "useful but meaningless marks on paper" or the Platonist "objective, timeless truths about abstract entities" is completely up to you. Rest assured: there are good reasons for using the bijection-based definition, and there is still more we can learn from it.
 
@@ -33,7 +33,7 @@ For example, the integers are countably infinite as well: we can construct the b
 
 $$0,+1,-1,+2,-2,+3,-3,\dots$$
 
-More surprising is the fact that the rationals are countable: $\lvert\mathbb{Q}\rvert=\aleph_0$. How can this be, when there are infinitely many rationals between 0 and 1? There are many ways of proving this, but I'm more interested in giving you an intuitive understanding of countability. We can take care of signs using the alternating trick, but what then? We can't go in increasing order, since the rationals get arbitrarily close to zero. And $\frac11,\frac12,\frac13,\dots$ is a dead end, because we'll never get past one! But look at this:
+More surprising is the fact that the rationals are countable: $\lvert\mathbb{Q}\rvert=\aleph_0$. How can this be, when there are infinitely many rationals between 0 and 1? There are many ways of proving this, but I'm more interested in giving you an intuitive understanding of countability. We can take care of signs using the alternating trick, but what then? We can't go in increasing order, since the rationals get arbitrarily close to zero. But look at this:
 
 ![Counting the rationals by zigzagging through a matrix](../assets/svg/fraction-table.svg)
 
@@ -67,7 +67,7 @@ $$
 
 I've put question marks before the decimal points because I only care about the fractional part. Now, this list is supposed to be complete -- every real number needs to be on it somewhere. But consider the real number $y=0.e_1e_2e_3e_4\dots$, where $e_1\ne d_{11}$, $e_2\ne d_{22}$, $e_3\ne d_{33}$, and so on. This still leaves us with eight symbols to choose from for each digit of $y$. Since the first digits differ, $y\ne x_0$. Similarly, $y\ne x_1$, because the second digits differ. Generalizing this to all the $x$ values, we realize that $y$ is not on the list. But $y$ is a real number! This is a contradiction, therefore our initial assumption was wrong: it is impossible to construct this list. In reality, $\lvert\mathbb{R}\rvert\ne\aleph_0$, so the set of real numbers is uncountably infinite.
 
-The _continuum hypothesis_ states that $\lvert\mathbb{R}\rvert=\aleph_1$, which means that there is no intermediate infinity between the cardinalities of the naturals and the reals. This has never been proven or disproven. In fact, it's impossible to do either in ZFC,[^3] the standard axiomatic set theory used today. You can assume that it's true or that it's false, and the theory remains consistent, assuming ZFC is consistent in the first place (also unprovable). There is no consensus on what all this actually means. Does the question become meaningless just because it can't be decided by our current axiomatic framework? We are once again getting into philosophical territory.
+The <dfn>continuum hypothesis</dfn> states that $\lvert\mathbb{R}\rvert=\aleph_1$, which means that there is no intermediate infinity between the cardinalities of the naturals and the reals. This has never been proven or disproven. In fact, it's impossible to do either in ZFC,[^3] the standard axiomatic set theory used today. You can assume that it's true or that it's false, and the theory remains consistent, assuming ZFC is consistent in the first place (also unprovable). There is no consensus on what all this actually means. Does the question become meaningless just because it can't be decided by our current axiomatic framework? We are once again getting into philosophical territory.
 
 # Higher dimensions
 
@@ -75,26 +75,26 @@ Yet another counterintuitive fact about cardinalities is that $\lvert\mathbb{R}\
 
 $$
 \begin{matrix}
-x = \dots \; a_3a_2a_1 . d_1d_2d_3 \; \dots \\
-y = \dots \; b_3b_2b_1 . e_1e_2e_3 \; \dots
+x = \dots \; a_3a_2a_1 \, . \, d_1d_2d_3 \; \dots \\
+y = \dots \; b_3b_2b_1 \, . \, e_1e_2e_3 \; \dots
 \end{matrix}
 $$
 
 We can construct a bijection[^4] $f\colon\mathbb{R}^2\to\mathbb{R}$ by interleaving the digits:
 
-$$f(x,y)=\dots a_3b_3a_2b_2a_1b_1.d_1e_1d_2e_2d_3e_3\dots$$
+$$f(x,y)=\dots a_3b_3a_2b_2a_1b_1 \, . \, d_1e_1d_2e_2d_3e_3\dots$$
 
 This idea generalizes: for any infinite set $X$ and finite natural number $n$, we have $\lvert X\rvert=\lvert X^n\rvert$. Before this was discovered, the number of coordinates required to represent a point in a space was assumed to be an invariant of that space. This is not true, since a single real number can be used to represent a point in a space of any dimension, and vice versa.
 
 # Cardinals and ordinals
 
-So far, we've only talked about infinite values that are cardinalities of infinite sets. These values are the _cardinal numbers_:
+So far, we've only talked about infinite values that are cardinalities of infinite sets. These values are the <dfn>cardinal numbers</dfn>:
 
 $$0,1,2,\dots,n,\dots,\aleph_0,\aleph_1,\aleph_2,\dots,\aleph_\alpha,\dots$$
 
 Every natural number is finite. The first infinite cardinal is $\aleph_0$, and we call it countably infinite. Everything past $\aleph_0$ is uncountably infinite. The aleph numbers are strange because adding one to them, or even doubling them, results in the same cardinal. However, if we take the power set[^5] of $\mathbb{N}$, we get a set with cardinality $2^{\aleph_0}=\lvert\mathbb{R}\rvert>\aleph_0$. If the continuum hypothesis is true, then $\aleph_1=2^{\aleph_0}$. In any case, we can generate ever-larger uncountable infinities with this kind of exponentiation.
 
-The _ordinal numbers_ are another way of extending the natural numbers to infinity. The definition is a bit more complex: two well-ordered sets represent the same ordinal if and only if they are order isomorphic, meaning there exists an order-preserving bijection between them. As a result, ordinals can discriminate infinities more finely than cardinals:
+The <dfn>ordinal numbers</dfn> are another way of extending the natural numbers to infinity. The definition is a bit more complex: two well-ordered sets represent the same ordinal if and only if they are order isomorphic, meaning there exists an order-preserving bijection between them. As a result, ordinals can discriminate infinities more finely than cardinals:
 
 $$0,1,\dots,n,\dots,\omega,\omega+1,\dots,\omega\cdot2,\omega\cdot3,\dots,\omega^2,\omega^3,\dots,\omega^\omega,\omega^{\omega^\omega},\dots,\epsilon_0$$
 
@@ -108,9 +108,9 @@ We can play this game as long as we want, but no matter what system we come up w
 
 We often use the symbol $\infty$ without thinking twice, but infinity is so much more strange and intricate than the simple idea of numbers never ending. Our human intuition is a poor guide here, as is demonstrated by nearly every result on the subject. Incidentally, it's thanks to Georg Cantor, the inventor of set theory, that we know about (almost) everything I've written here. Cantor encountered fierce objection to his work precisely because it was so counterintuitive, but today we recognize it as a cornerstone of modern number theory. That being said, number theory is far from being a complete story! And there's much more to be said about infinity than I've been able to fit in this finite article -- I was tempted to make it infinitely long, but I've gone on for long enough now.
 
-[^1]: Injections and surjections are special classes of functions. An injective function (_one-to-one_ function) preserves distinctness: no two inputs are mapped to the same output. A surjective function (_onto_ function) is required to map to every output value in its codomain at least once.
+[^1]: Injections and surjections are special classes of functions. An injective function (<dfn>one-to-one</dfn> function) preserves distinctness: no two inputs are mapped to the same output. A surjective function (<dfn>onto</dfn> function) is required to map to every output value in its codomain at least once.
 
-[^2]: We have to watch out for values with infinite repeating nines. Although 0.999… and 1.0 look different, they in fact represent the same real number. We get around this by picking one representation and using it consistently in the list.
+[^2]: We have to watch out for values with infinite repeating nines. Although 0.999... and 1.0 look different, they in fact represent the same real number. We get around this by picking one representation and using it consistently in the list.
 
 [^3]: ZFC is short for "Zermelo--Fraenkel set theory with the axiom of choice."
 
