@@ -8,7 +8,7 @@ Well, "at least one article a week" clearly didn't last for long. After publishi
 
 # Onboarding
 
-May 4, 2015 -- _May the 4th be with you_. I'm not really a Star Wars fan, but I remember the first day of the internship fell on that day. I arrived at 150 Elgin Street by 10:00 a.m., and made my way to the eighth floor. Exiting the elevator, I faced a large comic strip poster:
+May 4, 2015 -- <i>May the 4th be with you</i>. I'm not really a Star Wars fan, but I remember the first day of the internship fell on that day. I arrived at 150 Elgin Street by 10:00 a.m., and made my way to the eighth floor. Exiting the elevator, I faced a large comic strip poster:
 
 > Suddenly, the doors opened...<br>
 > Exit from that primitive transportation device.<br>
@@ -18,7 +18,7 @@ That was (and still is, as far as I know) one of many pieces of artwork decorati
 
 There were around thirty other interns starting that day, including a few of my classmates from Waterloo. We waited in the Lounge, and then broke off into smaller groups for onboarding. Seated around a table, we each got a bag containing a Shopify T-shirt and hoodie, a Moleskine notepad and pen, an Apple keyboard and mouse, and a MacBook Pro. Then we went around the table having everyone introduce themselves. (That probably included telling the dreaded "fun fact" about yourself.) Finally, we learned about Shopify's core values -- the first and most memorable, "Get shit done."
 
-For the rest of that day, and for most of the first week, we spent our time in Cody's Café on the sixth floor. There, we set up our development environments, learned about Shopify's architecture and infrastructure, listened to talks by full-time engineers, and worked through coding exercises. We also set up our own Shopify stores. I called mine H2G2, short for _The Hitchhiker's Guide to the Galaxy_, one of my favourite books. I was surprised to find that, almost 3 years later, [the site is still up][2]!
+For the rest of that day, and for most of the first week, we spent our time in Cody's Café on the sixth floor. There, we set up our development environments, learned about Shopify's architecture and infrastructure, listened to talks by full-time engineers, and worked through coding exercises. We also set up our own Shopify stores. I called mine H2G2, short for <cite>The Hitchhiker's Guide to the Galaxy</cite>, one of my favourite books. I was surprised to find that, almost 3 years later, [the site is still up][2]!
 
 # Platform team
 
@@ -54,9 +54,9 @@ debating return offer
 
 try different things. 6 coops
 
-[1]: http://www.linebox.ca/work/shopify/
+[1]: https://www.linebox.ca/work/shopify-ottawa
 [2]: https://h2g2.myshopify.com/
 [3]: https://experts.shopify.com/
 [4]: https://shopifyengineering.myshopify.com/blogs/engineering/introducing-shipit
 [5]: https://www.bloomberg.com/quote/SHOP:US
-[6]: http://animal-central.wikia.com/wiki/File:Bunnies-bunny-rabbits-16437969-1280-800.jpg
+[6]: https://animal-central.wikia.com/wiki/File:Bunnies-bunny-rabbits-16437969-1280-800.jpg
