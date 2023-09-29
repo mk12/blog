@@ -28,6 +28,10 @@ pub fn TagStack(comptime Tag: type) type {
             return self.items.get(i);
         }
 
+        pub fn getPtr(self: *Self, i: usize) *Tag {
+            return &self.items.slice()[i];
+        }
+
         pub fn top(self: Self) ?Tag {
             return if (self.len() == 0) null else self.items.get(self.len() - 1);
         }

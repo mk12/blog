@@ -16,8 +16,8 @@
 //! It treats ![Foo](foo.jpg) syntax as a block <figure>, not an inline <img>.
 //! The syntax ![^Foo](foo.jpg) puts the <figcaption> above instead of below.
 //! It allows Markdown within raw HTML. It supports smart typography, auto
-//! heading IDs, footnotes, code highlighting, tables, and (TODO!) TeX math in
-//! dollar signs rendered to MathML.
+//! heading IDs, footnotes, code highlighting, tables, and TeX math in dollar
+//! signs rendered to MathML.
 //!
 //! It is customizable with Options and with Hooks. The options are mostly
 //! flags, e.g. whether to enable code highlighting. The hooks allow you to
@@ -644,7 +644,7 @@ const BlockTag = union(enum) {
     tr,
     th,
     td,
-    footnote_ol,
+    footnote_ol: []const u8,
     footnote_li: []const u8,
 
     fn heading(source: []const u8, level: u8, options: Options) BlockTag {
@@ -658,13 +658,13 @@ const BlockTag = union(enum) {
         };
     }
 
-    fn implicitChild(parent: ?BlockTag, footnote_label: ?[]const u8) ?BlockTag {
+    fn implicitChild(parent: ?BlockTag) ?BlockTag {
         return switch (parent orelse return .p) {
             .p, .li, .figure, .table, .tr, .footnote_li => unreachable,
             .h, .figcaption, .th, .td => null,
             .ul, .ol => .li,
             .blockquote => .p,
-            .footnote_ol => .{ .footnote_li = footnote_label.? },
+            .footnote_ol => |label| .{ .footnote_li = label },
         };
     }
 
@@ -770,7 +770,6 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var blocks = TagStack(BlockTag){};
     var inlines = TagStack(InlineTag){};
     var active_mode: ?Mode = null;
-    var footnote_label: ?[]const u8 = null;
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
@@ -781,14 +780,14 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 else => {},
             }
             const token = tokenizer.next();
-            switch (blocks.get(num_blocks_open)) {
+            switch (blocks.getPtr(num_blocks_open).*) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => unreachable,
                 .ul => if (token != .@"-") break token,
                 .ol => if (token != .@"1.") break token,
                 .blockquote => if (token != .@">") break token,
                 .table => if (token != .@"| ") break token,
-                .footnote_ol => switch (token) {
-                    .@"[^x]: " => |label| footnote_label = label,
+                .footnote_ol => |*current_label| switch (token) {
+                    .@"[^x]: " => |label| current_label.* = label,
                     else => break token,
                 },
             }
@@ -812,7 +811,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         while (true) {
             if (need_implicit_block and token.isInline()) {
                 if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
-                    if (BlockTag.implicitChild(blocks.top(), footnote_label)) |block|
+                    if (BlockTag.implicitChild(blocks.top())) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
             }
@@ -855,10 +854,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     try fmt.format(writer,
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
-                .@"[^x]: " => |label| {
-                    footnote_label = label;
-                    try blocks.push(writer, .footnote_ol);
-                },
+                .@"[^x]: " => |label| try blocks.push(writer, .{ .footnote_ol = label }),
                 // Links
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
                     const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
