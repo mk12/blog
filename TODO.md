@@ -10,8 +10,8 @@
 - math: more UTF-8 (e.g. `\ne`)
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
-- comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")
 - consider var for single character math element
++ comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")
 x UTF-8 mathvariants seem to have weird spacing :/
 x replace " " with `&nbsp;`?
 + smart quotes in parens broken

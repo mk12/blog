@@ -449,7 +449,7 @@ pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
         },
         .@"$" => {
             if (self.options.block) try scanner.expect('$');
-            // if punctuation inside, render inside math with <mtext> and class
+            if (scanner.consumeAny(",.!?:;")) |char| try fmt.format(writer, "<mtext>{c}</mtext>", .{char});
             try self.renderEnd(writer);
             return true;
         },

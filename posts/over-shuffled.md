@@ -19,7 +19,7 @@ Suppose we want to shuffle a deck of $n$ distinct cards. There are many shufflin
 
 Why $n$ times? Well, larger decks should require more shuffling, so it makes sense to depend on $n$. Here's the bad news: this is an awful shuffling algorithm. To appreciate its abysmal qualities, we need to decide what defines a good shuffling algorithm.
 
-A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of $n$ cards, there are $n$! possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a <dfn>uniform distribution</dfn> of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
+A shuffling algorithm takes a list of cards and produces a random permutation. With a deck of $n$ cards, there are $n!$ possible permutations. A good shuffling algorithm has no bias -- each permutation is equally likely to occur. Another way of saying this is that it produces a <dfn>uniform distribution</dfn> of permutations. Let's take a look at the distribution produced by the simple shuffling algorithm on a deck of 20 cards:[^1]
 
 ![^Distribution of permutations obtained by the simple shuffle](../assets/svg/simple-shuffle.svg)
 
