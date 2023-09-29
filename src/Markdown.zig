@@ -773,14 +773,14 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
-        // TODO refactor
         const unconsumed_token = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
-            switch (blocks.get(num_blocks_open)) {
+            const block = blocks.getPtr(num_blocks_open);
+            switch (block.*) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break null,
                 else => {},
             }
             const token = tokenizer.next();
-            switch (blocks.getPtr(num_blocks_open).*) {
+            switch (block.*) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => unreachable,
                 .ul => if (token != .@"-") break token,
                 .ol => if (token != .@"1.") break token,
@@ -805,8 +805,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         try blocks.truncate(writer, num_blocks_open);
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
-        if (blocks.top()) |block| if (block == .table) try blocks.append(writer, .{ .tr, .td });
         first_iteration = false;
+        if (blocks.top()) |block| if (block == .table) try blocks.append(writer, .{ .tr, .td });
         var need_implicit_block = !options.is_inline;
         while (true) {
             if (need_implicit_block and token.isInline()) {
