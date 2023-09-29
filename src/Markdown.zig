@@ -761,7 +761,7 @@ const Mode = union(enum) {
     fn terminator(self: Mode) []const u8 {
         return switch (self) {
             .code => Highlighter.terminator,
-            .math => |math| math.kind.delimiter(),
+            .math => |math| math.delimiter(),
         };
     }
 };
@@ -835,15 +835,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
-                .@"$" => {
-                    var math = try MathML.init(writer, .@"inline");
-                    if (!try math.render(writer, tokenizer.takeScanner())) {
-                        active_mode = .{ .math = math };
-                        break;
-                    }
-                },
-                .@"$$" => {
-                    var math = try MathML.init(writer, .display);
+                .@"$", .@"$$" => {
+                    var math = try MathML.init(writer, .{ .block = token == .@"$$" });
                     if (!try math.render(writer, tokenizer.takeScanner())) {
                         active_mode = .{ .math = math };
                         break;

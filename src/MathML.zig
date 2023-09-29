@@ -14,24 +14,12 @@ const Scanner = @import("Scanner.zig");
 const TagStack = tag_stack.TagStack;
 const MathML = @This();
 
-kind: Kind,
+is_block: bool,
 tokenizer: Tokenizer = .{},
 stack: TagStack(Tag) = .{},
 next_is_prefix: bool = true,
 next_is_infix: bool = false,
 next_is_stretchy: bool = false,
-
-pub const Kind = enum {
-    @"inline",
-    display,
-
-    pub fn delimiter(self: Kind) []const u8 {
-        return switch (self) {
-            .@"inline" => "$",
-            .display => "$$",
-        };
-    }
-};
 
 // TODO reorder/reorganize these
 const Token = union(enum) {
@@ -434,12 +422,18 @@ fn top(self: MathML) Tag {
     return self.stack.top() orelse .math;
 }
 
-pub fn init(writer: anytype, kind: Kind) !MathML {
-    switch (kind) {
-        .@"inline" => try writer.writeAll("<math>"),
-        .display => try writer.writeAll("<math display=\"block\">"),
+pub fn delimiter(self: MathML) []const u8 {
+    return if (self.is_block) "$$" else "$";
+}
+
+pub const Options = struct { block: bool = false };
+
+pub fn init(writer: anytype, options: Options) !MathML {
+    switch (options.block) {
+        false => try writer.writeAll("<math>"),
+        true => try writer.writeAll("<math display=\"block\">"),
     }
-    return MathML{ .kind = kind };
+    return MathML{ .is_block = options.block };
 }
 
 // TODO: Handle ExceededMaxTagDepth with error like Markdown does.
@@ -452,7 +446,7 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
             return false;
         },
         .@"$" => {
-            if (self.kind == .display) try scanner.expect('$');
+            if (self.is_block) try scanner.expect('$');
             try self.renderEnd(writer);
             return true;
         },
@@ -602,7 +596,7 @@ fn tagForOpenBrace(self: MathML, scanner: *Scanner) !Tag {
     return if (second == .@"}") .mrow_elide else .mrow;
 }
 
-fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
+fn expect(expected_mathml: []const u8, source: []const u8, options: Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -611,20 +605,20 @@ fn expect(expected_mathml: []const u8, source: []const u8, kind: Kind) !void {
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_mathml = std.ArrayList(u8).init(allocator);
     const writer = actual_mathml.writer();
-    var math = try init(writer, kind);
+    var math = try init(writer, options);
     while (!scanner.eof()) {
         if (try math.render(writer, &scanner)) break;
     } else try math.renderEnd(writer);
     try testing.expectEqualStrings(expected_mathml, actual_mathml.items);
 }
 
-fn expectFailure(expected_message: []const u8, source: []const u8, kind: Kind) !void {
+fn expectFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var math = try init(std.io.null_writer, kind);
+    var math = try init(std.io.null_writer, options);
     const result = while (!scanner.eof()) {
         if (math.render(std.io.null_writer, &scanner) catch |err| break err) break;
     } else math.renderEnd(std.io.null_writer);
@@ -632,24 +626,24 @@ fn expectFailure(expected_message: []const u8, source: []const u8, kind: Kind) !
 }
 
 test "empty input" {
-    try expect("<math></math>", "", .@"inline");
-    try expect("<math display=\"block\"></math>", "", .display);
+    try expect("<math></math>", "", .{});
+    try expect("<math display=\"block\"></math>", "", .{ .block = true });
 }
 
 test "newlines passed through" {
-    try expect("<math>\n\n</math>", "\n\n", .@"inline");
-    try expect("<math display=\"block\">\n\n</math>", "\n\n", .display);
+    try expect("<math>\n\n</math>", "\n\n", .{});
+    try expect("<math display=\"block\">\n\n</math>", "\n\n", .{ .block = true });
 }
 
 test "variable" {
-    try expect("<math><mi>x</mi></math>", "x", .@"inline");
-    try expect("<math display=\"block\"><mi>x</mi></math>", "x", .display);
+    try expect("<math><mi>x</mi></math>", "x", .{});
+    try expect("<math display=\"block\"><mi>x</mi></math>", "x", .{ .block = true });
 }
 
 test "prefix operator" {
-    try expect("<math><mo form=\"prefix\">+</mo><mi>x</mi></math>", "+x", .@"inline");
-    try expect("<math><mo form=\"prefix\">−</mo><mi>x</mi></math>", "-x", .@"inline");
-    try expect("<math><mo form=\"prefix\">±</mo><mi>x</mi></math>", "\\pm x", .@"inline");
+    try expect("<math><mo form=\"prefix\">+</mo><mi>x</mi></math>", "+x", .{});
+    try expect("<math><mo form=\"prefix\">−</mo><mi>x</mi></math>", "-x", .{});
+    try expect("<math><mo form=\"prefix\">±</mo><mi>x</mi></math>", "\\pm x", .{});
 }
 
 test "operators as values" {
@@ -658,75 +652,75 @@ test "operators as values" {
             "<mo form=\"prefix\">+</mo><mo>,</mo><mo lspace=\"0\" rspace=\"0\">×</mo>" ++
             "<mo stretchy=\"false\">)</mo></math>",
         "(\\mathbb{Z},+,\\times)",
-        .@"inline",
+        .{},
     );
 }
 
 test "basic expression" {
-    try expect("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", "x + 1", .@"inline");
+    try expect("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", "x + 1", .{});
 }
 
 test "entities" {
-    try expect("<math><mn>1</mn><mo>&lt;</mo><mi>x</mi><mo>></mo><mn>1</mn></math>", "1<x>1", .@"inline");
+    try expect("<math><mn>1</mn><mo>&lt;</mo><mi>x</mi><mo>></mo><mn>1</mn></math>", "1<x>1", .{});
 }
 
 test "text" {
-    try expect("<math><mi>x</mi><mo>+</mo><mtext>one</mtext></math>", "x + \\text{one}", .@"inline");
+    try expect("<math><mi>x</mi><mo>+</mo><mtext>one</mtext></math>", "x + \\text{one}", .{});
 }
 
 test "symbols" {
-    try expect("<math><mi>α</mi><mi>ω</mi></math>", "\\alpha\\omega", .@"inline");
+    try expect("<math><mi>α</mi><mi>ω</mi></math>", "\\alpha\\omega", .{});
 }
 
 test "lambda" {
     // I support λ because I use it a lot in intro-lambda.md.
-    try expect("<math><mi>λ</mi><mi>λ</mi></math>", "\\lambdaλ", .@"inline");
+    try expect("<math><mi>λ</mi><mi>λ</mi></math>", "\\lambdaλ", .{});
 }
 
 test "delimiters" {
-    try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .@"inline");
-    try expect("<math><mo>(</mo><mi>A</mi><mo>)</mo></math>", "\\left(A\\right)", .@"inline");
+    try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .{});
+    try expect("<math><mo>(</mo><mi>A</mi><mo>)</mo></math>", "\\left(A\\right)", .{});
 }
 
 test "sqrt" {
     try expect(
         "<math><msqrt><mn>2</mn></msqrt><mo>+</mo><msqrt><mi>x</mi><mi>y</mi></msqrt></math>",
         "\\sqrt2+\\sqrt{xy}",
-        .@"inline",
+        .{},
     );
 }
 
 test "spacing" {
-    try expect("<math><mspace width=\"1em\"/></math>", "\\quad", .@"inline");
-    try expect("<math><mspace width=\"0.278em\"/></math>", "\\;", .@"inline");
-    try expect("<math><mspace width=\"0.1667em\"/></math>", "\\,", .@"inline");
+    try expect("<math><mspace width=\"1em\"/></math>", "\\quad", .{});
+    try expect("<math><mspace width=\"0.278em\"/></math>", "\\;", .{});
+    try expect("<math><mspace width=\"0.1667em\"/></math>", "\\,", .{});
 }
 
 test "phantom" {
-    try expect("<math><mphantom><mi>x</mi></mphantom></math>", "\\phantom x", .@"inline");
+    try expect("<math><mphantom><mi>x</mi></mphantom></math>", "\\phantom x", .{});
 }
 
 test "fractions" {
-    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac12", .@"inline");
-    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}{2}", .@"inline");
-    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac1{2}", .@"inline");
-    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}2", .@"inline");
+    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac12", .{});
+    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}{2}", .{});
+    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac1{2}", .{});
+    try expect("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>", "\\frac{1}2", .{});
 }
 
 test "subscripts" {
-    try expect("<math><msub><mi>a</mi><mn>1</mn></msub></math>", "a_1", .@"inline");
-    try expect("<math><msub><mi>a</mi><mn>1</mn></msub><mn>2</mn></math>", "a_12", .@"inline");
-    try expect("<math><msub><mi>a</mi><mn>12</mn></msub></math>", "a_{12}", .@"inline");
+    try expect("<math><msub><mi>a</mi><mn>1</mn></msub></math>", "a_1", .{});
+    try expect("<math><msub><mi>a</mi><mn>1</mn></msub><mn>2</mn></math>", "a_12", .{});
+    try expect("<math><msub><mi>a</mi><mn>12</mn></msub></math>", "a_{12}", .{});
 }
 
 test "superscripts" {
-    try expect("<math><msup><mi>a</mi><mn>1</mn></msup></math>", "a^1", .@"inline");
-    try expect("<math><msup><mi>a</mi><mn>1</mn></msup><mn>2</mn></math>", "a^12", .@"inline");
-    try expect("<math><msup><mi>a</mi><mn>12</mn></msup></math>", "a^{12}", .@"inline");
+    try expect("<math><msup><mi>a</mi><mn>1</mn></msup></math>", "a^1", .{});
+    try expect("<math><msup><mi>a</mi><mn>1</mn></msup><mn>2</mn></math>", "a^12", .{});
+    try expect("<math><msup><mi>a</mi><mn>12</mn></msup></math>", "a^{12}", .{});
 }
 
 test "R squared" {
-    try expect("<math><msup><mi>ℝ</mi><mn>2</mn></msup></math>", "\\mathbb{R}^2", .@"inline");
+    try expect("<math><msup><mi>ℝ</mi><mn>2</mn></msup></math>", "\\mathbb{R}^2", .{});
 }
 
 test "squared expression" {
@@ -738,25 +732,25 @@ test "squared expression" {
         \\<math><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>
         ++
         \\<msup><mo stretchy="false">)</mo><mn>2</mn></msup></math>
-    , "(x+y)^2", .@"inline");
+    , "(x+y)^2", .{});
 }
 
 test "vectors" {
-    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec x", .@"inline");
-    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{x}", .@"inline");
-    try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
+    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec x", .{});
+    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{x}", .{});
+    try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{PQ}", .{});
 }
 
 test "boxed" {
-    try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed x", .@"inline");
-    try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed{x}", .@"inline");
+    try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed x", .{});
+    try expect("<math><mrow style=\"padding: 0.25em; border: 1px solid\"><mi>x</mi></mrow></math>", "\\boxed{x}", .{});
 }
 
 test "set with braces" {
     try expect(
         "<math><mo stretchy=\"false\">{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo stretchy=\"false\">}</mo></math>",
         "\\{1,2\\}",
-        .@"inline",
+        .{},
     );
 }
 
@@ -764,12 +758,12 @@ test "limit" {
     try expect(
         "<math><munder><mi>lim</mi><mrow><mi>x</mi><mo lspace=\"0\" rspace=\"0\">→</mo><mi>∞</mi></mrow></munder><mi>x</mi></math>",
         "\\lim_{x\\to\\infty}x",
-        .@"inline",
+        .{},
     );
 }
 
 test "summation" {
-    try expect("<math><munderover><mo>∑</mo><mi>a</mi><mi>b</mi></munderover></math>", "\\sum_a^b", .@"inline");
+    try expect("<math><munderover><mo>∑</mo><mi>a</mi><mi>b</mi></munderover></math>", "\\sum_a^b", .{});
 }
 
 test "summation equation" {
@@ -781,37 +775,37 @@ test "summation equation" {
         \\</mrow><mn>2</mn></mfrac></math>
     ,
         "\\sum_ \n {k=1}^n \n k=\\frac{k \n (k+1) \n }2",
-        .@"inline",
+        .{},
     );
 }
 
 test "variant characters" {
-    try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .@"inline");
-    try expect("<math><mi>𝐚</mi></math>", "\\mathbf a", .@"inline");
-    try expect("<math><mi>𝕒</mi></math>", "\\mathbb a", .@"inline");
-    try expect("<math><mi>𝒶</mi></math>", "\\mathcal a", .@"inline");
+    try expect("<math><mi mathvariant=\"normal\">a</mi></math>", "\\mathrm a", .{});
+    try expect("<math><mi>𝐚</mi></math>", "\\mathbf a", .{});
+    try expect("<math><mi>𝕒</mi></math>", "\\mathbb a", .{});
+    try expect("<math><mi>𝒶</mi></math>", "\\mathcal a", .{});
 
-    try expect("<math><mi mathvariant=\"normal\">z</mi></math>", "\\mathrm{z}", .@"inline");
-    try expect("<math><mi>𝐳</mi></math>", "\\mathbf{z}", .@"inline");
-    try expect("<math><mi>𝕫</mi></math>", "\\mathbb{z}", .@"inline");
-    try expect("<math><mi>𝓏</mi></math>", "\\mathcal{z}", .@"inline");
+    try expect("<math><mi mathvariant=\"normal\">z</mi></math>", "\\mathrm{z}", .{});
+    try expect("<math><mi>𝐳</mi></math>", "\\mathbf{z}", .{});
+    try expect("<math><mi>𝕫</mi></math>", "\\mathbb{z}", .{});
+    try expect("<math><mi>𝓏</mi></math>", "\\mathcal{z}", .{});
 
-    try expect("<math><mi mathvariant=\"normal\">A</mi></math>", "\\mathrm A", .@"inline");
-    try expect("<math><mi>𝐀</mi></math>", "\\mathbf A", .@"inline");
-    try expect("<math><mi>𝔸</mi></math>", "\\mathbb A", .@"inline");
-    try expect("<math><mi>𝒜</mi></math>", "\\mathcal A", .@"inline");
+    try expect("<math><mi mathvariant=\"normal\">A</mi></math>", "\\mathrm A", .{});
+    try expect("<math><mi>𝐀</mi></math>", "\\mathbf A", .{});
+    try expect("<math><mi>𝔸</mi></math>", "\\mathbb A", .{});
+    try expect("<math><mi>𝒜</mi></math>", "\\mathcal A", .{});
 
-    try expect("<math><mi mathvariant=\"normal\">Z</mi></math>", "\\mathrm{Z}", .@"inline");
-    try expect("<math><mi>𝐙</mi></math>", "\\mathbf{Z}", .@"inline");
-    try expect("<math><mi>ℤ</mi></math>", "\\mathbb{Z}", .@"inline");
-    try expect("<math><mi>𝒵</mi></math>", "\\mathcal{Z}", .@"inline");
+    try expect("<math><mi mathvariant=\"normal\">Z</mi></math>", "\\mathrm{Z}", .{});
+    try expect("<math><mi>𝐙</mi></math>", "\\mathbf{Z}", .{});
+    try expect("<math><mi>ℤ</mi></math>", "\\mathbb{Z}", .{});
+    try expect("<math><mi>𝒵</mi></math>", "\\mathcal{Z}", .{});
 }
 
 test "mrows" {
     try expect(
         "<math><mfrac><mrow><mi>a</mi><mi>b</mi></mrow><mrow><mi>c</mi><mi>d</mi></mrow></mfrac></math>",
         "\\frac{ab}{cd}",
-        .@"inline",
+        .{},
     );
 }
 
@@ -824,7 +818,7 @@ test "quadratic formula" {
         \\<mn>4</mn><mi>a</mi><mi>c</mi></msqrt><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>
     ,
         \\x = -b \pm \frac{\sqrt{b^2 - 4 a c}}{2 a}
-    , .display);
+    , .{ .block = true });
 }
 
 test "matrix environment" {
@@ -838,14 +832,14 @@ test "matrix environment" {
         \\a & b \\
         \\c & d
         \\\end{matrix}
-    , .display);
+    , .{ .block = true });
 }
 
 test "bmatrix environment" {
     try expect(
         "<math><mrow><mo>[</mo><mtable><mtr><mtd><mi>x</mi></mtd></mtr></mtable><mo>]</mo></mrow></math>",
         "\\begin{bmatrix}x\\end{bmatrix}",
-        .@"inline",
+        .{},
     );
 }
 
@@ -864,31 +858,31 @@ test "cases environment" {
         \\0 & \text{if}\; x = 0 \\
         \\-1 & \text{if}\; x < 0
         \\\end{cases}
-    , .@"inline");
+    , .{});
 }
 
 test "missing macro name" {
-    try expectFailure("<input>:1:6: expected a macro name", "1 + \\", .@"inline");
+    try expectFailure("<input>:1:6: expected a macro name", "1 + \\", .{});
 }
 
 test "invalid macro name" {
-    try expectFailure("<input>:1:2: \"foo\": unknown macro", "\\foo", .@"inline");
+    try expectFailure("<input>:1:2: \"foo\": unknown macro", "\\foo", .{});
 }
 
 test "invalid variant letter" {
-    try expectFailure("<input>:1:9: \"0\": invalid letter", "\\mathbf{0}", .@"inline");
+    try expectFailure("<input>:1:9: \"0\": invalid letter", "\\mathbf{0}", .{});
 }
 
 test "invalid character" {
-    try expectFailure("<input>:1:1: \"#\": unexpected character", "#", .@"inline");
+    try expectFailure("<input>:1:1: \"#\": unexpected character", "#", .{});
 }
 
 test "invalid close brace" {
-    try expectFailure("<input>:1:1: unexpected '}'", "}", .@"inline");
+    try expectFailure("<input>:1:1: unexpected '}'", "}", .{});
 }
 
 test "invalid empty braces" {
-    try expectFailure("<input>:1:7: \"}\": unexpected character", "\\frac{}", .@"inline");
+    try expectFailure("<input>:1:7: \"}\": unexpected character", "\\frac{}", .{});
 }
 
 // TODO invalid end doesn't match begin env
