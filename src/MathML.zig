@@ -14,12 +14,14 @@ const Scanner = @import("Scanner.zig");
 const TagStack = tag_stack.TagStack;
 const MathML = @This();
 
-is_block: bool,
+options: Options,
 tokenizer: Tokenizer = .{},
 stack: TagStack(Tag) = .{},
 next_is_prefix: bool = true,
 next_is_infix: bool = false,
 next_is_stretchy: bool = false,
+
+pub const Options = struct { block: bool = false };
 
 // TODO reorder/reorganize these
 const Token = union(enum) {
@@ -423,21 +425,21 @@ fn top(self: MathML) Tag {
 }
 
 pub fn delimiter(self: MathML) []const u8 {
-    return if (self.is_block) "$$" else "$";
+    return if (self.options.block) "$$" else "$";
 }
 
-pub const Options = struct { block: bool = false };
-
-pub fn init(writer: anytype, options: Options) !MathML {
+pub fn render(writer: anytype, scanner: *Scanner, options: Options) !?MathML {
     switch (options.block) {
         false => try writer.writeAll("<math>"),
         true => try writer.writeAll("<math display=\"block\">"),
     }
-    return MathML{ .is_block = options.block };
+    var math = MathML{ .options = options };
+    return if (!scanner.eof() and try math.@"resume"(writer, scanner)) null else math;
 }
 
 // TODO: Handle ExceededMaxTagDepth with error like Markdown does.
-pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
+// TODO(https://github.com/ziglang/zig/issues/6025): Use async.
+pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
     while (true) switch (try self.tokenizer.next(scanner)) {
         .eof => return false,
@@ -446,7 +448,8 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
             return false;
         },
         .@"$" => {
-            if (self.is_block) try scanner.expect('$');
+            if (self.options.block) try scanner.expect('$');
+            // if punctuation inside, render inside math with <mtext> and class
             try self.renderEnd(writer);
             return true;
         },
@@ -455,9 +458,9 @@ pub fn render(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
 }
 
 fn renderEnd(self: *MathML, writer: anytype) !void {
-    _ = self;
     // TODO: check stack and buffer
     try writer.writeAll("</math>");
+    self.* = undefined;
 }
 
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
@@ -596,6 +599,13 @@ fn tagForOpenBrace(self: MathML, scanner: *Scanner) !Tag {
     return if (second == .@"}") .mrow_elide else .mrow;
 }
 
+fn renderForTest(writer: anytype, scanner: *Scanner, options: Options) !void {
+    var result = try render(writer, scanner, options);
+    if (result) |*math| while (!scanner.eof()) {
+        if (try math.@"resume"(writer, scanner)) break;
+    } else try math.renderEnd(writer);
+}
+
 fn expect(expected_mathml: []const u8, source: []const u8, options: Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -604,11 +614,7 @@ fn expect(expected_mathml: []const u8, source: []const u8, options: Options) !vo
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_mathml = std.ArrayList(u8).init(allocator);
-    const writer = actual_mathml.writer();
-    var math = try init(writer, options);
-    while (!scanner.eof()) {
-        if (try math.render(writer, &scanner)) break;
-    } else try math.renderEnd(writer);
+    try renderForTest(actual_mathml.writer(), &scanner, options);
     try testing.expectEqualStrings(expected_mathml, actual_mathml.items);
 }
 
@@ -618,11 +624,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8, options: Opti
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var math = try init(std.io.null_writer, options);
-    const result = while (!scanner.eof()) {
-        if (math.render(std.io.null_writer, &scanner) catch |err| break err) break;
-    } else math.renderEnd(std.io.null_writer);
-    try reporter.expectFailure(expected_message, result);
+    try reporter.expectFailure(expected_message, renderForTest(std.io.null_writer, &scanner, options));
 }
 
 test "empty input" {

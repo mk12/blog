@@ -732,7 +732,7 @@ fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
     };
 }
 
-fn maybeLookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
+fn lookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
     return switch (tag) {
         .@"[...](x)", .@"![...](x)", .@"](x)" => url_or_label,
         .@"[...][x]", .@"![...][x]", .@"][x]" => links.get(url_or_label) orelse
@@ -745,9 +745,9 @@ const Mode = union(enum) {
     code: Highlighter,
     math: MathML,
 
-    fn render(self: *Mode, writer: anytype, scanner: *Scanner) !bool {
+    fn @"resume"(self: *Mode, writer: anytype, scanner: *Scanner) !bool {
         return switch (self.*) {
-            inline else => |*mode| mode.render(writer, scanner),
+            inline else => |*mode| mode.@"resume"(writer, scanner),
         };
     }
 
@@ -796,7 +796,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
             if (unconsumed_token) |_| return tokenizer.fail("missing closing {s}", .{mode.terminator()});
             const scanner = tokenizer.takeScanner();
             if (scanner.eof()) break;
-            const finished = try mode.render(writer, scanner);
+            const finished = try mode.@"resume"(writer, scanner);
             if (finished) active_mode = null;
             if (!finished or mode.consumesFinalEol()) continue;
         }
@@ -821,7 +821,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"* * *\n" => break try writer.writeAll("<hr>"),
                 .@"```x\n" => |language_str| {
                     const language = if (options.highlight_code) Language.from(language_str) else null;
-                    active_mode = .{ .code = try Highlighter.init(writer, language) };
+                    active_mode = .{ .code = try Highlighter.render(writer, language) };
                     break;
                 },
                 // Common block tokens
@@ -835,12 +835,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"**" => try inlines.toggle(writer, .strong),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
-                .@"$", .@"$$" => {
-                    var math = try MathML.init(writer, .{ .block = token == .@"$$" });
-                    if (!try math.render(writer, tokenizer.takeScanner())) {
-                        active_mode = .{ .math = math };
-                        break;
-                    }
+                .@"$", .@"$$" => if (try MathML.render(writer, tokenizer.takeScanner(), .{ .block = token == .@"$$" })) |math| {
+                    active_mode = .{ .math = math };
+                    break;
                 },
                 // Footnotes
                 .@"[^x]" => |number| if (!options.first_block_only)
@@ -850,7 +847,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"[^x]: " => |label| try blocks.push(writer, .{ .footnote_ol = label }),
                 // Links
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
                     try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeAll("\">");
@@ -864,7 +861,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 // Figures
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.push(writer, .figure);
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
                     try writer.writeByte('\n');
@@ -872,7 +869,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 .@"![^" => try blocks.append(writer, .{ .figure, .figcaption }),
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
-                    const url = try maybeLookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.popTag(writer, .figcaption);
                     try writer.writeByte('\n');
                     try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
@@ -1500,6 +1497,10 @@ test "unclosed code block in blockquote" {
     try expectFailure("<input>:1:6: missing closing ```", "> ```", .{});
 }
 
+test "unclosed code block in blockquote with newline" {
+    try expectFailure("<input>:1:6: missing closing ```", "> ```\n", .{});
+}
+
 test "unclosed code block in blockquote with text after" {
     try expectFailure("<input>:2:1: missing closing ```", "> ```\n\nFoo", .{});
 }
@@ -1747,6 +1748,14 @@ test "inline math with newlines" {
 test "display math with newlines" {
     try expect("<math display=\"block\"><mi>x</mi>\n<mi>y</mi></math>", "$$x\ny$$", .{});
 }
+
+test "inline math mixed with other stuff" {
+    try expect("<p>Foo <math><mi>x</mi></math> bar $ <math><mi>y</mi></math>.</p>", "Foo $x$ bar \\$ $y$.", .{});
+}
+
+// test "unclosed inline math" {
+//     try expectFailure("<input>:1:2: unclosed $", "$", .{});
+// }
 
 test "unclosed inline at end" {
     try expectFailure(

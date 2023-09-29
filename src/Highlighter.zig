@@ -125,14 +125,15 @@ const Token = union(enum) {
     @"&": ?Class,
 };
 
-pub fn init(writer: anytype, language: ?Language) !Highlighter {
+pub fn render(writer: anytype, language: ?Language) !Highlighter {
     try writer.writeAll("<pre>\n<code>");
     return Highlighter{ .language = language };
 }
 
 pub const terminator = "```";
 
-pub fn render(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
+// TODO(https://github.com/ziglang/zig/issues/6025): Use async.
+pub fn @"resume"(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
     const finished = scanner.consumeStringEol(terminator);
     try if (finished) self.renderEnd(writer) else self.renderLine(writer, scanner);
@@ -388,6 +389,13 @@ fn scanRestOfIdentifier(scanner: *Scanner, language: Language, start: usize) []c
     return scanner.source[start..scanner.offset];
 }
 
+fn renderForTest(writer: anytype, scanner: *Scanner, language: ?Language) !void {
+    var highlighter = try render(writer, language);
+    while (!scanner.eof()) {
+        if (try highlighter.@"resume"(writer, scanner)) break;
+    } else try highlighter.renderEnd(writer);
+}
+
 fn expect(expected_html: []const u8, source: []const u8, language: ?Language) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -396,10 +404,7 @@ fn expect(expected_html: []const u8, source: []const u8, language: ?Language) !v
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var actual_html = std.ArrayList(u8).init(allocator);
-    const writer = actual_html.writer();
-    var highlighter = try init(writer, language);
-    while (!scanner.eof()) try highlighter.renderLine(writer, &scanner);
-    try highlighter.renderEnd(writer);
+    try renderForTest(actual_html.writer(), &scanner, language);
     try testing.expectEqualStrings(expected_html, actual_html.items);
 }
 
@@ -410,11 +415,7 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const writer = std.io.null_writer;
-    var highlighter = try init(writer, language);
-    const result = while (!scanner.eof()) highlighter.renderLine(writer, &scanner) catch |err| break err;
-    try highlighter.renderEnd(writer);
-    try reporter.expectFailure(expected_message, result);
+    try reporter.expectFailure(expected_message, renderForTest(std.io.null_writer, &scanner, language));
 }
 
 test "empty input" {

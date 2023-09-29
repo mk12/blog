@@ -1,19 +1,19 @@
 - update README
 - redesign, retro
 - code block in narrow mode should still have background
-- consistent way of inserting edits/later comments
-- render footnotes as sidenotes (?)
+- consistent way of inserting edits/later comments in posts
 - first year OCD note
+- render footnotes as sidenotes (?)
 - dark mode (including SVGs)
 - in index.xml, render links to other article in summaries with full URL
 - broken link http://lindenmayer.mitchellkember.com/koch/4
-- replace " " with `&nbsp;`?
 - math: more UTF-8 (e.g. `\ne`)
-- UTF-8 mathvariants seem to have weird spacing :/
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
 - comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")
 - consider var for single character math element
+x UTF-8 mathvariants seem to have weird spacing :/
+x replace " " with `&nbsp;`?
 + smart quotes in parens broken
 x server that uses websocket so that it can force refresh after watch + make
     x bun run serve.ts instead
