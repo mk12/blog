@@ -54,6 +54,7 @@ const Token = union(enum) {
     mo_prefix: []const u8,
     mo_postfix: []const u8,
     mo_closed: []const u8,
+    mo_closed_always: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -131,8 +132,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "right", .stretchy },
         .{ "lvert", .{ .mo_prefix = "|" } },
         .{ "rvert", .{ .mo_postfix = "|" } },
-        .{ "lVert", .{ .mo_delimiter = "‖" } },
-        .{ "rVert", .{ .mo_delimiter = "‖" } },
+        .{ "lVert", .{ .mo_prefix = "‖" } },
+        .{ "rVert", .{ .mo_postfix = "‖" } },
         .{ "langle", .{ .mo_delimiter = "⟨" } },
         .{ "rangle", .{ .mo_delimiter = "⟩" } },
         // Accents
@@ -210,8 +211,13 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '+', '-', '=', '>', ',', ';', '/', '!' => .{ .mo = scanner.source[start..scanner.offset] },
-            '.' => .{ .mo_closed = scanner.source[start..scanner.offset] },
+            '+', '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
+            // The spec says "MathML renderers should treat U+002D HYPHEN-MINUS
+            // as equivalent to U+2212 MINUS SIGN in formula contexts such
+            // as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
+            // But Chrome doesn't seem to respect this.
+            '-' => .{ .mo = "−" },
+            '.', '/' => .{ .mo_closed_always = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
             '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
@@ -324,7 +330,7 @@ test "scan text" {
         .@"\n",
         .{ .mtext_content = "more here" },
         .mtext_end,
-        .{ .mo = "-" },
+        .{ .mo = "−" },
         .{ .mi = "y" },
         .eof,
     },
@@ -337,7 +343,7 @@ test "scan quadratic formula" {
     try expectTokens(&[_]Token{
         .{ .mi = "x" },
         .{ .mo = "=" },
-        .{ .mo = "-" },
+        .{ .mo = "−" },
         .{ .mi = "b" },
         .{ .mo = "±" },
         .mfrac,
@@ -347,7 +353,7 @@ test "scan quadratic formula" {
         .{ .mi = "b" },
         .@"^",
         .{ .mn = "2" },
-        .{ .mo = "-" },
+        .{ .mo = "−" },
         .{ .mn = "4" },
         .{ .mi = "a" },
         .{ .mi = "c" },
@@ -498,9 +504,10 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mi => |text| try fmt.format(writer, "<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
         // TODO generalize into list of plus, minus, ...
-        .mo => |text| try if (prefix and (text[0] == '+' or text[0] == '-' or std.mem.eql(u8, text, "±")))
+        .mo => |text| try if (prefix and (text[0] == '+' or std.mem.eql(u8, text, "−") or std.mem.eql(u8, text, "±")))
             fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
-        else if (self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg))
+        else if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
+            (prefix and std.mem.eql(u8, text, "×")))
             fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
             fmt.format(writer, "<mo>{s}</mo>", .{text}),
@@ -514,6 +521,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             try fmt.format(writer, "<mo>{s}</mo>", .{text})
         else
             try fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
+        .mo_closed_always => |text| try fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
         .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
@@ -521,8 +529,11 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .begin => |environment| {
             switch (environment) {
                 .matrix => {},
-                .bmatrix => try writer.writeAll("<mo>[</mo>"),
-                .cases => try writer.writeAll("<mo>{</mo>"),
+                // Add an mrow otherwise Firefox doesn't stretch the bracket.
+                // Should really do this for all stretchy (doesn't matter right
+                // now because I'm not using \left and \right anywhere).
+                .bmatrix => try writer.writeAll("<mrow><mo>[</mo>"),
+                .cases => try writer.writeAll("<mrow><mo>{</mo>"),
             }
             try self.stack.append(writer, .{ .mtable, .mtr, .mtd });
         },
@@ -537,8 +548,9 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                 else => return scanner.fail("FIXME unclosed", .{}),
             }
             switch (environment) {
-                .matrix, .cases => {},
-                .bmatrix => try writer.writeAll("<mo>]</mo>"),
+                .matrix => {},
+                .cases => try writer.writeAll("</mrow>"),
+                .bmatrix => try writer.writeAll("<mo>]</mo></mrow>"),
             }
         },
         .@"&" => switch (self.top()) {
@@ -636,8 +648,18 @@ test "variable" {
 
 test "prefix operator" {
     try expect("<math><mo form=\"prefix\">+</mo><mi>x</mi></math>", "+x", .@"inline");
-    try expect("<math><mo form=\"prefix\">-</mo><mi>x</mi></math>", "-x", .@"inline");
+    try expect("<math><mo form=\"prefix\">−</mo><mi>x</mi></math>", "-x", .@"inline");
     try expect("<math><mo form=\"prefix\">±</mo><mi>x</mi></math>", "\\pm x", .@"inline");
+}
+
+test "operators as values" {
+    try expect(
+        "<math><mo stretchy=\"false\">(</mo><mi>ℤ</mi><mo>,</mo>" ++
+            "<mo form=\"prefix\">+</mo><mo>,</mo><mo lspace=\"0\" rspace=\"0\">×</mo>" ++
+            "<mo stretchy=\"false\">)</mo></math>",
+        "(\\mathbb{Z},+,\\times)",
+        .@"inline",
+    );
 }
 
 test "basic expression" {
@@ -720,9 +742,9 @@ test "squared expression" {
 }
 
 test "vectors" {
-    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec x", .@"inline");
-    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{x}", .@"inline");
-    try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
+    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec x", .@"inline");
+    try expect("<math><mover><mi>x</mi><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{x}", .@"inline");
+    try expect("<math><mover><mrow><mi>P</mi><mi>Q</mi></mrow><mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">→</mo></mover></math>", "\\vec{PQ}", .@"inline");
 }
 
 test "boxed" {
@@ -740,7 +762,7 @@ test "set with braces" {
 
 test "limit" {
     try expect(
-        "<math><munder><mi>lim</mi><mrow><mi>x</mi><mo>→</mo><mi>∞</mi></mrow></munder><mi>x</mi></math>",
+        "<math><munder><mi>lim</mi><mrow><mi>x</mi><mo lspace=\"0\" rspace=\"0\">→</mo><mi>∞</mi></mrow></munder><mi>x</mi></math>",
         "\\lim_{x\\to\\infty}x",
         .@"inline",
     );
@@ -753,7 +775,7 @@ test "summation" {
 test "summation equation" {
     try expect(
         \\<math><munderover><mo>∑</mo>
-        \\<mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>
+        \\<mrow><mi>k</mi><mo lspace="0" rspace="0">=</mo><mn>1</mn></mrow><mi>n</mi></munderover>
         \\<mi>k</mi><mo>=</mo><mfrac><mrow><mi>k</mi>
         \\<mo stretchy="false">(</mo><mi>k</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo>
         \\</mrow><mn>2</mn></mfrac></math>
@@ -795,9 +817,9 @@ test "mrows" {
 
 test "quadratic formula" {
     try expect(
-        \\<math display="block"><mi>x</mi><mo>=</mo><mo form="prefix">-</mo><mi>b</mi>
+        \\<math display="block"><mi>x</mi><mo>=</mo><mo form="prefix">−</mo><mi>b</mi>
         ++
-        \\<mo>±</mo><mfrac><msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>-</mo>
+        \\<mo>±</mo><mfrac><msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo>
         ++
         \\<mn>4</mn><mi>a</mi><mi>c</mi></msqrt><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>
     ,
@@ -821,7 +843,7 @@ test "matrix environment" {
 
 test "bmatrix environment" {
     try expect(
-        "<math><mo>[</mo><mtable><mtr><mtd><mi>x</mi></mtd></mtr></mtable><mo>]</mo></math>",
+        "<math><mrow><mo>[</mo><mtable><mtr><mtd><mi>x</mi></mtd></mtr></mtable><mo>]</mo></mrow></math>",
         "\\begin{bmatrix}x\\end{bmatrix}",
         .@"inline",
     );
@@ -830,11 +852,11 @@ test "bmatrix environment" {
 test "cases environment" {
     try expect(
         \\<math><mi>f</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo>
-        \\<mo>{</mo><mtable><mtr><mtd>
+        \\<mrow><mo>{</mo><mtable><mtr><mtd>
         \\<mn>1</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>></mo><mn>0</mn></mtd></mtr><mtr><mtd>
         \\<mn>0</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>=</mo><mn>0</mn></mtd></mtr><mtr><mtd>
-        \\<mo form="prefix">-</mo><mn>1</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>&lt;</mo><mn>0</mn>
-        \\</mtd></mtr></mtable></math>
+        \\<mo form="prefix">−</mo><mn>1</mn></mtd><mtd><mtext>if</mtext><mspace width="0.278em"/><mi>x</mi><mo>&lt;</mo><mn>0</mn>
+        \\</mtd></mtr></mtable></mrow></math>
     ,
         \\f(x)=
         \\\begin{cases}

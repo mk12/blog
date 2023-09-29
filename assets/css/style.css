@@ -89,6 +89,16 @@ em { font-style: italic; }
 
 math[display="block"] { margin-bottom: 1.2em; }
 
+/* @font-face {
+  font-family: "Latin Modern Math";
+  src: url('/latinmodern-math.otf') format('opentype');
+} */
+
+/* math {
+  font-family: local("Latin Modern Math");
+  font-weight: 600;
+} */
+
 /* KaTeX CSS uses 1.21em, which is too big beside 1em Equity Text. */
 /* .katex {
   font-size: 1.08em;
