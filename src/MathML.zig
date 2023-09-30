@@ -375,9 +375,8 @@ const Tag = union(enum) {
     mover,
     munderover,
     munderover_arg,
-    mtable,
-    mtr,
-    mtd,
+
+    environment: Environment,
     boxed,
     accent: [3:0]u8,
 
@@ -390,15 +389,17 @@ const Tag = union(enum) {
 
     fn hasImplicitMrow(self: Tag) bool {
         return switch (self) {
-            .mtext, .mover, .mtable, .mtr => unreachable,
-            .mrow, .mrow_elide, .msqrt, .mphantom, .boxed, .mtd => true,
+            .mtext,
+            .mover,
+            => unreachable,
+            .mrow, .mrow_elide, .msqrt, .mphantom, .environment, .boxed => true,
             .math, .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
         };
     }
 
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .math => unreachable,
+            .math, .environment => unreachable,
             .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
             // TODO consider CSS classs instead
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
@@ -531,18 +532,17 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                 .bmatrix => try writer.writeAll("<mrow><mo>[</mo>"),
                 .cases => try writer.writeAll("<mrow><mo>{</mo>"),
             }
-            try self.stack.append(writer, .{ .mtable, .mtr, .mtd });
+            try writer.writeAll("<mtable><mtr><mtd>");
+            try self.stack.pushWithoutWriting(.{ .environment = environment });
         },
         .end => |environment| {
             switch (self.top()) {
-                .mtd => {
-                    // TODO maybe don't need to represent all in stack.
-                    try self.stack.popTag(writer, .mtd);
-                    try self.stack.popTag(writer, .mtr);
-                    try self.stack.popTag(writer, .mtable);
-                },
+                .environment => |begin| if (environment != begin)
+                    return scanner.fail("expected \\end{{{s}}}", .{@tagName(begin)}),
                 else => return scanner.fail("unexpected end environment", .{}),
             }
+            self.stack.popWithoutWriting();
+            try writer.writeAll("</mtd></mtr></mtable>");
             switch (environment) {
                 .matrix => {},
                 .cases => try writer.writeAll("</mrow>"),
@@ -550,24 +550,16 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             }
         },
         .@"&" => switch (self.top()) {
-            .mtd => {
-                const tag = self.top();
-                try tag.writeCloseTag(writer);
-                try tag.writeOpenTag(writer);
-            },
+            .environment => try writer.writeAll("</mtd><mtd>"),
             else => return scanner.fail("unexpected &", .{}),
         },
         .@"\\" => switch (self.top()) {
-            .mtd => {
-                try self.stack.popTag(writer, .mtd);
-                try self.stack.popTag(writer, .mtr);
-                try self.stack.append(writer, .{ .mtr, .mtd });
-            },
+            .environment => try writer.writeAll("</mtd></mtr><mtr><mtd>"),
             else => return scanner.fail("unexpected \\\\", .{}),
         },
     }
     if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| switch (tag) {
-        .mrow, .mrow_elide, .mtd => break,
+        .mrow, .mrow_elide, .environment => break,
         else => {
             try self.stack.popTag(writer, tag);
             if (tag.isArg()) break;
@@ -916,7 +908,7 @@ test "invalid environment name" {
 }
 
 test "mismatched environment name" {
-    try expectFailure("<input>:1:8: \"foo\": unknown environment", "\\begin{bmatrix}\\end{cases}", .{});
+    try expect("<input>:1:27: expected \\end{bmatrix}", "\\begin{bmatrix}\\end{cases}", .{});
 }
 
 test "unexpected end environment" {
