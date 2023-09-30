@@ -4,10 +4,11 @@ import type { ServerWebSocket } from "bun";
 import { extname, join } from "path";
 
 async function main() {
-  // Pretend main.zig changed so that we run zig build first.
-  await handleChange("src/main.zig");
   const server = startServer();
   console.log(`listening on ${server.rootUrl}`);
+  // Pretend main.zig changed so that we run zig build first.
+  await handleChange("src/main.zig");
+  server.reloadClients()
   const watcher = startWatcher();
   try {
     for await (const path of watcher.changes()) {
@@ -38,7 +39,7 @@ function startServer() {
       const root = path.startsWith("/fonts/") ? "." : outDir;
       const file = Bun.file(join(root, target));
       if (target.endsWith(".html")) return new Response(
-        htmlStatus ?? injectLiveReloadScript(await file.text()),
+        injectLiveReloadScript(htmlStatus ?? await file.text()),
         { headers: { "Content-Type": "text/html" } }
       );
       return new Response(file);
@@ -113,22 +114,25 @@ async function handleChange(path: string) {
 }
 
 let htmlStatus: string | null = null;
+function clearStatus() { htmlStatus = null; }
+function setStatus(html: string) { htmlStatus = `<body>${html}</body>`; }
+
 async function run(...args: [string, ...string[]]) {
   const cmdline = args.join(" ");
-  htmlStatus = `Command in progress: <code>${cmdline}</code>`;
+  setStatus(`Command in progress: <code>${cmdline}</code>`);
   console.log(`running: ${cmdline}`);
   const cmd = Bun.spawn(args, { stdout: "inherit", stderr: "pipe" });
   if (await cmd.exited === 0) {
-    htmlStatus = null;
+    clearStatus();
     return true;
   }
   const stderr = await Bun.readableStreamToText(cmd.stderr as ReadableStream);
   console.error(`Command failed: ${cmdline}\n${stderr}`);
-  htmlStatus = `
-    <h1>Command failed</h1>
-    <p>Command: <code>${cmdline}</code></p>
-    <pre>${stderr}</pre>
-`;
+  setStatus(`
+<h1>Command failed</h1>
+<p>Command: <code>${cmdline}</code></p>
+<pre>${stderr}</pre>`
+  );
   return false;
 }
 
