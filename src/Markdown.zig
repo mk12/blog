@@ -1750,12 +1750,20 @@ test "display math with newlines" {
 }
 
 test "inline math mixed with other stuff" {
-    try expect("<p>Foo <math><mi>x</mi></math> bar $ <math><mi>y</mi></math>.</p>", "Foo $x$ bar \\$ $y$.", .{});
+    try expect("<p>Foo <math><mi>x</mi></math> bar $ <math><mi>y</mi></math></p>", "Foo $x$ bar \\$ $y$", .{});
 }
 
-// test "unclosed inline math" {
-//     try expectFailure("<input>:1:2: unclosed $", "$", .{});
-// }
+test "punctuation tucked into math" {
+    try expect("<p><math><mi>x</mi><mtext>.</mtext></math></p>", "$x$.", .{});
+}
+
+test "unclosed inline math" {
+    try expectFailure("<input>:1:2: missing closing $", "$", .{});
+}
+
+test "unclosed block math" {
+    try expectFailure("<input>:1:3: missing closing $$", "$$", .{});
+}
 
 test "unclosed inline at end" {
     try expectFailure(

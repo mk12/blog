@@ -390,9 +390,9 @@ const Tag = union(enum) {
 
     fn hasImplicitMrow(self: Tag) bool {
         return switch (self) {
-            .math, .mtext, .mover, .mtable, .mtr => unreachable,
+            .mtext, .mover, .mtable, .mtr => unreachable,
             .mrow, .mrow_elide, .msqrt, .mphantom, .boxed, .mtd => true,
-            .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
+            .math, .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
         };
     }
 
@@ -429,15 +429,11 @@ pub fn delimiter(self: MathML) []const u8 {
 }
 
 pub fn render(writer: anytype, scanner: *Scanner, options: Options) !?MathML {
-    switch (options.block) {
-        false => try writer.writeAll("<math>"),
-        true => try writer.writeAll("<math display=\"block\">"),
-    }
+    try writer.writeAll(if (options.block) "<math display=\"block\">" else "<math>");
     var math = MathML{ .options = options };
     return if (!scanner.eof() and try math.@"resume"(writer, scanner)) null else math;
 }
 
-// TODO: Handle ExceededMaxTagDepth with error like Markdown does.
 // TODO(https://github.com/ziglang/zig/issues/6025): Use async.
 pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     assert(!scanner.eof());
@@ -450,15 +446,18 @@ pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
         .@"$" => {
             if (self.options.block) try scanner.expect('$');
             if (scanner.consumeAny(",.!?:;")) |char| try fmt.format(writer, "<mtext>{c}</mtext>", .{char});
-            try self.renderEnd(writer);
+            try self.renderEnd(writer, scanner);
             return true;
         },
-        else => |token| try self.renderToken(writer, scanner, token),
+        else => |token| self.renderToken(writer, scanner, token) catch |err| switch (err) {
+            error.ExceededMaxTagDepth => return scanner.fail("exceeded maximum tag depth ({})", .{tag_stack.max_depth}),
+            else => return err,
+        },
     };
 }
 
-fn renderEnd(self: *MathML, writer: anytype) !void {
-    // TODO: check stack and buffer
+fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
+    if (self.stack.top()) |tag| return scanner.fail("unclosed <{s}> tag", .{@tagName(tag)});
     try writer.writeAll("</math>");
     self.* = undefined;
 }
@@ -542,7 +541,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                     try self.stack.popTag(writer, .mtr);
                     try self.stack.popTag(writer, .mtable);
                 },
-                else => return scanner.fail("FIXME unclosed", .{}),
+                else => return scanner.fail("unexpected end environment", .{}),
             }
             switch (environment) {
                 .matrix => {},
@@ -552,10 +551,11 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         },
         .@"&" => switch (self.top()) {
             .mtd => {
-                try self.stack.popTag(writer, .mtd);
-                try self.stack.push(writer, .mtd);
+                const tag = self.top();
+                try tag.writeCloseTag(writer);
+                try tag.writeOpenTag(writer);
             },
-            else => return scanner.fail("FIXME unclosed", .{}),
+            else => return scanner.fail("unexpected &", .{}),
         },
         .@"\\" => switch (self.top()) {
             .mtd => {
@@ -563,7 +563,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                 try self.stack.popTag(writer, .mtr);
                 try self.stack.append(writer, .{ .mtr, .mtd });
             },
-            else => return scanner.fail("FIXME unclosed", .{}),
+            else => return scanner.fail("unexpected \\\\", .{}),
         },
     }
     if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| switch (tag) {
@@ -603,7 +603,7 @@ fn renderForTest(writer: anytype, scanner: *Scanner, options: Options) !void {
     var result = try render(writer, scanner, options);
     if (result) |*math| while (!scanner.eof()) {
         if (try math.@"resume"(writer, scanner)) break;
-    } else try math.renderEnd(writer);
+    } else try math.renderEnd(writer, scanner);
 }
 
 fn expect(expected_mathml: []const u8, source: []const u8, options: Options) !void {
@@ -887,4 +887,46 @@ test "invalid empty braces" {
     try expectFailure("<input>:1:7: \"}\": unexpected character", "\\frac{}", .{});
 }
 
-// TODO invalid end doesn't match begin env
+test "unclosed mrow" {
+    try expectFailure("<input>:1:2: unclosed <mrow> tag", "{", .{});
+}
+
+test "unclosed msqrt" {
+    try expectFailure("<input>:1:6: unclosed <msqrt> tag", "\\sqrt", .{});
+}
+
+test "unclosed msub" {
+    try expectFailure("<input>:1:3: unclosed <msub> tag", "1_", .{});
+}
+
+test "unclosed environment" {
+    try expectFailure("<input>:1:15: unclosed <mtd> tag", "\\begin{matrix}", .{});
+}
+
+test "exceed max depth" {
+    try expectFailure(
+        \\<input>:1:30: exceeded maximum tag depth (8)
+    ,
+        \\\sqrt{\sqrt{\sqrt{\sqrt{\sqrt{x}}}}}
+    , .{});
+}
+
+test "invalid environment name" {
+    try expectFailure("<input>:1:8: \"foo\": unknown environment", "\\begin{foo}", .{});
+}
+
+test "mismatched environment name" {
+    try expectFailure("<input>:1:8: \"foo\": unknown environment", "\\begin{bmatrix}\\end{cases}", .{});
+}
+
+test "unexpected end environment" {
+    try expectFailure("<input>:1:13: unexpected end environment", "\\end{matrix}", .{});
+}
+
+test "unexpected &" {
+    try expectFailure("<input>:1:2: unexpected &", "&", .{});
+}
+
+test "unexpected \\\\" {
+    try expectFailure("<input>:1:3: unexpected \\\\", "\\\\", .{});
+}
