@@ -397,12 +397,35 @@ const Tag = union(enum) {
         };
     }
 
+    fn formatFn(self: Tag, comptime str: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = str;
+        _ = options;
+        try switch (self) {
+            .math => unreachable,
+            .environment => |environment| fmt.format(writer, "{s} environment", .{@tagName(environment)}),
+            .mrow_elide => writer.writeAll("<mrow> tag"),
+            else => fmt.format(writer, "<{s}> tag", .{@tagName(self)}),
+        };
+    }
+
+    fn format(self: Tag) fmt.Formatter(formatFn) {
+        return .{ .data = self };
+    }
+
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
         switch (self) {
-            .math, .environment => unreachable,
+            .math => unreachable,
             .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
             // TODO consider CSS classs instead
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
+            .environment => |environment| try writer.writeAll(switch (environment) {
+                .matrix => "<mtable><mtr><mtd>",
+                // Add an mrow otherwise Firefox doesn't stretch the bracket.
+                // Should really do this for all stretchy (doesn't matter right
+                // now because I'm not using \left and \right anywhere).
+                .bmatrix => "<mrow><mo>[</mo><mtable><mtr><mtd>",
+                .cases => "<mrow><mo>{</mo><mtable><mtr><mtd>",
+            }),
             else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
         }
     }
@@ -410,12 +433,20 @@ const Tag = union(enum) {
     pub fn writeCloseTag(self: Tag, writer: anytype) !void {
         switch (self) {
             .math => unreachable,
-            .mrow_elide, .mfrac_arg, .munderover_arg => {},
+            .mrow_elide,
+            .mfrac_arg,
+            .munderover_arg,
+            => {},
             .accent => |text| if (text[0] == "→"[0]) // TODO fix
                 try fmt.format(writer, "<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
             else
                 try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
+            .environment => |environment| try writer.writeAll(switch (environment) {
+                .matrix => "</mtd></mtr></mtable>",
+                .bmatrix => "</mtd></mtr></mtable><mo>]</mo></mrow>",
+                .cases => "</mtd></mtr></mtable></mrow>",
+            }),
             else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
         }
     }
@@ -458,7 +489,7 @@ pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
 }
 
 fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
-    if (self.stack.top()) |tag| return scanner.fail("unclosed <{s}> tag", .{@tagName(tag)});
+    if (self.stack.top()) |tag| return scanner.fail("unclosed {}", .{tag.format()});
     try writer.writeAll("</math>");
     self.* = undefined;
 }
@@ -523,31 +554,13 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
         .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
-        .begin => |environment| {
-            switch (environment) {
-                .matrix => {},
-                // Add an mrow otherwise Firefox doesn't stretch the bracket.
-                // Should really do this for all stretchy (doesn't matter right
-                // now because I'm not using \left and \right anywhere).
-                .bmatrix => try writer.writeAll("<mrow><mo>[</mo>"),
-                .cases => try writer.writeAll("<mrow><mo>{</mo>"),
-            }
-            try writer.writeAll("<mtable><mtr><mtd>");
-            try self.stack.pushWithoutWriting(.{ .environment = environment });
-        },
-        .end => |environment| {
-            switch (self.top()) {
-                .environment => |begin| if (environment != begin)
-                    return scanner.fail("expected \\end{{{s}}}", .{@tagName(begin)}),
-                else => return scanner.fail("unexpected end environment", .{}),
-            }
-            self.stack.popWithoutWriting();
-            try writer.writeAll("</mtd></mtr></mtable>");
-            switch (environment) {
-                .matrix => {},
-                .cases => try writer.writeAll("</mrow>"),
-                .bmatrix => try writer.writeAll("<mo>]</mo></mrow>"),
-            }
+        .begin => |environment| try self.stack.push(writer, .{ .environment = environment }),
+        .end => |environment| switch (self.top()) {
+            .environment => |begin| if (environment == begin)
+                try self.stack.pop(writer)
+            else
+                return scanner.fail("expected \\end{{{s}}}", .{@tagName(begin)}),
+            else => return scanner.fail("unexpected end environment", .{}),
         },
         .@"&" => switch (self.top()) {
             .environment => try writer.writeAll("</mtd><mtd>"),
@@ -668,6 +681,7 @@ test "symbols" {
 
 test "lambda" {
     // I support λ because I use it a lot in intro-lambda.md.
+    // TODO: More general list, include things like ≠ probably.
     try expect("<math><mi>λ</mi><mi>λ</mi></math>", "\\lambdaλ", .{});
 }
 
@@ -892,7 +906,7 @@ test "unclosed msub" {
 }
 
 test "unclosed environment" {
-    try expectFailure("<input>:1:15: unclosed <mtd> tag", "\\begin{matrix}", .{});
+    try expectFailure("<input>:1:15: unclosed matrix environment", "\\begin{matrix}", .{});
 }
 
 test "exceed max depth" {
@@ -908,7 +922,7 @@ test "invalid environment name" {
 }
 
 test "mismatched environment name" {
-    try expect("<input>:1:27: expected \\end{bmatrix}", "\\begin{bmatrix}\\end{cases}", .{});
+    try expectFailure("<input>:1:27: expected \\end{bmatrix}", "\\begin{bmatrix}\\end{cases}", .{});
 }
 
 test "unexpected end environment" {

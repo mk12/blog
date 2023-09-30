@@ -55,10 +55,6 @@ pub fn TagStack(comptime Tag: type) type {
             try self.items.pop().writeCloseTag(writer);
         }
 
-        pub fn popWithoutWriting(self: *Self) void {
-            _ = self.items.pop();
-        }
-
         pub fn popTag(self: *Self, writer: anytype, tag: TagNoPayload) !void {
             assert(self.top().? == tag);
             try self.pop(writer);
@@ -120,15 +116,6 @@ test "pushWithoutWriting" {
     try stack.pushWithoutWriting(.foo);
     try stack.pop(output.writer());
     try testing.expectEqualStrings("</foo>", output.items);
-}
-
-test "popWithoutWriting" {
-    var stack = TagStack(TestTag){};
-    var output = std.ArrayList(u8).init(testing.allocator);
-    defer output.deinit();
-    try stack.push(output.writer(), .foo);
-    stack.popWithoutWriting();
-    try testing.expectEqualStrings("<foo>", output.items);
 }
 
 test "append" {
