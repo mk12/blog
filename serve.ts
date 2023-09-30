@@ -1,19 +1,19 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+import type { ServerWebSocket } from "bun";
 import { extname, join } from "path";
 
 async function main() {
+  // Pretend main.zig changed so that we run zig build first.
+  await handleChange("src/main.zig");
   const server = startServer();
   console.log(`listening on ${server.rootUrl}`);
   const watcher = startWatcher();
   try {
-    // Pretend main.zig changed so that we run zig build first.
-    await handleChange("src/main.zig");
-    await Bun.spawn(["open", server.rootUrl]).exited;
     for await (const path of watcher.changes()) {
       console.log(`changed: ${path}`);
       await handleChange(path);
-      await Bun.spawn(["open", "-g", server.lastVisitedUrl()]).exited;
+      server.reloadClients();
     }
   } finally {
     watcher.kill();
@@ -23,32 +23,58 @@ async function main() {
 const outDir = "./public";
 
 function startServer() {
-  let lastHtmlPath = "";
-  const server = Bun.serve({
-    fetch(request) {
+  const sockets: Set<ServerWebSocket> = new Set();
+  const server = Bun.serve<undefined>({
+    async fetch(request, server) {
+      if (request.headers.get("upgrade") === "websocket") {
+        if (!server.upgrade(request)) return new Response("Upgrade failed", { status: 400 });
+        return new Response();
+      }
       let path = new URL(request.url).pathname;
       console.log(`handling: ${request.method} ${path}`);
       let target = path;
       if (extname(path) === "") target += "/index.html";
       else if (path.endsWith("/")) target += "index.html";
       const root = path.startsWith("/fonts/") ? "." : outDir;
-      if (target.endsWith(".html")) {
-        lastHtmlPath = path;
-        if (htmlStatus !== null) return new Response(htmlStatus, {
-          headers: { "Content-Type": "text/html" },
-        });
-      }
-      return new Response(Bun.file(join(root, target)));
+      const file = Bun.file(join(root, target));
+      if (target.endsWith(".html")) return new Response(
+        htmlStatus ?? injectLiveReloadScript(await file.text()),
+        { headers: { "Content-Type": "text/html" } }
+      );
+      return new Response(file);
     },
     error(error: any) {
       if (error.code === "ENOENT") return new Response("", { status: 404 });
+    },
+    websocket: {
+      open(ws) {
+        console.log("websocket: opened");
+        sockets.add(ws);
+      },
+      message() { },
+      close(ws) {
+        console.log("websocket: closed");
+        sockets.delete(ws);
+      },
     }
   });
-  const rootUrl = `http://${server.hostname}:${server.port}`;
   return {
-    rootUrl,
-    lastVisitedUrl: () => rootUrl + lastHtmlPath,
-  }
+    rootUrl: `http://${server.hostname}:${server.port}`,
+    reloadClients: () => {
+      for (const ws of sockets) ws.close();
+      sockets.clear();
+    },
+  };
+}
+
+function injectLiveReloadScript(html: string): string {
+  return html.replace("</body>", `
+<script>
+const socket = new WebSocket("ws://" + location.host);
+socket.addEventListener("close", () => location.reload());
+</script>
+</body>
+`);
 }
 
 function startWatcher() {

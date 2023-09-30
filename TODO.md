@@ -11,12 +11,11 @@
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
 - consider var for single character math element
++ server that uses websocket so that it can force refresh
 + comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")
 x UTF-8 mathvariants seem to have weird spacing :/
 x replace " " with `&nbsp;`?
 + smart quotes in parens broken
-x server that uses websocket so that it can force refresh after watch + make
-    x bun run serve.ts instead
 + consider MathML instead of KaTeX
 + Zig changes to scanner
     x non fallable. user of scanner reports errors. Scanner's job is mainly keeping track of line/col
