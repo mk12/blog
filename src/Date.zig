@@ -176,7 +176,7 @@ pub fn render(self: Date, writer: anytype, style: Style) !void {
         ),
         .rfc3339 => {
             const sign: u8 = if (self.tz_offset_h < 0) '-' else '+';
-            const offset = std.math.absCast(self.tz_offset_h);
+            const offset = @abs(self.tz_offset_h);
             try writer.print(
                 "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{c}{:0>2}:00",
                 .{ self.year, self.month, self.day, self.hour, self.minute, self.second, sign, offset },
