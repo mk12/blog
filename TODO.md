@@ -11,6 +11,8 @@
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
 - consider var for single character math element
+- remove TypeScript implementation
+- upload new website
 + server that uses websocket so that it can force refresh
 + comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")
 x UTF-8 mathvariants seem to have weird spacing :/

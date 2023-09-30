@@ -40,12 +40,8 @@ pub fn generate(args: struct {
 
     var variables = try Value.init(allocator, .{
         .author = "Mitchell Kember",
-        .style_url = try base_url.join(allocator, "/style.css"),
-        .blog_url = try base_url.join(allocator, "/"),
+        .base_url = base_url.basePath(),
         .home_url = args.home_url,
-        // TODO maybe just use {{ base_url }}/post/ in templates?
-        .archive_url = try base_url.join(allocator, "/post/"),
-        .categories_url = try base_url.join(allocator, "/categories/"),
         .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
     });
     var scope = Scope.init(variables);
@@ -119,6 +115,12 @@ const BaseUrl = struct {
 
     fn init(base: ?[]const u8) BaseUrl {
         return BaseUrl{ .base = base orelse "" };
+    }
+
+    fn basePath(self: BaseUrl) []const u8 {
+        const i = std.mem.indexOf(u8, self.base, "://") orelse return self.base;
+        const j = std.mem.indexOfScalarPos(u8, self.base, i + 3, '/') orelse return "";
+        return self.base[j..];
     }
 
     fn join(self: BaseUrl, allocator: Allocator, comptime path: []const u8) ![]const u8 {
@@ -230,14 +232,11 @@ fn generatePage(
             .title = "Categories", // TODO <title> should have my name
             .groups = try groupPostsByCategory(allocator, base_url, posts),
         }),
-        else => try Value.init(allocator, .{
+        .@"/index.xml" => try Value.init(allocator, .{
             .title = "Mitchell Kember",
             .posts = .{},
-            .archive_url = "", // link.to
-            .categories_url = "", // link.to
             .last_build_date = "",
             .feed_url = "",
-            .groups = .{},
         }),
     };
     var scope = parent.initChild(variables);

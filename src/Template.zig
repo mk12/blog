@@ -565,7 +565,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             else => |value| return ctx.reporter.failAt(
                 self.filename,
                 Location.fromPtr(self.source, variable.ptr),
-                "{s}: expected string variable, got {s}",
+                "{s}: expected string, got {s}",
                 .{ variable, @tagName(value) },
             ),
         },
@@ -670,7 +670,7 @@ test "execute range-else" {
 }
 
 test "execute not a string" {
-    try expectExecuteFailure("<input>:1:4: .: expected string variable, got array", "{{ . }}", .{});
+    try expectExecuteFailure("<input>:1:4: .: expected string, got array", "{{ . }}", .{});
 }
 
 test "execute variable not found" {

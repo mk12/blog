@@ -397,9 +397,7 @@ const Tag = union(enum) {
         };
     }
 
-    fn formatFn(self: Tag, comptime str: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = str;
-        _ = options;
+    fn formatFn(self: Tag, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try switch (self) {
             .math => unreachable,
             .environment => |environment| fmt.format(writer, "{s} environment", .{@tagName(environment)}),
