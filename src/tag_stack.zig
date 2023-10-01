@@ -75,11 +75,11 @@ const TestTag = enum {
     bar,
 
     fn writeOpenTag(self: @This(), writer: anytype) !void {
-        try std.fmt.format(writer, "<{s}>", .{@tagName(self)});
+        try writer.print("<{s}>", .{@tagName(self)});
     }
 
     fn writeCloseTag(self: @This(), writer: anytype) !void {
-        try std.fmt.format(writer, "</{s}>", .{@tagName(self)});
+        try writer.print("</{s}>", .{@tagName(self)});
     }
 };
 

@@ -5,7 +5,6 @@
 //! when it encounters a newline, so it can be used by the Markdown renderer.
 
 const std = @import("std");
-const fmt = std.fmt;
 const tag_stack = @import("tag_stack.zig");
 const testing = std.testing;
 const assert = std.debug.assert;
@@ -400,13 +399,13 @@ const Tag = union(enum) {
     fn formatFn(self: Tag, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try switch (self) {
             .math => unreachable,
-            .environment => |environment| fmt.format(writer, "{s} environment", .{@tagName(environment)}),
+            .environment => |environment| writer.print("{s} environment", .{@tagName(environment)}),
             .mrow_elide => writer.writeAll("<mrow> tag"),
-            else => fmt.format(writer, "<{s}> tag", .{@tagName(self)}),
+            else => writer.print("<{s}> tag", .{@tagName(self)}),
         };
     }
 
-    fn format(self: Tag) fmt.Formatter(formatFn) {
+    fn format(self: Tag) std.fmt.Formatter(formatFn) {
         return .{ .data = self };
     }
 
@@ -424,7 +423,7 @@ const Tag = union(enum) {
                 .bmatrix => "<mrow><mo>[</mo><mtable><mtr><mtd>",
                 .cases => "<mrow><mo>{</mo><mtable><mtr><mtd>",
             }),
-            else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
+            else => try writer.print("<{s}>", .{@tagName(self)}),
         }
     }
 
@@ -436,16 +435,16 @@ const Tag = union(enum) {
             .munderover_arg,
             => {},
             .accent => |text| if (text[0] == "→"[0]) // TODO fix
-                try fmt.format(writer, "<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
+                try writer.print("<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
             else
-                try fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
+                try writer.print("<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
             .boxed => try writer.writeAll("</mrow>"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "</mtd></mtr></mtable>",
                 .bmatrix => "</mtd></mtr></mtable><mo>]</mo></mrow>",
                 .cases => "</mtd></mtr></mtable></mrow>",
             }),
-            else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
+            else => try writer.print("</{s}>", .{@tagName(self)}),
         }
     }
 };
@@ -475,7 +474,7 @@ pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
         },
         .@"$" => {
             if (self.options.block) try scanner.expect('$');
-            if (scanner.consumeAny(",.!?:;")) |char| try fmt.format(writer, "<mtext>{c}</mtext>", .{char});
+            if (scanner.consumeAny(",.!?:;")) |char| try writer.print("<mtext>{c}</mtext>", .{char});
             try self.renderEnd(writer, scanner);
             return true;
         },
@@ -526,31 +525,31 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mtext_start => return self.stack.push(writer, .mtext),
         .mtext_content => |text| return writer.writeAll(text),
         .mtext_end => try self.stack.popTag(writer, .mtext),
-        .mn => |text| try fmt.format(writer, "<mn>{s}</mn>", .{text}),
-        .mi => |text| try fmt.format(writer, "<mi>{s}</mi>", .{text}),
-        .mi_normal => |text| try fmt.format(writer, "<mi mathvariant=\"normal\">{s}</mi>", .{text}),
+        .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
+        .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
+        .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
         // TODO generalize into list of plus, minus, ...
         .mo => |text| try if (prefix and (text[0] == '+' or std.mem.eql(u8, text, "−") or std.mem.eql(u8, text, "±")))
-            fmt.format(writer, "<mo form=\"prefix\">{s}</mo>", .{text})
+            writer.print("<mo form=\"prefix\">{s}</mo>", .{text})
         else if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
             (prefix and std.mem.eql(u8, text, "×")))
-            fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
+            writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
-            fmt.format(writer, "<mo>{s}</mo>", .{text}),
+            writer.print("<mo>{s}</mo>", .{text}),
         .mo_delimiter => |text| try if (stretchy)
-            fmt.format(writer, "<mo>{s}</mo>", .{text})
+            writer.print("<mo>{s}</mo>", .{text})
         else
-            fmt.format(writer, "<mo stretchy=\"false\">{s}</mo>", .{text}),
-        .mo_prefix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
-        .mo_postfix => |text| try fmt.format(writer, "<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
+            writer.print("<mo stretchy=\"false\">{s}</mo>", .{text}),
+        .mo_prefix => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
+        .mo_postfix => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
         .mo_closed => |text| if (infix)
-            try fmt.format(writer, "<mo>{s}</mo>", .{text})
+            try writer.print("<mo>{s}</mo>", .{text})
         else
-            try fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
-        .mo_closed_always => |text| try fmt.format(writer, "<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
+            try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
+        .mo_closed_always => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
         .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
-        .mspace => |width| try fmt.format(writer, "<mspace width=\"{s}\"/>", .{width}),
+        .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .begin => |environment| try self.stack.push(writer, .{ .environment = environment }),
         .end => |environment| switch (self.top()) {

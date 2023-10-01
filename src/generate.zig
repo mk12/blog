@@ -168,7 +168,7 @@ const Hooks = struct {
             if (!std.mem.endsWith(u8, filename, ".md")) return context.fail("{s}: expected .md extension", .{url});
             const slug = Post.parseSlug(filename);
             // TODO use base_url, make it support writer and allocator
-            try std.fmt.format(writer, "{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
+            try writer.print("{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
         } else {
             return context.fail("{s}: cannot resolve internal url", .{url});
         }
@@ -191,7 +191,7 @@ const Hooks = struct {
             const filename = dest["assets/img/".len..];
             const result = try self.linked_assets.getOrPut(self.allocator, filename);
             if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", dest, filename);
-            try std.fmt.format(writer, "<img src=\"/img/{s}\">", .{filename});
+            try writer.print("<img src=\"/img/{s}\">", .{filename});
         } else {
             return context.fail("{s}: cannot resolve internal url", .{url});
         }

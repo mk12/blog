@@ -24,7 +24,6 @@
 //! rewrite URLs in links and to override how images are rendered.
 
 const std = @import("std");
-const fmt = std.fmt;
 const testing = std.testing;
 const tag_stack = @import("tag_stack.zig");
 const assert = std.debug.assert;
@@ -586,7 +585,7 @@ fn WithDefaultHooks(comptime Inner: type) type {
 
         fn writeImage(self: Self, writer: anytype, context: HookContext, url: []const u8) !void {
             if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, context, url);
-            try fmt.format(writer, "<img src=\"{s}\">", .{url});
+            try writer.print("<img src=\"{s}\">", .{url});
         }
     };
 }
@@ -678,15 +677,15 @@ const BlockTag = union(enum) {
     pub fn writeOpenTag(self: BlockTag, writer: anytype) !void {
         switch (self) {
             .h => |h| if (h.source) |source_ptr| {
-                try fmt.format(writer, "<h{} id=\"", .{h.level});
+                try writer.print("<h{} id=\"", .{h.level});
                 try generateAutoIdUntilNewline(writer, source_ptr[0..h.source_len]);
                 try writer.writeAll("\">");
             } else {
-                try fmt.format(writer, "<h{}>", .{h.level});
+                try writer.print("<h{}>", .{h.level});
             },
             .footnote_ol => try writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
-            .footnote_li => |label| try fmt.format(writer, "<li id=\"fn:{s}\">", .{label}),
-            else => try fmt.format(writer, "<{s}>", .{@tagName(self)}),
+            .footnote_li => |label| try writer.print("<li id=\"fn:{s}\">", .{label}),
+            else => try writer.print("<{s}>", .{@tagName(self)}),
         }
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
     }
@@ -694,10 +693,10 @@ const BlockTag = union(enum) {
     pub fn writeCloseTag(self: BlockTag, writer: anytype) !void {
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
         switch (self) {
-            .h => |h| try fmt.format(writer, "</h{}>", .{h.level}),
+            .h => |h| try writer.print("</h{}>", .{h.level}),
             .footnote_ol => try writer.writeAll("</ol>"),
-            .footnote_li => |label| try fmt.format(writer, "&nbsp;<a href=\"#fnref:{s}\">↩︎</a></li>", .{label}),
-            else => try fmt.format(writer, "</{s}>", .{@tagName(self)}),
+            .footnote_li => |label| try writer.print("&nbsp;<a href=\"#fnref:{s}\">↩︎</a></li>", .{label}),
+            else => try writer.print("</{s}>", .{@tagName(self)}),
         }
     }
 };
@@ -709,11 +708,11 @@ const InlineTag = enum {
     a,
 
     pub fn writeOpenTag(self: InlineTag, writer: anytype) !void {
-        try fmt.format(writer, "<{s}>", .{@tagName(self)});
+        try writer.print("<{s}>", .{@tagName(self)});
     }
 
     pub fn writeCloseTag(self: InlineTag, writer: anytype) !void {
-        try fmt.format(writer, "</{s}>", .{@tagName(self)});
+        try writer.print("</{s}>", .{@tagName(self)});
     }
 };
 
@@ -841,7 +840,7 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 // Footnotes
                 .@"[^x]" => |number| if (!options.first_block_only)
-                    try fmt.format(writer,
+                    try writer.print(
                         \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
                     , .{number}),
                 .@"[^x]: " => |label| try blocks.push(writer, .{ .footnote_ol = label }),
@@ -1820,7 +1819,7 @@ test "writeUrl hook" {
     const hooks = struct {
         data: []const u8 = "data",
         fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
-            try fmt.format(writer, "hook got {s} in {s}, can access {s}", .{ url, context.filename, self.data });
+            try writer.print("hook got {s} in {s}, can access {s}", .{ url, context.filename, self.data });
         }
     }{};
     try expectWithHooks(

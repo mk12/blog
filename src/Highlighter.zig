@@ -6,7 +6,6 @@
 //! it encounters a newline, so it can be used by the Markdown renderer.
 
 const std = @import("std");
-const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 const Reporter = @import("Reporter.zig");
@@ -176,7 +175,7 @@ fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !
     } else {
         try self.flushCloseSpan(writer);
         try self.flushWhitespace(writer);
-        if (class) |c| try fmt.format(writer, "<span class=\"{s}\">", .{c.cssClassName()});
+        if (class) |c| try writer.print("<span class=\"{s}\">", .{c.cssClassName()});
         self.class = class;
     }
     try writer.writeAll(text);
