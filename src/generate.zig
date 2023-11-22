@@ -38,7 +38,7 @@ pub fn generate(args: struct {
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
-    var variables = try Value.init(allocator, .{
+    const variables = try Value.init(allocator, .{
         .author = "Mitchell Kember",
         .base_url = base_url.basePath(),
         .home_url = args.home_url,
@@ -179,7 +179,6 @@ const Hooks = struct {
         const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, url });
         if (std.mem.startsWith(u8, dest, "assets/svg/")) {
-            // TODO: make SVGs use CSS variables for dark/light mode
             const filename = dest["assets/svg/".len..];
             const result = try self.embedded_assets.getOrPut(self.allocator, filename);
             if (!result.found_existing) {
@@ -237,6 +236,7 @@ fn generatePage(
             .posts = .{},
             .last_build_date = "",
             .feed_url = "",
+            // .base_url = base_url.base, // override to full https://...
         }),
     };
     var scope = parent.initChild(variables);

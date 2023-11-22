@@ -317,7 +317,7 @@ fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var include_map = std.StringHashMap(Template).init(allocator);
+    const include_map = std.StringHashMap(Template).init(allocator);
     try reporter.expectFailure(expected_message, parse(allocator, &scanner, include_map));
 }
 
@@ -326,8 +326,8 @@ test "parse text" {
     defer arena.deinit();
     const allocator = arena.allocator();
     const source = "foo";
-    var include_map = std.StringHashMap(Template).init(allocator);
-    var template = try expectParse(allocator, source, include_map);
+    const include_map = std.StringHashMap(Template).init(allocator);
+    const template = try expectParse(allocator, source, include_map);
     try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
     try testing.expectEqualSlices(Command, &.{Command{ .text = source }}, template.commands.items);
 }
@@ -349,7 +349,7 @@ test "parse everything" {
     var include_map = std.StringHashMap(Template).init(allocator);
     try include_map.put("base.html", undefined);
     const base_template: *const Template = include_map.getPtr("base.html").?;
-    var template = try expectParse(allocator, source, include_map);
+    const template = try expectParse(allocator, source, include_map);
 
     const definitions = template.definitions.items;
     try testing.expectEqual(@as(usize, 1), definitions.len);
@@ -601,7 +601,7 @@ fn expectExecute(expected: []const u8, source: []const u8, object: anytype, incl
     }
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var template = try parse(allocator, &scanner, include_map);
-    var value = try Value.init(allocator, object);
+    const value = try Value.init(allocator, object);
     var scope = Scope.init(value);
     var actual = std.ArrayList(u8).init(allocator);
     try template.execute(allocator, &reporter, actual.writer(), .{}, &scope);
@@ -614,10 +614,10 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    var include_map = std.StringHashMap(Template).init(allocator);
+    const include_map = std.StringHashMap(Template).init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var template = try parse(allocator, &scanner, include_map);
-    var value = try Value.init(allocator, object);
+    const value = try Value.init(allocator, object);
     var scope = Scope.init(value);
     try reporter.expectFailure(
         expected_message,

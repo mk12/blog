@@ -46,8 +46,8 @@ pub fn main() !void {
         std.log.err("{s}", .{reporter.message.?});
         process.exit(1);
     };
-    var posts = try readPosts(allocator, &reporter, args.draft);
-    var templates = try readTemplates(allocator, &reporter);
+    const posts = try readPosts(allocator, &reporter, args.draft);
+    const templates = try readTemplates(allocator, &reporter);
     if (args.clean) try fs.cwd().deleteTree(args.out_dir);
     try generate(.{
         .arena = &arena,
