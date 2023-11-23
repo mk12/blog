@@ -32,15 +32,15 @@ pub fn generate(args: struct {
     const reporter = args.reporter;
     var dirs = try Directories.init(args.out_dir);
     defer dirs.close();
-    const base_url = BaseUrl.init(args.base_url);
+    const base_url = try BaseUrl.init(reporter, args.base_url);
     const templates = try Templates.init(reporter, args.templates);
-    var hooks = Hooks{ .allocator = allocator, .base_url = base_url, .dirs = &dirs };
+    var asset_cache = AssetCache{ .allocator = allocator };
     const pages = std.enums.values(Page);
     const posts = args.posts;
 
     const variables = try Value.init(allocator, .{
         .author = "Mitchell Kember",
-        .base_url = base_url.basePath(),
+        .base_url = base_url.relative,
         .home_url = args.home_url,
         .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
     });
@@ -54,7 +54,7 @@ pub fn generate(args: struct {
 
     for (pages) |page| {
         _ = per_file_arena.reset(.retain_capacity);
-        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &hooks, &scope, posts, page);
+        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &asset_cache, &scope, posts, page);
     }
 
     for (posts, 0..) |post, i| {
@@ -63,7 +63,7 @@ pub fn generate(args: struct {
             .newer = if (i > 0) &posts[i - 1] else null,
             .older = if (i < posts.len - 1) &posts[i + 1] else null,
         };
-        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &hooks, &scope, post, neighbors);
+        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &asset_cache, &scope, post, neighbors);
     }
 }
 
@@ -111,32 +111,21 @@ const Page = enum {
 };
 
 const BaseUrl = struct {
-    base: []const u8,
+    absolute: []const u8, // e.g. https://example.com/blog
+    relative: []const u8, // e.g. /blog
 
-    fn init(base: ?[]const u8) BaseUrl {
-        return BaseUrl{ .base = base orelse "" };
-    }
-
-    fn basePath(self: BaseUrl) []const u8 {
-        const i = std.mem.indexOf(u8, self.base, "://") orelse return self.base;
-        const j = std.mem.indexOfScalarPos(u8, self.base, i + 3, '/') orelse return "";
-        return self.base[j..];
-    }
-
-    fn join(self: BaseUrl, allocator: Allocator, comptime path: []const u8) ![]const u8 {
-        if (path[0] != '/') @compileError(path ++ ": does not start with slash");
-        return std.mem.concat(allocator, u8, &.{ self.base, path });
-    }
-
-    fn fmt(self: BaseUrl, allocator: Allocator, comptime format: []const u8, args: anytype) ![]const u8 {
-        if (format[0] != '/') @compileError(format ++ ": does not start with slash");
-        return std.fmt.allocPrint(allocator, "{s}" ++ format, .{self.base} ++ args);
-    }
-
-    fn postUrl(self: BaseUrl, allocator: Allocator, slug: []const u8) ![]const u8 {
-        return self.fmt(allocator, "/post/{s}/", .{slug});
+    fn init(reporter: *Reporter, base: ?[]const u8) !BaseUrl {
+        const absolute = base orelse return BaseUrl{ .absolute = "", .relative = "" };
+        const schemeless = removePrefix(absolute, "://") orelse
+            return reporter.fail("base url \"{s}\" missing ://", .{absolute});
+        const slash_idx = std.mem.indexOfScalar(u8, schemeless, '/') orelse absolute.len;
+        return BaseUrl{ .absolute = absolute, .relative = schemeless[slash_idx..] };
     }
 };
+
+fn removePrefix(string: []const u8, prefix: []const u8) ?[]const u8 {
+    return if (std.mem.startsWith(u8, string, prefix)) string[prefix.len..] else null;
+}
 
 fn symlink(allocator: Allocator, dir: fs.Dir, cwd_target_path: []const u8, sym_link_path: []const u8) !void {
     const target_path = try fs.cwd().realpathAlloc(allocator, cwd_target_path);
@@ -146,12 +135,17 @@ fn symlink(allocator: Allocator, dir: fs.Dir, cwd_target_path: []const u8, sym_l
     };
 }
 
+const AssetCache = struct {
+    allocator: Allocator,
+    linked: std.StringHashMapUnmanaged(void) = .{},
+    embedded: std.StringArrayHashMapUnmanaged([]const u8) = .{},
+};
+
 const Hooks = struct {
     allocator: Allocator,
-    base_url: BaseUrl,
-    embedded_assets: std.StringArrayHashMapUnmanaged([]const u8) = .{},
-    linked_assets: std.StringHashMapUnmanaged(void) = .{},
+    base_url: []const u8,
     dirs: *const Directories,
+    asset_cache: *AssetCache,
 
     pub fn writeUrl(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
         if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
@@ -163,12 +157,11 @@ const Hooks = struct {
         const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
         // TODO don't duplicate "posts/" in main.zig and here
-        if (std.mem.startsWith(u8, dest, "posts/")) {
-            const filename = dest["posts/".len..];
+        if (removePrefix(dest, "posts/")) |filename| {
             if (!std.mem.endsWith(u8, filename, ".md")) return context.fail("{s}: expected .md extension", .{url});
             const slug = Post.parseSlug(filename);
             // TODO use base_url, make it support writer and allocator
-            try writer.print("{s}/post/{s}/{s}", .{ self.base_url.base, slug, fragment });
+            try writer.print("{s}/post/{s}/{s}", .{ self.base_url, slug, fragment });
         } else {
             return context.fail("{s}: cannot resolve internal url", .{url});
         }
@@ -178,19 +171,17 @@ const Hooks = struct {
         // TODO: eliminate duplication with writeUrl
         const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, url });
-        if (std.mem.startsWith(u8, dest, "assets/svg/")) {
-            const filename = dest["assets/svg/".len..];
-            const result = try self.embedded_assets.getOrPut(self.allocator, filename);
+        if (removePrefix(dest, "assets/svg/")) |filename| {
+            const result = try self.asset_cache.embedded.getOrPut(self.asset_cache.allocator, filename);
             if (!result.found_existing) {
                 const data = try fs.cwd().readFileAlloc(self.allocator, dest, 1024 * 1024);
                 result.value_ptr.* = std.mem.trimRight(u8, data, "\n");
             }
             try writer.writeAll(result.value_ptr.*);
-        } else if (std.mem.startsWith(u8, dest, "assets/img/")) {
-            const filename = dest["assets/img/".len..];
-            const result = try self.linked_assets.getOrPut(self.allocator, filename);
+        } else if (removePrefix(dest, "assets/img/")) |filename| {
+            const result = try self.asset_cache.linked.getOrPut(self.asset_cache.allocator, filename);
             if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", dest, filename);
-            try writer.print("<img src=\"/img/{s}\">", .{filename});
+            try writer.print("<img src=\"{s}/img/{s}\">", .{ self.base_url, filename });
         } else {
             return context.fail("{s}: cannot resolve internal url", .{url});
         }
@@ -203,7 +194,7 @@ fn generatePage(
     dirs: Directories,
     base_url: BaseUrl,
     templates: Templates,
-    hooks: *Hooks,
+    asset_cache: *AssetCache,
     parent: *const Scope,
     posts: []const Post,
     page: Page,
@@ -221,27 +212,27 @@ fn generatePage(
     const variables = switch (page) {
         .@"/index.html" => try Value.init(allocator, .{
             .title = "Mitchell Kember",
-            .posts = try recentPostSummaries(allocator, base_url, posts),
+            .posts = try recentPostSummaries(allocator, url_builder, posts),
         }),
         .@"/post/index.html" => try Value.init(allocator, .{
             .title = "Post Archive", // TODO <title> should have my name
-            .groups = try groupPostsByYear(allocator, base_url, posts),
+            .groups = try groupPostsByYear(allocator, url_builder, posts),
         }),
         .@"/categories/index.html" => try Value.init(allocator, .{
             .title = "Categories", // TODO <title> should have my name
-            .groups = try groupPostsByCategory(allocator, base_url, posts),
+            .groups = try groupPostsByCategory(allocator, url_builder, posts),
         }),
         .@"/index.xml" => try Value.init(allocator, .{
             .title = "Mitchell Kember",
-            .posts = .{},
-            .last_build_date = "",
-            .feed_url = "",
-            // .base_url = base_url.base, // override to full https://...
+            .posts = .{}, // TODO
+            .last_build_date = "", // TODO
+            .base_url = url_builder.base_url,
         }),
     };
     var scope = parent.initChild(variables);
+    var hooks = Hooks{ .allocator = allocator, .base_url = url_builder.base_path, .dirs = &dirs, .asset_cache = asset_cache };
     var buffer = std.io.bufferedWriter(file.writer());
-    try template.execute(allocator, reporter, buffer.writer(), hooks, &scope);
+    try template.execute(allocator, reporter, buffer.writer(), &hooks, &scope);
     try buffer.flush();
 }
 
@@ -249,13 +240,14 @@ const num_recent = 10;
 const Summary = struct { date: Value, title: Value, href: []const u8, excerpt: Value };
 
 fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![num_recent]Summary {
+    _ = allocator;
     var summaries: [num_recent]Summary = undefined;
     for (0..num_recent) |i| {
         const post = posts[i];
         summaries[i] = Summary{
             .date = date(post.meta.status, .long),
             .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try base_url.postUrl(allocator, post.slug),
+            .href = try url_builder.postUrl(post.slug),
             .excerpt = markdown(post.body, post.context, .{ .first_block_only = true }),
         };
     }
@@ -269,11 +261,12 @@ const Entry = struct {
     title: Value,
     href: []const u8,
 
-    fn init(allocator: Allocator, post: Post, base_url: BaseUrl) !Entry {
+    fn init(allocator: Allocator, post: Post, url_builder: UrlBuilder) !Entry {
+        _ = allocator;
         return Entry{
             .date = date(post.meta.status, .short),
             .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try base_url.postUrl(allocator, post.slug),
+            .href = try url_builder.postUrl(post.slug),
         };
     }
 };
@@ -292,7 +285,7 @@ fn groupPostsByYear(allocator: Allocator, base_url: BaseUrl, posts: []const Post
         };
         try flushYearGroup(allocator, &groups, year, &entries, post_year);
         year = post_year;
-        try entries.append(try Entry.init(allocator, post, base_url));
+        try entries.append(try Entry.init(allocator, post, url_builder));
     }
     try flushYearGroup(allocator, &groups, year, &entries, unset_year);
     return groups.items;
@@ -317,7 +310,7 @@ fn groupPostsByCategory(allocator: Allocator, base_url: BaseUrl, posts: []const 
             try categories.append(post.meta.category);
             result.value_ptr.* = .{};
         }
-        try result.value_ptr.append(allocator, try Entry.init(allocator, post, base_url));
+        try result.value_ptr.append(allocator, try Entry.init(allocator, post, url_builder));
     }
     std.mem.sort([]const u8, categories.items, {}, cmpStringsAscending);
     var groups = try std.ArrayList(Group).initCapacity(allocator, categories.items.len);
@@ -341,9 +334,9 @@ fn generatePost(
     allocator: Allocator,
     reporter: *Reporter,
     dirs: Directories,
-    base_url: BaseUrl,
+    base_url: []const u8,
     templates: Templates,
-    hooks: *Hooks,
+    asset_cache: *AssetCache,
     parent: *const Scope,
     post: Post,
     neighbors: Neighbors,
@@ -357,12 +350,13 @@ fn generatePost(
         .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
         .date = date(post.meta.status, .long),
         .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true }),
-        .newer = try if (neighbors.newer) |newer| base_url.postUrl(allocator, newer.slug) else base_url.join(allocator, "/"),
-        .older = try if (neighbors.older) |older| base_url.postUrl(allocator, older.slug) else base_url.join(allocator, "/post/"),
+        .newer = try if (neighbors.newer) |newer| url_builder.postUrl(newer.slug) else url_builder.join("/"),
+        .older = try if (neighbors.older) |older| url_builder.postUrl(older.slug) else url_builder.join("/post/"),
     });
     var scope = parent.initChild(variables);
+    var hooks = Hooks{ .allocator = allocator, .base_url = base_url, .dirs = &dirs, .asset_cache = asset_cache };
     var buffer = std.io.bufferedWriter(file.writer());
-    try templates.@"post.html".execute(allocator, reporter, buffer.writer(), hooks, &scope);
+    try templates.@"post.html".execute(allocator, reporter, buffer.writer(), &hooks, &scope);
     try buffer.flush();
 }
 

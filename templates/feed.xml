@@ -2,10 +2,10 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>{{ title }}</title>
-    <link>{{ base_url }}/</link> <!-- TODO: abs urls for feed (also inside posts) -->
+    <link>{{ base_url }}/</link>
     <language>en-us</language>
     <lastBuildDate>{{ last_build_date }}</lastBuildDate>
-    <atom:link href="{{ feed_url }}" rel="self" type="application/rss+xml" />
+    <atom:link href="{{ base_url }}/index.xml" rel="self" type="application/rss+xml" />
     {{ range posts }}
     <item>
       <title>{{ title }}</title>
