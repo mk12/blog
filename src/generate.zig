@@ -29,41 +29,33 @@ pub fn generate(args: struct {
     analytics: ?[]const u8,
 }) !void {
     const allocator = args.arena.allocator();
-    const reporter = args.reporter;
     var dirs = try Directories.init(args.out_dir);
     defer dirs.close();
-    const base_url = try BaseUrl.init(reporter, args.base_url);
-    const templates = try Templates.init(reporter, args.templates);
-    var asset_cache = AssetCache{ .allocator = allocator };
-    const pages = std.enums.values(Page);
-    const posts = args.posts;
-
-    const variables = try Value.init(allocator, .{
-        .author = "Mitchell Kember",
-        .base_url = base_url.relative,
-        .home_url = args.home_url,
-        .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
-    });
-    var scope = Scope.init(variables);
-
+    const base_url = try BaseUrl.init(args.reporter, args.base_url);
+    const file_ctx = FileContext{
+        .reporter = args.reporter,
+        .dirs = dirs,
+        .templates = try Templates.init(args.reporter, args.templates),
+        .assets = Assets{ .allocator = allocator, .dirs = &dirs },
+        .base_url = base_url,
+        .parent = Scope.init(try Value.init(allocator, .{
+            .author = "Mitchell Kember",
+            .base_url = base_url.relative,
+            .home_url = args.home_url,
+            .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
+        })),
+    };
     var per_file_arena = std.heap.ArenaAllocator.init(args.arena.child_allocator);
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
-
     try symlink(per_file_allocator, dirs.@"/", "assets/css/style.css", "style.css");
-
-    for (pages) |page| {
+    for (std.enums.values(Page)) |page| {
         _ = per_file_arena.reset(.retain_capacity);
-        try generatePage(per_file_allocator, reporter, dirs, base_url, templates, &asset_cache, &scope, posts, page);
+        try generatePage(per_file_allocator, file_ctx, args.posts, page);
     }
-
-    for (posts, 0..) |post, i| {
+    for (args.posts, 0..) |post, i| {
         _ = per_file_arena.reset(.retain_capacity);
-        const neighbors = Neighbors{
-            .newer = if (i > 0) &posts[i - 1] else null,
-            .older = if (i < posts.len - 1) &posts[i + 1] else null,
-        };
-        try generatePost(per_file_allocator, reporter, dirs, base_url, templates, &asset_cache, &scope, post, neighbors);
+        try generatePost(per_file_allocator, file_ctx, post, Neighbors.init(args.posts, i));
     }
 }
 
@@ -103,25 +95,62 @@ const Templates = struct {
     }
 };
 
-const Page = enum {
-    @"/index.html",
-    @"/index.xml",
-    @"/post/index.html",
-    @"/categories/index.html",
-};
+const Assets = struct {
+    allocator: Allocator,
+    dirs: *const Directories,
+    img_map: std.StringHashMapUnmanaged(void) = .{},
+    svg_map: std.StringArrayHashMapUnmanaged([]const u8) = .{},
 
-const BaseUrl = struct {
-    absolute: []const u8, // e.g. https://example.com/blog
-    relative: []const u8, // e.g. /blog
+    const Result = union(enum) { not_found, img_url: []const u8, svg_data: []const u8 };
 
-    fn init(reporter: *Reporter, base: ?[]const u8) !BaseUrl {
-        const absolute = base orelse return BaseUrl{ .absolute = "", .relative = "" };
-        const schemeless = removePrefix(absolute, "://") orelse
-            return reporter.fail("base url \"{s}\" missing ://", .{absolute});
-        const slash_idx = std.mem.indexOfScalar(u8, schemeless, '/') orelse absolute.len;
-        return BaseUrl{ .absolute = absolute, .relative = schemeless[slash_idx..] };
+    fn get(self: *Assets, url_builder: UrlBuilder, path: []const u8) Result {
+        if (removePrefix(path, "assets/img/")) |filename| {
+            const result = try self.img_map.getOrPut(self.allocator, filename);
+            if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", path, filename);
+            return .{ .img_url = url_builder.fmt("/img/{s}", .{filename}) };
+        }
+        if (removePrefix(path, "assets/svg/")) |filename| {
+            const result = try self.svg_map.getOrPut(self.allocator, filename);
+            if (!result.found_existing) {
+                const data = try fs.cwd().readFileAlloc(self.allocator, path, 1024 * 1024);
+                result.value_ptr.* = std.mem.trimRight(u8, data, "\n");
+            }
+            return .{ .svg_data = result.value_ptr.* };
+        }
+        return .not_found;
     }
 };
+
+// capabilities:
+// - asset lookup (shared alloc)
+//     - only needed in hook (image)
+// - path resolving (in hooks, shared alloc for asset)
+//     - only needed in hook
+//     - uses src dirs, e.g. "posts/"
+// - url building (late - rel/abs)
+//     - needed in hook and elsewhere
+//     - matches what hook symlinked (though, so does e.g. style.css)
+//
+// central difficulty is that hooks need early (shared alloc for assets, resolve)
+// and late (choice of base url).
+
+// const ResolvedUrl = union(enum) {
+//     external,
+//     post: []const u8,
+//     img: []const u8,
+//     svg: []const u8,
+// };
+const ResolvedUrl = union(enum) {
+    internal: []const u8, // fragment?
+    external: []const u8,
+};
+
+fn resolveUrl(allocator: Allocator, filename: []const u8, url: []const u8) ResolvedUrl {
+    if (std.mem.startsWith(u8, url, "http")) return .{ .external = url };
+    const source_dir = fs.path.dirname(filename).?;
+    const path = try fs.path.resolve(allocator, &.{ source_dir, url });
+    return .{ .internal = path };
+}
 
 fn removePrefix(string: []const u8, prefix: []const u8) ?[]const u8 {
     return if (std.mem.startsWith(u8, string, prefix)) string[prefix.len..] else null;
@@ -135,20 +164,47 @@ fn symlink(allocator: Allocator, dir: fs.Dir, cwd_target_path: []const u8, sym_l
     };
 }
 
-const AssetCache = struct {
+const BaseUrl = struct {
+    absolute: []const u8 = "", // e.g. https://example.com/blog
+    relative: []const u8 = "", // e.g. /blog
+
+    fn init(reporter: *Reporter, base: ?[]const u8) !BaseUrl {
+        const absolute = base orelse return BaseUrl{};
+        if (absolute.len == 0) return BaseUrl{};
+        const sep = "://";
+        const sep_idx = std.mem.indexOf(u8, absolute, sep) orelse
+            return reporter.fail("base url \"{s}\" missing \"{s}\"", .{ absolute, sep });
+        const slash_idx = std.mem.indexOfScalarPos(u8, sep_idx + sep.len, absolute, '/') orelse absolute.len;
+        return BaseUrl{ .absolute = absolute, .relative = absolute[slash_idx..] };
+    }
+};
+
+const UrlBuilder = struct {
     allocator: Allocator,
-    linked: std.StringHashMapUnmanaged(void) = .{},
-    embedded: std.StringArrayHashMapUnmanaged([]const u8) = .{},
+    base_url: []const u8,
+
+    fn fmt(self: UrlBuilder, comptime format: []const u8, args: anytype) []const u8 {
+        if (format[0] != '/') @compileError(format ++ ": does not start with slash");
+        return std.fmt.allocPrint(self.allocator, "{s}" ++ format, .{self.base_url} ++ args);
+    }
+
+    fn post(self: UrlBuilder, slug: []const u8) []const u8 {
+        return self.fmt("/post/{s}/", .{slug});
+    }
+};
+
+const Linker = struct {
+    // post url
+    // resolve url -> ...
 };
 
 const Hooks = struct {
-    allocator: Allocator,
-    base_url: []const u8,
-    dirs: *const Directories,
-    asset_cache: *AssetCache,
+    assets: *Assets,
+    url_builder: UrlBuilder,
+    // allocator: Allocator,
+    // base_url: []const u8,
 
     pub fn writeUrl(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
-        if (std.mem.startsWith(u8, url, "http")) return writer.writeAll(url);
         // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
         const hash_idx = std.mem.indexOfScalar(u8, url, '#') orelse url.len;
         if (hash_idx == 0) return context.fail("direct #id links in same page not implemented yet", .{});
@@ -156,6 +212,7 @@ const Hooks = struct {
         const fragment = url[hash_idx..];
         const source_dir = fs.path.dirname(context.filename).?;
         const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
+        const dest = resolveUrl(self.allocator, context.filename, path);
         // TODO don't duplicate "posts/" in main.zig and here
         if (removePrefix(dest, "posts/")) |filename| {
             if (!std.mem.endsWith(u8, filename, ".md")) return context.fail("{s}: expected .md extension", .{url});
@@ -168,46 +225,50 @@ const Hooks = struct {
     }
 
     pub fn writeImage(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
-        // TODO: eliminate duplication with writeUrl
-        const source_dir = fs.path.dirname(context.filename).?;
-        const dest = try fs.path.resolve(self.allocator, &.{ source_dir, url });
-        if (removePrefix(dest, "assets/svg/")) |filename| {
-            const result = try self.asset_cache.embedded.getOrPut(self.asset_cache.allocator, filename);
-            if (!result.found_existing) {
-                const data = try fs.cwd().readFileAlloc(self.allocator, dest, 1024 * 1024);
-                result.value_ptr.* = std.mem.trimRight(u8, data, "\n");
-            }
-            try writer.writeAll(result.value_ptr.*);
-        } else if (removePrefix(dest, "assets/img/")) |filename| {
-            const result = try self.asset_cache.linked.getOrPut(self.asset_cache.allocator, filename);
-            if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", dest, filename);
-            try writer.print("<img src=\"{s}/img/{s}\">", .{ self.base_url, filename });
-        } else {
-            return context.fail("{s}: cannot resolve internal url", .{url});
+        // WRONG: resolved url path will go in cache as key, and be freed on next arena reset.
+        switch (self.assets.get(self.url_builder, resolveUrl(self.allocator, context.filename, url))) {
+            .img_url => |src| try writer.print("<img src=\"{s}\">", .{src}),
+            .svg_data => |data| try writer.writeAll(data),
+            .not_found => return context.fail("{s}: cannot resolve image path", .{url}),
         }
     }
 };
 
-fn generatePage(
-    allocator: Allocator,
+const FileContext = struct {
     reporter: *Reporter,
     dirs: Directories,
-    base_url: BaseUrl,
     templates: Templates,
-    asset_cache: *AssetCache,
+    assets: *Assets,
+    base_url: BaseUrl,
     parent: *const Scope,
-    posts: []const Post,
-    page: Page,
-) !void {
+
+    fn hooks(self: FileContext, allocator: Allocator) Hooks {
+        return Hooks{
+            .allocator = allocator,
+            .dirs = self.dirs,
+            .assets = self.assets,
+            .base_url = 0,
+        };
+    }
+};
+
+const Page = enum {
+    @"/index.html",
+    @"/index.xml",
+    @"/post/index.html",
+    @"/categories/index.html",
+};
+
+fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, page: Page) !void {
     const file = switch (page) {
-        inline else => |p| try @field(dirs, fs.path.dirname(@tagName(p)).?)
+        inline else => |p| try @field(ctx.dirs, fs.path.dirname(@tagName(p)).?)
             .createFile(comptime fs.path.basename(@tagName(p)), .{}),
     };
     defer file.close();
     const template = switch (page) {
-        .@"/index.html" => templates.@"index.html",
-        .@"/index.xml" => templates.@"feed.xml",
-        .@"/post/index.html", .@"/categories/index.html" => templates.@"listing.html",
+        .@"/index.html" => ctx.templates.@"index.html",
+        .@"/index.xml" => ctx.templates.@"feed.xml",
+        .@"/post/index.html", .@"/categories/index.html" => ctx.templates.@"listing.html",
     };
     const variables = switch (page) {
         .@"/index.html" => try Value.init(allocator, .{
@@ -226,11 +287,12 @@ fn generatePage(
             .title = "Mitchell Kember",
             .posts = .{}, // TODO
             .last_build_date = "", // TODO
-            .base_url = url_builder.base_url,
+            .base_url = ctx.base_url.absolute,
         }),
     };
-    var scope = parent.initChild(variables);
-    var hooks = Hooks{ .allocator = allocator, .base_url = url_builder.base_path, .dirs = &dirs, .asset_cache = asset_cache };
+    var scope = ctx.parent.initChild(variables);
+    var hooks = ctx.hooks(allocator);
+    var hooks = Hooks{ .allocator = allocator, .base_url = url_builder.base_path, .dirs = &dirs, .asset_cache = ctx.asset_cache };
     var buffer = std.io.bufferedWriter(file.writer());
     try template.execute(allocator, reporter, buffer.writer(), &hooks, &scope);
     try buffer.flush();
@@ -247,7 +309,7 @@ fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const P
         summaries[i] = Summary{
             .date = date(post.meta.status, .long),
             .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try url_builder.postUrl(post.slug),
+            .href = try url_builder.post(post.slug),
             .excerpt = markdown(post.body, post.context, .{ .first_block_only = true }),
         };
     }
@@ -328,20 +390,17 @@ fn cmpStringsAscending(_: void, lhs: []const u8, rhs: []const u8) bool {
 const Neighbors = struct {
     newer: ?*const Post,
     older: ?*const Post,
+
+    fn init(posts: []const Post, i: usize) Neighbors {
+        return Neighbors{
+            .newer = if (i > 0) &posts[i - 1] else null,
+            .older = if (i < posts.len - 1) &posts[i + 1] else null,
+        };
+    }
 };
 
-fn generatePost(
-    allocator: Allocator,
-    reporter: *Reporter,
-    dirs: Directories,
-    base_url: []const u8,
-    templates: Templates,
-    asset_cache: *AssetCache,
-    parent: *const Scope,
-    post: Post,
-    neighbors: Neighbors,
-) !void {
-    var dir = try dirs.@"/post".makeOpenPath(post.slug, .{});
+fn generatePost(allocator: Allocator, ctx: FileContext, post: Post, neighbors: Neighbors) !void {
+    var dir = try ctx.dirs.@"/post".makeOpenPath(post.slug, .{});
     defer dir.close();
     var file = try dir.createFile("index.html", .{});
     defer file.close();
