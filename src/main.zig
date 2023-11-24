@@ -1,5 +1,6 @@
 // Copyright 2023 Mitchell Kember. Subject to the MIT License.
 
+const constants = @import("constants.zig");
 const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;
@@ -113,20 +114,16 @@ fn parseEnvironment() Environment {
     };
 }
 
-const source_post_dir = "posts";
-const template_dir = "templates";
-const max_file_size = 1024 * 1024;
-
 fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![]const Post {
     var posts = std.ArrayList(Post).init(allocator);
-    var iterable = try fs.cwd().openIterableDir(source_post_dir, .{});
+    var iterable = try fs.cwd().openIterableDir(constants.post_dir, .{});
     defer iterable.close();
     var iter = iterable.iterate();
     while (try iter.next()) |entry| {
         if (entry.name[0] == '.') continue;
         var scanner = Scanner{
-            .source = try iterable.dir.readFileAlloc(allocator, entry.name, max_file_size),
-            .filename = try fs.path.join(allocator, &.{ source_post_dir, entry.name }),
+            .source = try iterable.dir.readFileAlloc(allocator, entry.name, constants.max_file_size),
+            .filename = try fs.path.join(allocator, &.{ constants.post_dir, entry.name }),
             .reporter = reporter,
         };
         const post = try Post.parse(allocator, &scanner);
@@ -143,7 +140,7 @@ fn cmpPostsReverseChronological(_: void, lhs: Post, rhs: Post) bool {
 
 fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(Template) {
     var templates = std.StringHashMap(Template).init(allocator);
-    var iterable = try fs.cwd().openIterableDir(template_dir, .{});
+    var iterable = try fs.cwd().openIterableDir(constants.template_dir, .{});
     defer iterable.close();
     {
         var iter = iterable.iterate();
@@ -157,8 +154,8 @@ fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(T
     while (iter.next()) |entry| {
         const name = entry.key_ptr.*;
         var scanner = Scanner{
-            .source = try iterable.dir.readFileAlloc(allocator, name, max_file_size),
-            .filename = try fs.path.join(allocator, &.{ template_dir, name }),
+            .source = try iterable.dir.readFileAlloc(allocator, name, constants.max_file_size),
+            .filename = try fs.path.join(allocator, &.{ constants.template_dir, name }),
             .reporter = reporter,
         };
         entry.value_ptr.* = try Template.parse(allocator, &scanner, templates);

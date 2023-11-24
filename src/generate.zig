@@ -3,9 +3,12 @@
 //! This module provides a function that generates all the files for the blog.
 //! This is the least reusable part of the codebase.
 
+const constants = @import("constants.zig");
 const std = @import("std");
 const fs = std.fs;
-const Allocator = std.mem.Allocator;
+const mem = std.mem;
+const assert = std.debug.assert;
+const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Date = @import("Date.zig");
 const Markdown = @import("Markdown.zig");
@@ -31,24 +34,25 @@ pub fn generate(args: struct {
     const allocator = args.arena.allocator();
     var dirs = try Directories.init(args.out_dir);
     defer dirs.close();
+    var resolver = Resolver{ .allocator = allocator, .dirs = &dirs };
     const base_url = try BaseUrl.init(args.reporter, args.base_url);
     const file_ctx = FileContext{
         .reporter = args.reporter,
-        .dirs = dirs,
+        .dirs = dirs, // TODO &dirs? weird that "owned" here but other stack copy pointer to by resolver...
         .templates = try Templates.init(args.reporter, args.templates),
-        .assets = Assets{ .allocator = allocator, .dirs = &dirs },
+        .resolver = &resolver,
         .base_url = base_url,
         .parent = Scope.init(try Value.init(allocator, .{
             .author = "Mitchell Kember",
             .base_url = base_url.relative,
             .home_url = args.home_url,
-            .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, 1024) else null,
+            .analytics = if (args.analytics) |path| try fs.cwd().readFileAlloc(allocator, path, constants.max_file_size) else null,
         })),
     };
     var per_file_arena = std.heap.ArenaAllocator.init(args.arena.child_allocator);
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
-    try symlink(per_file_allocator, dirs.@"/", "assets/css/style.css", "style.css");
+    try symlink(per_file_allocator, dirs.@"/", constants.asset_dir ++ "/css/style.css", "style.css");
     for (std.enums.values(Page)) |page| {
         _ = per_file_arena.reset(.retain_capacity);
         try generatePage(per_file_allocator, file_ctx, args.posts, page);
@@ -95,65 +99,45 @@ const Templates = struct {
     }
 };
 
-const Assets = struct {
+const Resolver = struct {
     allocator: Allocator,
     dirs: *const Directories,
     img_map: std.StringHashMapUnmanaged(void) = .{},
     svg_map: std.StringArrayHashMapUnmanaged([]const u8) = .{},
 
-    const Result = union(enum) { not_found, img_url: []const u8, svg_data: []const u8 };
+    const Result = union(enum) { not_found, url: []const u8, svg: []const u8 };
 
-    fn get(self: *Assets, url_builder: UrlBuilder, path: []const u8) Result {
-        if (removePrefix(path, "assets/img/")) |filename| {
-            const result = try self.img_map.getOrPut(self.allocator, filename);
-            if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", path, filename);
-            return .{ .img_url = url_builder.fmt("/img/{s}", .{filename}) };
+    fn resolve(self: *Resolver, url_builder: UrlBuilder, src_path: []const u8, url: []const u8) !Result {
+        if (mem.indexOf(u8, url, "://")) |_| return .{ .url = url };
+        const src_dir = fs.path.dirname(src_path).?;
+        const path = try fs.path.resolve(self.allocator, &.{ src_dir, url });
+        if (descend(path, constants.post_dir)) |post_path| {
+            const hash_idx = mem.indexOfScalar(u8, post_path, '#') orelse post_path.len;
+            const slug = Post.parseSlug(post_path[0..hash_idx]);
+            return .{ .url = try url_builder.postFragment(slug, post_path[hash_idx..]) };
         }
-        if (removePrefix(path, "assets/svg/")) |filename| {
-            const result = try self.svg_map.getOrPut(self.allocator, filename);
-            if (!result.found_existing) {
-                const data = try fs.cwd().readFileAlloc(self.allocator, path, 1024 * 1024);
-                result.value_ptr.* = std.mem.trimRight(u8, data, "\n");
+        if (descend(path, constants.asset_dir)) |asset_path| {
+            if (descend(asset_path, "img")) |filename| {
+                const result = try self.img_map.getOrPut(self.allocator, filename);
+                if (!result.found_existing) try symlink(self.allocator, self.dirs.@"/img", path, filename);
+                return .{ .url = try url_builder.fmt("/img/{s}", .{filename}) };
             }
-            return .{ .svg_data = result.value_ptr.* };
+            if (descend(asset_path, "svg")) |filename| {
+                const result = try self.svg_map.getOrPut(self.allocator, filename);
+                if (!result.found_existing) {
+                    const data = try fs.cwd().readFileAlloc(self.allocator, path, constants.max_file_size);
+                    result.value_ptr.* = mem.trimRight(u8, data, "\n");
+                }
+                return .{ .svg = result.value_ptr.* };
+            }
         }
         return .not_found;
     }
 };
 
-// capabilities:
-// - asset lookup (shared alloc)
-//     - only needed in hook (image)
-// - path resolving (in hooks, shared alloc for asset)
-//     - only needed in hook
-//     - uses src dirs, e.g. "posts/"
-// - url building (late - rel/abs)
-//     - needed in hook and elsewhere
-//     - matches what hook symlinked (though, so does e.g. style.css)
-//
-// central difficulty is that hooks need early (shared alloc for assets, resolve)
-// and late (choice of base url).
-
-// const ResolvedUrl = union(enum) {
-//     external,
-//     post: []const u8,
-//     img: []const u8,
-//     svg: []const u8,
-// };
-const ResolvedUrl = union(enum) {
-    internal: []const u8, // fragment?
-    external: []const u8,
-};
-
-fn resolveUrl(allocator: Allocator, filename: []const u8, url: []const u8) ResolvedUrl {
-    if (std.mem.startsWith(u8, url, "http")) return .{ .external = url };
-    const source_dir = fs.path.dirname(filename).?;
-    const path = try fs.path.resolve(allocator, &.{ source_dir, url });
-    return .{ .internal = path };
-}
-
-fn removePrefix(string: []const u8, prefix: []const u8) ?[]const u8 {
-    return if (std.mem.startsWith(u8, string, prefix)) string[prefix.len..] else null;
+fn descend(path: []const u8, comptime dirname: []const u8) ?[]const u8 {
+    const prefix = dirname ++ "/";
+    return if (mem.startsWith(u8, path, prefix)) path[prefix.len..] else null;
 }
 
 fn symlink(allocator: Allocator, dir: fs.Dir, cwd_target_path: []const u8, sym_link_path: []const u8) !void {
@@ -172,9 +156,9 @@ const BaseUrl = struct {
         const absolute = base orelse return BaseUrl{};
         if (absolute.len == 0) return BaseUrl{};
         const sep = "://";
-        const sep_idx = std.mem.indexOf(u8, absolute, sep) orelse
-            return reporter.fail("base url \"{s}\" missing \"{s}\"", .{ absolute, sep });
-        const slash_idx = std.mem.indexOfScalarPos(u8, sep_idx + sep.len, absolute, '/') orelse absolute.len;
+        const sep_idx = mem.indexOf(u8, absolute, sep) orelse
+            return reporter.fail("BASE_URL: \"{s}\": missing \"{s}\"", .{ absolute, sep });
+        const slash_idx = mem.indexOfScalarPos(u8, absolute, sep_idx + sep.len, '/') orelse absolute.len;
         return BaseUrl{ .absolute = absolute, .relative = absolute[slash_idx..] };
     }
 };
@@ -182,54 +166,42 @@ const BaseUrl = struct {
 const UrlBuilder = struct {
     allocator: Allocator,
     base_url: []const u8,
+    // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
+    // store destination here too
+    // then can check whether same file #foo should just be #foo or should be full /path/to#foo
+    // (and in principle could change to use ../rel.html links easily).
 
-    fn fmt(self: UrlBuilder, comptime format: []const u8, args: anytype) []const u8 {
+    fn fmt(self: UrlBuilder, comptime format: []const u8, args: anytype) ![]const u8 {
         if (format[0] != '/') @compileError(format ++ ": does not start with slash");
         return std.fmt.allocPrint(self.allocator, "{s}" ++ format, .{self.base_url} ++ args);
     }
 
-    fn post(self: UrlBuilder, slug: []const u8) []const u8 {
+    fn post(self: UrlBuilder, slug: []const u8) ![]const u8 {
         return self.fmt("/post/{s}/", .{slug});
+    }
+
+    fn postFragment(self: UrlBuilder, slug: []const u8, fragment: []const u8) ![]const u8 {
+        return self.fmt("/post/{s}/{s}", .{ slug, fragment });
     }
 };
 
-const Linker = struct {
-    // post url
-    // resolve url -> ...
-};
-
 const Hooks = struct {
-    assets: *Assets,
+    resolver: *Resolver,
     url_builder: UrlBuilder,
-    // allocator: Allocator,
-    // base_url: []const u8,
 
     pub fn writeUrl(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
-        // Note: If in same page #foo, should render correctly when it's excerpt on main page too.
-        const hash_idx = std.mem.indexOfScalar(u8, url, '#') orelse url.len;
-        if (hash_idx == 0) return context.fail("direct #id links in same page not implemented yet", .{});
-        const path = url[0..hash_idx];
-        const fragment = url[hash_idx..];
-        const source_dir = fs.path.dirname(context.filename).?;
-        const dest = try fs.path.resolve(self.allocator, &.{ source_dir, path });
-        const dest = resolveUrl(self.allocator, context.filename, path);
-        // TODO don't duplicate "posts/" in main.zig and here
-        if (removePrefix(dest, "posts/")) |filename| {
-            if (!std.mem.endsWith(u8, filename, ".md")) return context.fail("{s}: expected .md extension", .{url});
-            const slug = Post.parseSlug(filename);
-            // TODO use base_url, make it support writer and allocator
-            try writer.print("{s}/post/{s}/{s}", .{ self.base_url, slug, fragment });
-        } else {
-            return context.fail("{s}: cannot resolve internal url", .{url});
+        switch (try self.resolver.resolve(self.url_builder, context.filename, url)) {
+            .url => |resolved_url| try writer.writeAll(resolved_url),
+            .svg => return context.fail("{s}: cannot link to SVG", .{url}),
+            .not_found => return context.fail("{s}: cannot resolve URL", .{url}),
         }
     }
 
     pub fn writeImage(self: *Hooks, writer: anytype, context: Markdown.HookContext, url: []const u8) !void {
-        // WRONG: resolved url path will go in cache as key, and be freed on next arena reset.
-        switch (self.assets.get(self.url_builder, resolveUrl(self.allocator, context.filename, url))) {
-            .img_url => |src| try writer.print("<img src=\"{s}\">", .{src}),
-            .svg_data => |data| try writer.writeAll(data),
-            .not_found => return context.fail("{s}: cannot resolve image path", .{url}),
+        switch (try self.resolver.resolve(self.url_builder, context.filename, url)) {
+            .url => |src| try writer.print("<img src=\"{s}\">", .{src}),
+            .svg => |svg| try writer.writeAll(svg),
+            .not_found => return context.fail("{s}: cannot resolve URL", .{url}),
         }
     }
 };
@@ -238,18 +210,9 @@ const FileContext = struct {
     reporter: *Reporter,
     dirs: Directories,
     templates: Templates,
-    assets: *Assets,
+    resolver: *Resolver,
     base_url: BaseUrl,
-    parent: *const Scope,
-
-    fn hooks(self: FileContext, allocator: Allocator) Hooks {
-        return Hooks{
-            .allocator = allocator,
-            .dirs = self.dirs,
-            .assets = self.assets,
-            .base_url = 0,
-        };
-    }
+    parent: Scope, // TODO "root_scope"?
 };
 
 const Page = enum {
@@ -269,6 +232,13 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
         .@"/index.html" => ctx.templates.@"index.html",
         .@"/index.xml" => ctx.templates.@"feed.xml",
         .@"/post/index.html", .@"/categories/index.html" => ctx.templates.@"listing.html",
+    };
+    const url_builder = UrlBuilder{
+        .allocator = allocator,
+        .base_url = switch (page) {
+            .@"/index.xml" => ctx.base_url.absolute,
+            else => ctx.base_url.relative,
+        },
     };
     const variables = switch (page) {
         .@"/index.html" => try Value.init(allocator, .{
@@ -291,17 +261,16 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
         }),
     };
     var scope = ctx.parent.initChild(variables);
-    var hooks = ctx.hooks(allocator);
-    var hooks = Hooks{ .allocator = allocator, .base_url = url_builder.base_path, .dirs = &dirs, .asset_cache = ctx.asset_cache };
+    var hooks = Hooks{ .url_builder = url_builder, .resolver = ctx.resolver };
     var buffer = std.io.bufferedWriter(file.writer());
-    try template.execute(allocator, reporter, buffer.writer(), &hooks, &scope);
+    try template.execute(allocator, ctx.reporter, buffer.writer(), &hooks, &scope);
     try buffer.flush();
 }
 
 const num_recent = 10;
 const Summary = struct { date: Value, title: Value, href: []const u8, excerpt: Value };
 
-fn recentPostSummaries(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![num_recent]Summary {
+fn recentPostSummaries(allocator: Allocator, url_builder: UrlBuilder, posts: []const Post) ![num_recent]Summary {
     _ = allocator;
     var summaries: [num_recent]Summary = undefined;
     for (0..num_recent) |i| {
@@ -328,7 +297,7 @@ const Entry = struct {
         return Entry{
             .date = date(post.meta.status, .short),
             .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-            .href = try url_builder.postUrl(post.slug),
+            .href = try url_builder.post(post.slug),
         };
     }
 };
@@ -336,7 +305,7 @@ const Entry = struct {
 const unset_year: u16 = 0;
 const draft_year: u16 = 1;
 
-fn groupPostsByYear(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![]Group {
+fn groupPostsByYear(allocator: Allocator, url_builder: UrlBuilder, posts: []const Post) ![]Group {
     var groups = std.ArrayList(Group).init(allocator);
     var year: u16 = unset_year;
     var entries = std.ArrayList(Entry).init(allocator);
@@ -363,7 +332,7 @@ fn flushYearGroup(allocator: Allocator, groups: *std.ArrayList(Group), year: u16
     try groups.append(Group{ .name = name, .posts = try entries.toOwnedSlice() });
 }
 
-fn groupPostsByCategory(allocator: Allocator, base_url: BaseUrl, posts: []const Post) ![]Group {
+fn groupPostsByCategory(allocator: Allocator, url_builder: UrlBuilder, posts: []const Post) ![]Group {
     var map = std.StringHashMap(std.ArrayListUnmanaged(Entry)).init(allocator);
     var categories = std.ArrayList([]const u8).init(allocator);
     for (posts) |post| {
@@ -374,7 +343,7 @@ fn groupPostsByCategory(allocator: Allocator, base_url: BaseUrl, posts: []const 
         }
         try result.value_ptr.append(allocator, try Entry.init(allocator, post, url_builder));
     }
-    std.mem.sort([]const u8, categories.items, {}, cmpStringsAscending);
+    mem.sort([]const u8, categories.items, {}, cmpStringsAscending);
     var groups = try std.ArrayList(Group).initCapacity(allocator, categories.items.len);
     for (categories.items) |category| try groups.append(Group{
         .name = category,
@@ -384,7 +353,7 @@ fn groupPostsByCategory(allocator: Allocator, base_url: BaseUrl, posts: []const 
 }
 
 fn cmpStringsAscending(_: void, lhs: []const u8, rhs: []const u8) bool {
-    return std.mem.order(u8, lhs, rhs) == .lt;
+    return mem.order(u8, lhs, rhs) == .lt;
 }
 
 const Neighbors = struct {
@@ -404,18 +373,19 @@ fn generatePost(allocator: Allocator, ctx: FileContext, post: Post, neighbors: N
     defer dir.close();
     var file = try dir.createFile("index.html", .{});
     defer file.close();
+    const url_builder = UrlBuilder{ .allocator = allocator, .base_url = ctx.base_url.relative };
     const variables = try Value.init(allocator, .{
         .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
         .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
         .date = date(post.meta.status, .long),
         .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true }),
-        .newer = try if (neighbors.newer) |newer| url_builder.postUrl(newer.slug) else url_builder.join("/"),
-        .older = try if (neighbors.older) |older| url_builder.postUrl(older.slug) else url_builder.join("/post/"),
+        .newer = try if (neighbors.newer) |newer| url_builder.post(newer.slug) else url_builder.fmt("/", .{}),
+        .older = try if (neighbors.older) |older| url_builder.post(older.slug) else url_builder.fmt("/post/", .{}),
     });
-    var scope = parent.initChild(variables);
-    var hooks = Hooks{ .allocator = allocator, .base_url = base_url, .dirs = &dirs, .asset_cache = asset_cache };
+    var scope = ctx.parent.initChild(variables);
+    var hooks = Hooks{ .url_builder = url_builder, .resolver = ctx.resolver };
     var buffer = std.io.bufferedWriter(file.writer());
-    try templates.@"post.html".execute(allocator, reporter, buffer.writer(), &hooks, &scope);
+    try ctx.templates.@"post.html".execute(allocator, ctx.reporter, buffer.writer(), &hooks, &scope);
     try buffer.flush();
 }
 
