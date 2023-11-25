@@ -10,7 +10,7 @@ const Reporter = @import("Reporter.zig");
 const Scanner = @import("Scanner.zig");
 const Date = @This();
 
-// The fields are in little-endian order to make sortKey fast.
+// The fields are in little-endian order to make sortKey a no-op.
 tz_offset_h: i8,
 second: u8,
 minute: u8,
@@ -109,6 +109,46 @@ test "comptime from" {
     comptime try testing.expectEqualDeep(
         Date{ .year = 2001, .month = 1, .day = 2, .hour = 3, .minute = 4, .second = 5, .tz_offset_h = 6 },
         from("2001-01-02T03:04:05+06:00"),
+    );
+}
+
+const timestamp_2000_03_01 = 951868800;
+const timestamp_2100_01_01 = 4102444800;
+
+// Creates a date from a Unix timestamp (seconds since UTC 1970-01-01).
+pub fn fromTimestamp(timestamp: i64) Date {
+    assert(timestamp >= timestamp_2000_03_01 and timestamp <= timestamp_2100_01_01);
+    const since_ref_leap = @as(u64, @intCast(timestamp - timestamp_2000_03_01)) / 86400;
+    const days_per_4y = 365 * 4 + 1;
+    const leaps = since_ref_leap / days_per_4y;
+    const since_leap = since_ref_leap % days_per_4y;
+    var day: u64 = since_leap % 365;
+    var month: u64 = 0;
+    const counts = [12]u8{ 31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 31, 29 };
+    while (day >= counts[month]) : (month += 1) day -= counts[month];
+    return Date{
+        .year = @intCast(2000 + leaps * 4 + (31 + 28 + since_leap) / 365),
+        .month = @intCast((month + 2) % 12 + 1),
+        .day = @intCast(day + 1),
+        .hour = @intCast(@mod(@divFloor(timestamp, 3600), 24)),
+        .minute = @intCast(@mod(@divFloor(timestamp, 60), 60)),
+        .second = @intCast(@mod(timestamp, 60)),
+        .tz_offset_h = 0,
+    };
+}
+
+test "fromTimestamp" {
+    try testing.expectEqualDeep(
+        Date{ .year = 2000, .month = 3, .day = 1, .hour = 0, .minute = 0, .second = 0, .tz_offset_h = 0 },
+        fromTimestamp(timestamp_2000_03_01),
+    );
+    try testing.expectEqualDeep(
+        Date{ .year = 2100, .month = 1, .day = 1, .hour = 0, .minute = 0, .second = 0, .tz_offset_h = 0 },
+        fromTimestamp(timestamp_2100_01_01),
+    );
+    try testing.expectEqualDeep(
+        Date{ .year = 2023, .month = 11, .day = 25, .hour = 18, .minute = 36, .second = 59, .tz_offset_h = 0 },
+        fromTimestamp(1700937419),
     );
 }
 
