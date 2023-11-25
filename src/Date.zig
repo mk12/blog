@@ -75,7 +75,7 @@ fn expectParse(expected: Date, source: []const u8) !void {
     var reporter = Reporter.init(arena.allocator());
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try testing.expectEqual(expected, try parse(&scanner));
+    try testing.expectEqualDeep(expected, try parse(&scanner));
 }
 
 fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
@@ -106,7 +106,7 @@ test "parse invalid" {
 }
 
 test "comptime from" {
-    comptime try testing.expectEqual(
+    comptime try testing.expectEqualDeep(
         Date{ .year = 2001, .month = 1, .day = 2, .hour = 3, .minute = 4, .second = 5, .tz_offset_h = 6 },
         from("2001-01-02T03:04:05+06:00"),
     );
