@@ -265,7 +265,7 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
             .title = "Mitchell Kember",
             .base_url = ctx.base_url.absolute,
             .posts = .{}, // TODO
-            .last_build_date = date(Date.fromTimestamp(std.time.timestamp()), .rfc3339),
+            .last_build_date = date(Date.fromTimestamp(std.time.timestamp()), .rfc822),
         }),
     };
     var scope = ctx.scope.initChild(variables);

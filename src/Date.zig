@@ -202,7 +202,7 @@ fn weekdayName(self: Date) []const u8 {
     return weekday_names[weekday];
 }
 
-pub const Style = enum { short, long, rfc3339 };
+pub const Style = enum { short, long, rfc822, rfc3339 };
 
 pub fn render(self: Date, writer: anytype, style: Style) !void {
     switch (style) {
@@ -214,6 +214,14 @@ pub fn render(self: Date, writer: anytype, style: Style) !void {
             "{s}, {} {s} {}",
             .{ self.weekdayName(), self.day, self.monthName(), self.year },
         ),
+        .rfc822 => {
+            const sign: u8 = if (self.tz_offset_h < 0) '-' else '+';
+            const offset = @abs(self.tz_offset_h);
+            try writer.print(
+                "{s}, {:0>2} {s} {} {:0>2}:{:0>2}:{:0>2} {c}{:0>2}00",
+                .{ self.weekdayName()[0..3], self.day, self.monthName()[0..3], self.year, self.hour, self.minute, self.second, sign, offset },
+            );
+        },
         .rfc3339 => {
             const sign: u8 = if (self.tz_offset_h < 0) '-' else '+';
             const offset = @abs(self.tz_offset_h);
@@ -237,6 +245,7 @@ test "render" {
     const date = from(original);
     try expectRender("9 Jun 2023", date, .short);
     try expectRender("Friday, 9 June 2023", date, .long);
+    try expectRender("Fri, 09 Jun 2023 16:30:07 -0700", date, .rfc822);
     try expectRender(original, date, .rfc3339);
 }
 
