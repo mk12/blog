@@ -42,6 +42,7 @@ const Token = union(enum) {
     mo_delimiter: []const u8,
     mo_prefix: []const u8,
     mo_postfix: []const u8,
+    mo_prefix_or_infix: []const u8,
     mo_closed: []const u8,
     mo_closed_always: []const u8,
     mspace: []const u8,
@@ -173,7 +174,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "notin", .{ .mo = "∉" } },
         .{ "odot", .{ .mo_closed = "⊙" } },
         .{ "oplus", .{ .mo_closed = "⊕" } },
-        .{ "pm", .{ .mo = "±" } },
+        .{ "pm", .{ .mo_prefix_or_infix = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
         .{ "sum", .{ .mo = "∑" } },
@@ -184,7 +185,7 @@ fn lookupMacro(name: []const u8) ?Token {
 }
 
 fn lookupUnicode(bytes: []const u8) ?Token {
-    const Kind = enum { mi, mo };
+    const Kind = enum { mi, mo, mo_prefix_or_infix };
     const list = .{
         // Letters
         .{ "ℵ", .mi },
@@ -199,7 +200,7 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "…", .mi },
         .{ "∞", .mi },
         // Operators
-        .{ "±", .mo },
+        .{ "±", .mo_prefix_or_infix },
         .{ "×", .mo },
         .{ "≠", .mo },
         .{ "≤", .mo },
@@ -236,12 +237,13 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '+', '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
+            '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
+            '+' => .{ .mo_prefix_or_infix = scanner.source[start..scanner.offset] },
             // Convert ASCII hyphen-minus to a Unicode minus sign. We shouldn't need to:
             // "MathML renderers should treat U+002D HYPHEN-MINUS as equivalent to U+2212 MINUS SIGN
             // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
-            '-' => .{ .mo = "−" },
+            '-' => .{ .mo_prefix_or_infix = "−" },
             '.', '/' => .{ .mo_closed_always = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
@@ -361,13 +363,13 @@ test "scan fraction" {
 test "scan text" {
     try expectTokens(&[_]Token{
         .{ .mi = "x" },
-        .{ .mo = "+" },
+        .{ .mo_prefix_or_infix = "+" },
         .mtext_start,
         .{ .mtext_content = "some stuff" },
         .@"\n",
         .{ .mtext_content = "more here" },
         .mtext_end,
-        .{ .mo = "−" },
+        .{ .mo_prefix_or_infix = "−" },
         .{ .mi = "y" },
         .eof,
     },
@@ -380,9 +382,9 @@ test "scan quadratic formula" {
     try expectTokens(&[_]Token{
         .{ .mi = "x" },
         .{ .mo = "=" },
-        .{ .mo = "−" },
+        .{ .mo_prefix_or_infix = "−" },
         .{ .mi = "b" },
-        .{ .mo = "±" },
+        .{ .mo_prefix_or_infix = "±" },
         .mfrac,
         .@"{",
         .msqrt,
@@ -390,7 +392,7 @@ test "scan quadratic formula" {
         .{ .mi = "b" },
         .@"^",
         .{ .mn = "2" },
-        .{ .mo = "−" },
+        .{ .mo_prefix_or_infix = "−" },
         .{ .mn = "4" },
         .{ .mi = "a" },
         .{ .mi = "c" },
@@ -543,7 +545,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     const prefix = self.next_is_prefix;
     const infix = self.next_is_infix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = (token == .mo and token.mo[0] != '!') or token == .@"&" or token == .@"\\";
+    self.next_is_prefix = (token == .mo_prefix_or_infix or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
     self.next_is_infix = token == .mi or (token == .mo_delimiter and token.mo_delimiter[0] == ')');
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
@@ -576,10 +578,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        // TODO! generalize into list of plus, minus, ...
-        .mo => |text| try if (prefix and (text[0] == '+' or std.mem.eql(u8, text, "−") or std.mem.eql(u8, text, "±")))
-            writer.print("<mo form=\"prefix\">{s}</mo>", .{text})
-        else if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
+        // TODO! factor this out
+        .mo => |text| try if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
             (prefix and std.mem.eql(u8, text, "×")))
             writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
@@ -590,6 +590,10 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             writer.print("<mo stretchy=\"false\">{s}</mo>", .{text}),
         .mo_prefix => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
         .mo_postfix => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
+        .mo_prefix_or_infix => |text| if (prefix)
+            try writer.print("<mo form=\"prefix\">{s}</mo>", .{text})
+        else
+            try writer.print("<mo>{s}</mo>", .{text}),
         .mo_closed => |text| if (infix)
             try writer.print("<mo>{s}</mo>", .{text})
         else
