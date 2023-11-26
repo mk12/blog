@@ -184,7 +184,7 @@ fn lookupMacro(name: []const u8) ?Token {
 }
 
 fn lookupUnicode(bytes: []const u8) ?Token {
-    const Kind = enum { mi, mo, micro };
+    const Kind = enum { mi, mo };
     const list = .{
         // Letters
         .{ "ℵ", .mi },
@@ -193,7 +193,7 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "ϵ", .mi },
         .{ "γ", .mi },
         .{ "λ", .mi },
-        .{ "µ", .micro }, // U+00B5 Micro Sign (easier to type on macOS)
+        .{ "μ", .mi },
         .{ "ω", .mi },
         // Symbols
         .{ "…", .mi },
@@ -209,7 +209,6 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "⊆", .mo },
     };
     return switch (std.ComptimeStringMap(Kind, list).get(bytes) orelse return null) {
-        .micro => .{ .mi = "μ" }, // U+03BC Greek Small Letter Mu
         inline else => |kind| @unionInit(Token, @tagName(kind), bytes),
     };
 }
@@ -752,7 +751,7 @@ test "Unicode symbols" {
         \\ϵ\epsilon
         \\γ\gamma
         \\λ\lambda
-        \\µ\mu
+        \\μ\mu
         \\ω\omega
         \\…\dots
         \\∞\infty
