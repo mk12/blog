@@ -63,6 +63,12 @@ const Token = union(enum) {
     variant: Variant,
 };
 
+const spacing = struct {
+    const quad = "1em";
+    const thick = "0.278em";
+    const thin = "0.1667em";
+};
+
 const Environment = enum { matrix, bmatrix, cases };
 
 const Variant = enum {
@@ -110,7 +116,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "phantom", .mphantom },
         .{ "boxed", .boxed },
         // Spacing
-        .{ "quad", .{ .mspace = "1em" } },
+        .{ "quad", .{ .mspace = spacing.quad } },
         // Fonts
         .{ "mathbb", .{ .variant = .double_struck } },
         .{ "mathbf", .{ .variant = .bold } },
@@ -252,8 +258,8 @@ const Tokenizer = struct {
                 const after_backslash = scanner.offset;
                 if (scanner.consumeAny("\\;,{}")) |char| return switch (char) {
                     '\\' => .@"\\",
-                    ';' => .{ .mspace = "0.278em" },
-                    ',' => .{ .mspace = "0.1667em" },
+                    ';' => .{ .mspace = spacing.thick },
+                    ',' => .{ .mspace = spacing.thin },
                     '{', '}' => .{ .mo_delimiter = scanner.source[after_backslash..scanner.offset] },
                     else => unreachable,
                 };
@@ -590,8 +596,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         else
             try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .mo_closed_always => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
-        .colon_def => try writer.writeAll("<mo rspace=\"0.278em\">:</mo>"),
-        .colon_rel => try writer.writeAll("<mo lspace=\"0.278em\" rspace=\"0.278em\">:</mo>"),
+        .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
+        .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
         .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .begin => |environment| try self.stack.push(writer, .{ .environment = environment }),
