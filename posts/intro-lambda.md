@@ -49,10 +49,10 @@ Alpha-reduction allows us to rename parameters in abstractions. We do this by ch
 Beta-reduction is what really makes things happen. It only works on applications of abstractions, and you can think of it as function application. An expression of the form $(λx.e)a$ beta-reduces to $e[a/x]$, which denotes $e$ with $a$ substituted for all occurrences of $x$ in a special way called capture-avoiding substitution. For example, $(λx.xx)u$ is beta-equivalent to $uu$. However, it is not so straightforward to reduce $(λx.λy.x)y$ because it should be an abstraction that always returns the free variable $y$, but simple substitution yields $λy.y$, which returns the bound variable $y$ instead! We avoid this problem using capture-avoiding substitution:
 
 - $x[a/x] = a$, just like simple substitution.
-- $y[a/x] = y$ if $x\ne y$, also like simple substitution.
+- $y[a/x] = y$ if $x ≠ y$, also like simple substitution.
 - $(h n)[a/x] = (h[a/x] n[a/x])$: we recursively perform capture-avoiding substitution on the two expressions in the application.
 - $(λx.b)[a/x] = λx.b$: the variable $x$ is already bound by the abstraction, so there are no occurrences of the free variable $x$ that can be substituted.
-- $(λy.b)[a/x] = λy.(b[a/x])$ if $x\ne y$ and $y$ is not a free variable in $a$.
+- $(λy.b)[a/x] = λy.(b[a/x])$ if $x ≠ y$ and $y$ is not a free variable in $a$.
 
 That last rule subtly avoids the problem we observed earlier. It prevents us from substituting an expression containing free variables that would be unintentionally captured. If $y$ does occur as a free variable in $a$, then we must alpha-reduce the abstraction so that its parameter does not occur as a free variable in $a$ before performing beta-reduction.
 

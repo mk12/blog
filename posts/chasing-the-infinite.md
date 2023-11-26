@@ -25,19 +25,19 @@ Soon afterwards, an infinite number of people arrive and cram in the hotel recep
 
 # Countability
 
-Hilbert's hotel illustrates that adding one to a regular infinity, or even multiplying it by two, leaves you with the same infinity. This value is the cardinality of the natural numbers $\mathbb{N}=\{0,1,2,\dots\}$, and we denote it by $\lvert\mathbb{N}\rvert=\aleph_0$ (pronounced <i>aleph nought</i>). If a set's cardinality is equal to $\aleph_0$, then we call it a <dfn>countable infinity</dfn>, because it's possible to count off all its objects by association with natural numbers. Roughly speaking, if you can generate a list of all objects in a set by following some pattern, then the set is countably infinite. All other infinities are larger, and called <dfn>uncountable</dfn>.
+Hilbert's hotel illustrates that adding one to a regular infinity, or even multiplying it by two, leaves you with the same infinity. This value is the cardinality of the natural numbers $\mathbb{N}=\{0,1,2,…\}$, and we denote it by $\lvert\mathbb{N}\rvert=ℵ_0$ (pronounced <i>aleph nought</i>). If a set's cardinality is equal to $ℵ_0$, then we call it a <dfn>countable infinity</dfn>, because it's possible to count off all its objects by association with natural numbers. Roughly speaking, if you can generate a list of all objects in a set by following some pattern, then the set is countably infinite. All other infinities are larger, and called <dfn>uncountable</dfn>.
 
 Another way of interpreting the hotel example is this: _there are just as many even numbers as natural numbers_. In a way this seems wrong -- surely there are _twice_ as many natural numbers? But both sets are countably infinite, so their cardinalities must be the same: we prove this by constructing the bijection $f(n)=2n$. You might argue that this is just a matter of definition, and that it is meaningless to say that two infinities are equal. Perhaps, but that is a philosophical question, not a mathematical one. Whether you subscribe to the formalist "useful but meaningless marks on paper" or the Platonist "objective, timeless truths about abstract entities" is completely up to you. Rest assured: there are good reasons for using the bijection-based definition, and there is still more we can learn from it.
 
 For example, the integers are countably infinite as well: we can construct the bijection $f\colon\mathbb{N}\to\mathbb{Z}$ that lists the integers by alternating signs:
 
-$$0,+1,-1,+2,-2,+3,-3,\dots$$
+$$0,+1,-1,+2,-2,+3,-3,…$$
 
-More surprising is the fact that the rationals are countable: $\lvert\mathbb{Q}\rvert=\aleph_0$. How can this be, when there are infinitely many rationals between 0 and 1? There are many ways of proving this, but I'm more interested in giving you an intuitive understanding of countability. We can take care of signs using the alternating trick, but what then? We can't go in increasing order, since the rationals get arbitrarily close to zero. But look at this:
+More surprising is the fact that the rationals are countable: $\lvert\mathbb{Q}\rvert=ℵ_0$. How can this be, when there are infinitely many rationals between 0 and 1? There are many ways of proving this, but I'm more interested in giving you an intuitive understanding of countability. We can take care of signs using the alternating trick, but what then? We can't go in increasing order, since the rationals get arbitrarily close to zero. But look at this:
 
 ![Counting the rationals by zigzagging through a matrix](../assets/svg/fraction-table.svg)
 
-We can generate a list of all rationals just by following the red arrows, as long as we include zero somewhere and put $\pm$ in each cell. We have to skip some cells to make it a bijection, but that's not a problem. In fact, if we don't skip any cells, the function is surjective and not injective, which tells us that $\mathbb{Q}$ is either countably infinite or finite -- and it clearly isn't finite.
+We can generate a list of all rationals just by following the red arrows, as long as we include zero somewhere and put $±$ in each cell. We have to skip some cells to make it a bijection, but that's not a problem. In fact, if we don't skip any cells, the function is surjective and not injective, which tells us that $\mathbb{Q}$ is either countably infinite or finite -- and it clearly isn't finite.
 
 # Cantor's diagonal argument
 
@@ -45,10 +45,10 @@ What about the real numbers: is $\mathbb{R}$ countably infinite? Suppose, for th
 
 $$
 \begin{matrix}
-x_0 = 0.7812272323372748 \; \dots \\
-x_1 = 25.823506400277566 \; \dots \\
-x_2 = 7.4937386056237065 \; \dots \\
-x_3 = 3.1415926535897932 \; \dots \\
+x_0 = 0.7812272323372748 \; … \\
+x_1 = 25.823506400277566 \; … \\
+x_2 = 7.4937386056237065 \; … \\
+x_3 = 3.1415926535897932 \; … \\
 \vdots
 \end{matrix}
 $$
@@ -57,17 +57,17 @@ These are decimal expansions of real numbers; the digits go on forever. We're as
 
 $$
 \begin{matrix}
-x_0 = ?.\boxed{d_{11}}d_{12}d_{13}d_{14} \; \dots \\
-x_1 = ?.d_{21}\boxed{d_{22}}d_{23}d_{24} \; \dots \\
-x_2 = ?.d_{31}d_{32}\boxed{d_{33}}d_{34} \; \dots \\
-x_3 = ?.d_{41}d_{42}d_{43}\boxed{d_{44}} \; \dots \\
+x_0 = ?.\boxed{d_{11}}d_{12}d_{13}d_{14} \; … \\
+x_1 = ?.d_{21}\boxed{d_{22}}d_{23}d_{24} \; … \\
+x_2 = ?.d_{31}d_{32}\boxed{d_{33}}d_{34} \; … \\
+x_3 = ?.d_{41}d_{42}d_{43}\boxed{d_{44}} \; … \\
 \vdots
 \end{matrix}
 $$
 
-I've put question marks before the decimal points because I only care about the fractional part. Now, this list is supposed to be complete -- every real number needs to be on it somewhere. But consider the real number $y=0.e_1e_2e_3e_4\dots$, where $e_1\ne d_{11}$, $e_2\ne d_{22}$, $e_3\ne d_{33}$, and so on. This still leaves us with eight symbols to choose from for each digit of $y$. Since the first digits differ, $y\ne x_0$. Similarly, $y\ne x_1$, because the second digits differ. Generalizing this to all the $x$ values, we realize that $y$ is not on the list. But $y$ is a real number! This is a contradiction, therefore our initial assumption was wrong: it is impossible to construct this list. In reality, $\lvert\mathbb{R}\rvert\ne\aleph_0$, so the set of real numbers is uncountably infinite.
+I've put question marks before the decimal points because I only care about the fractional part. Now, this list is supposed to be complete -- every real number needs to be on it somewhere. But consider the real number $y=0.e_1e_2e_3e_4…$, where $e_1 ≠ d_{11}$, $e_2 ≠ d_{22}$, $e_3 ≠ d_{33}$, and so on. This still leaves us with eight symbols to choose from for each digit of $y$. Since the first digits differ, $y ≠ x_0$. Similarly, $y ≠ x_1$, because the second digits differ. Generalizing this to all the $x$ values, we realize that $y$ is not on the list. But $y$ is a real number! This is a contradiction, therefore our initial assumption was wrong: it is impossible to construct this list. In reality, $\lvert\mathbb{R}\rvert≠ℵ_0$, so the set of real numbers is uncountably infinite.
 
-The <dfn>continuum hypothesis</dfn> states that $\lvert\mathbb{R}\rvert=\aleph_1$, which means that there is no intermediate infinity between the cardinalities of the naturals and the reals. This has never been proven or disproven. In fact, it's impossible to do either in ZFC,[^3] the standard axiomatic set theory used today. You can assume that it's true or that it's false, and the theory remains consistent, assuming ZFC is consistent in the first place (also unprovable). There is no consensus on what all this actually means. Does the question become meaningless just because it can't be decided by our current axiomatic framework? We are once again getting into philosophical territory.
+The <dfn>continuum hypothesis</dfn> states that $\lvert\mathbb{R}\rvert=ℵ_1$, which means that there is no intermediate infinity between the cardinalities of the naturals and the reals. This has never been proven or disproven. In fact, it's impossible to do either in ZFC,[^3] the standard axiomatic set theory used today. You can assume that it's true or that it's false, and the theory remains consistent, assuming ZFC is consistent in the first place (also unprovable). There is no consensus on what all this actually means. Does the question become meaningless just because it can't be decided by our current axiomatic framework? We are once again getting into philosophical territory.
 
 # Higher dimensions
 
@@ -75,14 +75,14 @@ Yet another counterintuitive fact about cardinalities is that $\lvert\mathbb{R}\
 
 $$
 \begin{matrix}
-x = \dots \; a_3a_2a_1 \, . \, d_1d_2d_3 \; \dots \\
-y = \dots \; b_3b_2b_1 \, . \, e_1e_2e_3 \; \dots
+x = … \; a_3a_2a_1 \, . \, d_1d_2d_3 \; … \\
+y = … \; b_3b_2b_1 \, . \, e_1e_2e_3 \; …
 \end{matrix}
 $$
 
 We can construct a bijection[^4] $f\colon\mathbb{R}^2\to\mathbb{R}$ by interleaving the digits:
 
-$$f(x,y)=\dots a_3b_3a_2b_2a_1b_1 \, . \, d_1e_1d_2e_2d_3e_3\dots$$
+$$f(x,y)= … a_3b_3a_2b_2a_1b_1 \, . \, d_1e_1d_2e_2d_3e_3 …$$
 
 This idea generalizes: for any infinite set $X$ and finite natural number $n$, we have $\lvert X\rvert=\lvert X^n\rvert$. Before this was discovered, the number of coordinates required to represent a point in a space was assumed to be an invariant of that space. This is not true, since a single real number can be used to represent a point in a space of any dimension, and vice versa.
 
@@ -90,19 +90,19 @@ This idea generalizes: for any infinite set $X$ and finite natural number $n$, w
 
 So far, we've only talked about infinite values that are cardinalities of infinite sets. These values are the <dfn>cardinal numbers</dfn>:
 
-$$0,1,2,\dots,n,\dots,\aleph_0,\aleph_1,\aleph_2,\dots,\aleph_\alpha,\dots$$
+$$0, 1, 2, …, n, …, ℵ_0, ℵ_1, ℵ_2, …, ℵ_α, …$$
 
-Every natural number is finite. The first infinite cardinal is $\aleph_0$, and we call it countably infinite. Everything past $\aleph_0$ is uncountably infinite. The aleph numbers are strange because adding one to them, or even doubling them, results in the same cardinal. However, if we take the power set[^5] of $\mathbb{N}$, we get a set with cardinality $2^{\aleph_0}=\lvert\mathbb{R}\rvert>\aleph_0$. If the continuum hypothesis is true, then $\aleph_1=2^{\aleph_0}$. In any case, we can generate ever-larger uncountable infinities with this kind of exponentiation.
+Every natural number is finite. The first infinite cardinal is $ℵ_0$, and we call it countably infinite. Everything past $ℵ_0$ is uncountably infinite. The aleph numbers are strange because adding one to them, or even doubling them, results in the same cardinal. However, if we take the power set[^5] of $\mathbb{N}$, we get a set with cardinality $2^{ℵ_0}=\lvert\mathbb{R}\rvert>ℵ_0$. If the continuum hypothesis is true, then $ℵ_1=2^{ℵ_0}$. In any case, we can generate ever-larger uncountable infinities with this kind of exponentiation.
 
 The <dfn>ordinal numbers</dfn> are another way of extending the natural numbers to infinity. The definition is a bit more complex: two well-ordered sets represent the same ordinal if and only if they are order isomorphic, meaning there exists an order-preserving bijection between them. As a result, ordinals can discriminate infinities more finely than cardinals:
 
-$$0,1,\dots,n,\dots,\omega,\omega+1,\dots,\omega\cdot2,\omega\cdot3,\dots,\omega^2,\omega^3,\dots,\omega^\omega,\omega^{\omega^\omega},\dots,\epsilon_0$$
+$$0, 1, …, n, …, ω, ω+1, …, ω\cdot2, ω\cdot3, …, ω^2, ω^3, …, ω^ω, ω^{ω^ω}, …, ϵ_0$$
 
-As with cardinals, the finite ordinals are simply natural numbers. The least infinite ordinal is $\omega$, and it is equivalent to $\aleph_0$. Unlike the cardinals, $\omega+1$ is distinct from $\omega$, though both are countable. Strange as it may seem, there are uncountably many countably infinite ordinal numbers. We can add to $\omega$, multiply it, square it, raise it to the power $\omega$, ... each of these is a countable infinity greater than the last. The next step is to repeat the exponentiation using the recursive definition $\epsilon_0=\omega^{\epsilon_0}$.
+As with cardinals, the finite ordinals are simply natural numbers. The least infinite ordinal is $ω$, and it is equivalent to $ℵ_0$. Unlike the cardinals, $ω+1$ is distinct from $ω$, though both are countable. Strange as it may seem, there are uncountably many countably infinite ordinal numbers. We can add to $ω$, multiply it, square it, raise it to the power $ω$, ... each of these is a countable infinity greater than the last. The next step is to repeat the exponentiation using the recursive definition $ϵ_0=ω^{ϵ_0}$.
 
 ![Spiral visualization of some countable ordinal numbers (Wikimedia Commons)](../assets/svg/ordinal-spiral.svg)
 
-We can play this game as long as we want, but no matter what system we come up with, it will never capture all the infinities -- there will always be a larger ordinal that lies outside the system. We can keep finding these larger ordinals, but they become more and more difficult to describe. And we're still only talking about countable ordinals! The first _uncountable_ ordinal is $\omega_1$, and it is represented by the set of all countable ordinals.
+We can play this game as long as we want, but no matter what system we come up with, it will never capture all the infinities -- there will always be a larger ordinal that lies outside the system. We can keep finding these larger ordinals, but they become more and more difficult to describe. And we're still only talking about countable ordinals! The first _uncountable_ ordinal is $ω_1$, and it is represented by the set of all countable ordinals.
 
 # Conclusion
 

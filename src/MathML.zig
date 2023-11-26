@@ -177,6 +177,37 @@ fn lookupMacro(name: []const u8) ?Token {
     return std.ComptimeStringMap(Token, list).get(name);
 }
 
+fn lookupUnicode(bytes: []const u8) ?Token {
+    const Kind = enum { mi, mo, micro };
+    const list = .{
+        // Letters
+        .{ "ℵ", .mi },
+        .{ "α", .mi },
+        .{ "χ", .mi },
+        .{ "ϵ", .mi },
+        .{ "γ", .mi },
+        .{ "λ", .mi },
+        .{ "µ", .micro }, // U+00B5 Micro Sign (easier to type on macOS)
+        .{ "ω", .mi },
+        // Symbols
+        .{ "…", .mi },
+        .{ "∞", .mi },
+        // Operators
+        .{ "±", .mo },
+        .{ "×", .mo },
+        .{ "≠", .mo },
+        .{ "≤", .mo },
+        .{ "≥", .mo },
+        .{ "∈", .mo },
+        .{ "∉", .mo },
+        .{ "⊆", .mo },
+    };
+    return switch (std.ComptimeStringMap(Kind, list).get(bytes) orelse return null) {
+        .micro => .{ .mi = "μ" }, // U+03BC Greek Small Letter Mu
+        inline else => |kind| @unionInit(Token, @tagName(kind), bytes),
+    };
+}
+
 const Tokenizer = struct {
     in_text: bool = false,
     args_left: u8 = 0,
@@ -201,9 +232,9 @@ const Tokenizer = struct {
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
             '+', '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
-            // The spec says "MathML renderers should treat U+002D HYPHEN-MINUS
-            // as equivalent to U+2212 MINUS SIGN in formula contexts such
-            // as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
+            // Convert ASCII hyphen-minus to a Unicode minus sign. We shouldn't need to:
+            // "MathML renderers should treat U+002D HYPHEN-MINUS as equivalent to U+2212 MINUS SIGN
+            // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
             '-' => .{ .mo = "−" },
             '.', '/' => .{ .mo_closed_always = scanner.source[start..scanner.offset] },
@@ -217,7 +248,6 @@ const Tokenizer = struct {
                 };
                 return .{ .mn = scanner.source[start..scanner.offset] };
             },
-            "λ"[0] => if (scanner.consume("λ"[1])) .{ .mi = "λ" } else scanner.fail("unexpected UTF-8 sequence", .{}),
             '\\' => {
                 const after_backslash = scanner.offset;
                 if (scanner.consumeAny("\\;,{}")) |char| return switch (char) {
@@ -260,7 +290,20 @@ const Tokenizer = struct {
                 }
                 return macro;
             },
-            else => scanner.failOn(scanner.source[start..scanner.offset], "unexpected character", .{}),
+            else => |char| {
+                const span = scanner.source[start..scanner.offset];
+                scanner.uneat();
+                return switch (std.unicode.utf8ByteSequenceLength(char) catch |err| switch (err) {
+                    error.Utf8InvalidStartByte => return scanner.failOn(span, "invalid UTF-8 byte", .{}),
+                }) {
+                    0 => unreachable,
+                    1 => scanner.failOn(span, "unexpected character", .{}),
+                    else => |len| if (scanner.consumeLength(len)) |bytes|
+                        lookupUnicode(bytes) orelse scanner.failOn(bytes, "unexpected UTF-8 sequence", .{})
+                    else
+                        scanner.failOn(span, "expected {} byte UTF-8 sequence", .{len}),
+                };
+            },
         };
     }
 };
@@ -413,7 +456,7 @@ const Tag = union(enum) {
         switch (self) {
             .math => unreachable,
             .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
-            // TODO consider CSS classs instead
+            // TODO consider CSS classs instead (or not: bad for rss)
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "<mtable><mtr><mtd>",
@@ -434,7 +477,7 @@ const Tag = union(enum) {
             .mfrac_arg,
             .munderover_arg,
             => {},
-            .accent => |text| if (text[0] == "→"[0]) // TODO fix
+            .accent => |text| if (text[0] == "→"[0]) // TODO! fix
                 try writer.print("<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
             else
                 try writer.print("<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
@@ -528,7 +571,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        // TODO generalize into list of plus, minus, ...
+        // TODO! generalize into list of plus, minus, ...
         .mo => |text| try if (prefix and (text[0] == '+' or std.mem.eql(u8, text, "−") or std.mem.eql(u8, text, "±")))
             writer.print("<mo form=\"prefix\">{s}</mo>", .{text})
         else if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
@@ -676,10 +719,46 @@ test "symbols" {
     try expect("<math><mi>α</mi><mi>ω</mi></math>", "\\alpha\\omega", .{});
 }
 
-test "lambda" {
-    // I support λ because I use it a lot in intro-lambda.md.
-    // TODO: More general list, include things like ≠ probably.
-    try expect("<math><mi>λ</mi><mi>λ</mi></math>", "\\lambdaλ", .{});
+test "Unicode symbols" {
+    try expect(
+        \\<math><mi>ℵ</mi><mi>ℵ</mi>
+        \\<mi>α</mi><mi>α</mi>
+        \\<mi>χ</mi><mi>χ</mi>
+        \\<mi>ϵ</mi><mi>ϵ</mi>
+        \\<mi>γ</mi><mi>γ</mi>
+        \\<mi>λ</mi><mi>λ</mi>
+        \\<mi>μ</mi><mi>μ</mi>
+        \\<mi>ω</mi><mi>ω</mi>
+        \\<mi>…</mi><mi>…</mi>
+        \\<mi>∞</mi><mi>∞</mi>
+        \\<mo>±</mo><mo form="prefix">±</mo>
+        \\<mo lspace="0" rspace="0">×</mo><mo lspace="0" rspace="0">×</mo>
+        \\<mo>≠</mo><mo>≠</mo>
+        \\<mo>≤</mo><mo>≤</mo>
+        \\<mo>≥</mo><mo>≥</mo>
+        \\<mo>∈</mo><mo>∈</mo>
+        \\<mo>∉</mo><mo>∉</mo>
+        \\<mo>⊆</mo><mo>⊆</mo></math>
+    ,
+        \\ℵ\aleph
+        \\α\alpha
+        \\χ\chi
+        \\ϵ\epsilon
+        \\γ\gamma
+        \\λ\lambda
+        \\µ\mu
+        \\ω\omega
+        \\…\dots
+        \\∞\infty
+        \\±\pm
+        \\×\times
+        \\≠\ne
+        \\≤\le
+        \\≥\ge
+        \\∈\in
+        \\∉\notin
+        \\⊆\subseteq
+    , .{});
 }
 
 test "delimiters" {

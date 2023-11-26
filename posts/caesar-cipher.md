@@ -42,9 +42,9 @@ The relative frequencies will be different for every text, but not _that_ differ
 
 Now we know what the correct frequencies should look like, but how do we measure the distance between two sets of relative frequencies? If you've never taken a statistics course, you might think we should just add up the absolute differences letter-wise. \[_Feb. 2018_: I realize that sounds condescending; I was including myself in that description, as I hadn't taken my first statistics course yet, and so I didn't understand the theory behind the technique in this article. &mdash;MK\] That might work, but I'm going to jump straight to the best method: Pearson's chi-squared test. We calculate the cumulative chi-squared test-statistic by
 
-$$\chi^2 = \sum_{i=1}^n\frac{(O_i - E_i)^2}{E_i}$$
+$$χ^2 = \sum_{i=1}^n\frac{(O_i - E_i)^2}{E_i}$$
 
-where $n=26$ is the number of frequencies, $O_i$ is an observed frequency, and $E_i$ is the corresponding expected frequency. The lower the value of $\chi^2$, the closer the match. In our case, the $O_i$ values are the relative frequencies of the potential plaintext and the $E_i$ values come from the Google Books data. Let's implement that:
+where $n=26$ is the number of frequencies, $O_i$ is an observed frequency, and $E_i$ is the corresponding expected frequency. The lower the value of $χ^2$, the closer the match. In our case, the $O_i$ values are the relative frequencies of the potential plaintext and the $E_i$ values come from the Google Books data. Let's implement that:
 
 ```haskell
 chiSqr :: (Fractional a) => [a] -> [a] -> a

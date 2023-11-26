@@ -38,7 +38,7 @@ The practice of doping in professional sports can also be modelled as a prisoner
 
 We have seen that the dominant strategy in the prisoner's dilemma is to always defect. It's too risky to cooperate, because we have no clue about the intentions of the other player. This all changes in the _iterated_ prisoner's dilemma. In this version, the same two players repeatedly play the game, choosing to cooperate or to defect on each turn.
 
-Before it was just a blind choice, but now there are infinitely many strategies that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y\in\{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
+Before it was just a blind choice, but now there are infinitely many strategies that players can follow. We'll see how they work mathematically, then implement a few as programs. Let the real numbers $R$, $T$, $S$, and $P$ represent the reward, temptation, sucker's payoff, and punishment, respectively, where $S < P < R < T$. Cooperation will be represented by the number 1, and defection by 2. Then, given the choices of two players $x,y ∈ \{1,2\}$, the payoff for $x$ is defined by $A(x,y) = M_{x,y}$, where
 
 $$M = \begin{bmatrix}R & S \\ T & P \end{bmatrix}$$
 

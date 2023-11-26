@@ -21,13 +21,13 @@ We begin with a ray on the sensor pointing towards the scene. We follow the ray 
 
 # Rays and surfaces
 
-A <dfn>ray</dfn>, also known as a half-line, is a line that extends to infinity in only one direction. It can be represented by two vectors: a position vector for the initial point, and a unit vector for the direction. A <dfn>surface</dfn> is technically a two-dimensional topological manifold in $\mathbb{R}^3$. For example, the unit ball $B=\{\vec{x}\in\mathbb{R}^3:\lVert\vec{x}\rVert\le1\}$ is a solid, not a surface, but its boundary, the (hollow) unit sphere $\partial B=\{\vec{x}\in\mathbb{R}^3:\lVert\vec{x}\rVert = 1\}$ _is_ a surface. This may seem like a pointless distinction since you can't tell if the sphere is hollow or not from an image, but it's worthwhile to keep in mind that you must explicitly model the surface of an object. If you leave a hole in the panelling, the ray tracer will be able to see the interior of a hollow shell.
+A <dfn>ray</dfn>, also known as a half-line, is a line that extends to infinity in only one direction. It can be represented by two vectors: a position vector for the initial point, and a unit vector for the direction. A <dfn>surface</dfn> is technically a two-dimensional topological manifold in $\mathbb{R}^3$. For example, the unit ball $B=\{\vec{x}∈\mathbb{R}^3:\lVert\vec{x}\rVert≤1\}$ is a solid, not a surface, but its boundary, the (hollow) unit sphere $\partial B=\{\vec{x}∈\mathbb{R}^3:\lVert\vec{x}\rVert = 1\}$ _is_ a surface. This may seem like a pointless distinction since you can't tell if the sphere is hollow or not from an image, but it's worthwhile to keep in mind that you must explicitly model the surface of an object. If you leave a hole in the panelling, the ray tracer will be able to see the interior of a hollow shell.
 
 There is no limit to the kinds of surfaces we could dream up. I'm going to use planes and spheres as examples, but why stop there -- what about the cylinder, torus, [Gabriel's Horn][gh], ... ? In practice, most rendering engines stop even earlier, before the sphere. Instead of implementing special procedures to handle every kind of mathematical surface, they deal only with triangular and quadrilateral sections of planes (commonly referred to as "tris" and "quads"). All surfaces can be approximated by a <i>mesh</i> of these small polygons. Although a perfect sphere looks better and is computationally cheaper than a spherical mesh with a high polygon count, in general it's not worth the effort because perfect mathematical objects are rare. In fact, it's often the imperfections -- even photographic flaws such as chromatic aberration -- that make a render photorealistic. On the other hand, a "too perfect" image immediately arouses suspicion.
 
 ![Side view of true sphere (left) and low-poly mesh approximation (right)](../assets/svg/sphere-mesh.svg)
 
-All that being said, I'm sticking with planes and spheres because that's what I used in Luminosity. We can describe a plane by its normal vector and a scalar, as in $\{\vec{x}\in\mathbb{R}^3:\vec{x}\cdot\hat{n}=d\}$. Similarly, a sphere is defined by the position of its centre and its radius: $\{\vec{x}\in\mathbb{R}^3:\lVert\vec{x}-\vec{c}\rVert=r\}$. These position vectors are all relative to some global origin for the scene.
+All that being said, I'm sticking with planes and spheres because that's what I used in Luminosity. We can describe a plane by its normal vector and a scalar, as in $\{\vec{x}∈\mathbb{R}^3:\vec{x}\cdot\hat{n}=d\}$. Similarly, a sphere is defined by the position of its centre and its radius: $\{\vec{x}∈\mathbb{R}^3:\lVert\vec{x}-\vec{c}\rVert=r\}$. These position vectors are all relative to some global origin for the scene.
 
 # Cameras
 
@@ -39,7 +39,7 @@ The role of the camera is to assign a ray to each pixel of the image. There are 
 
 At the heart of the ray tracer is the intersection routine. We need to calculate the point of intersection made by a ray and a surface, which amounts to solving a system of two equations. The ray tracer will find millions of intersections in the course of rendering a single image, but we only need to write one function per type of surface.
 
-We represent the ray by the equation $\vec{x}=\vec{p}+t\hat{v}$ for all $t \ge 0$. To find the point of intersection, we equate this to a general point on the surface and then solve for $t$. For the plane, we have $(\vec{p}+t\hat{v})\cdot\hat{n}=d$. Rearranging this, we get the solution
+We represent the ray by the equation $\vec{x}=\vec{p}+t\hat{v}$ for all $t ≥ 0$. To find the point of intersection, we equate this to a general point on the surface and then solve for $t$. For the plane, we have $(\vec{p}+t\hat{v})\cdot\hat{n}=d$. Rearranging this, we get the solution
 
 $$t = \frac{d-\vec{p}\cdot\hat{n}}{\hat{v}\cdot\hat{n}}.$$
 
@@ -67,7 +67,7 @@ Once we've calculated the colours of all the pixels, we're still not done. The v
 
 ![Exposure control by clipping (left) and by scaling intensities down (right)](../assets/svg/clip-scale.svg)
 
-Finally, before rounding and storing the bytes, we need to apply <i>gamma correction</i>. It turns out that the human eye perceives light in a nonlinear way: we can distinguish many more colours in the darker end of the spectrum than in the lighter end. For this reason, it makes sense to devote more than half of the 256 values to intensities under 50% grey. We do this by gamma encoding, which means applying a function of the form $c\mapsto c^\gamma$ where $\gamma < 1$. Now, it also turns out that the output luminance of CRT monitors varies nonlinearly with the input voltage. By a happy coincidence, it is a gamma function with $\gamma > 1$ and it approximates the inverse of our gamma encoding function. So, at least in the early days of television, there was no need to undo the gamma compression -- the display did it naturally! Nowadays, we still store images with gamma compression, but the path from RGB value to voltage across an LCD pixel is not so simple.
+Finally, before rounding and storing the bytes, we need to apply <i>gamma correction</i>. It turns out that the human eye perceives light in a nonlinear way: we can distinguish many more colours in the darker end of the spectrum than in the lighter end. For this reason, it makes sense to devote more than half of the 256 values to intensities under 50% grey. We do this by gamma encoding, which means applying a function of the form $c\mapsto c^γ$ where $γ < 1$. Now, it also turns out that the output luminance of CRT monitors varies nonlinearly with the input voltage. By a happy coincidence, it is a gamma function with $γ > 1$ and it approximates the inverse of our gamma encoding function. So, at least in the early days of television, there was no need to undo the gamma compression -- the display did it naturally! Nowadays, we still store images with gamma compression, but the path from RGB value to voltage across an LCD pixel is not so simple.
 
 ![Gamma encoding (left) and its inverse, gamma decoding (right)](../assets/svg/gamma.svg)
 
@@ -75,7 +75,7 @@ With Luminosity, I used the ubiquitous sRGB color space. The transformation from
 
 $$
 f(c)=\begin{cases}
-12.92c & \text{if}\;c \le 0.0031308;\\
+12.92c & \text{if}\;c ≤ 0.0031308;\\
 1.055c^{\frac1{2.4}}-0.055 & \text{otherwise.}
 \end{cases}
 $$
