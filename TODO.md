@@ -12,9 +12,9 @@
 - consider var for single character math element
 - remove TypeScript implementation
 - upload new website
-- math: more UTF-8 (e.g. `\ne`)
-- generate.zig url generation stuff
-    - full https://... links in XML
++ math: more UTF-8 (e.g. `\ne`)
++ generate.zig url generation stuff
+    + full https://... links in XML
 + replace std.fmt.format(writer, ...) with writer.print(...)
 + server that uses websocket so that it can force refresh
 + comma after math wraps (e.g. "We can add to $\omega$, "For all $a$ and $b$")

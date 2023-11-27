@@ -57,11 +57,10 @@ const Token = union(enum) {
     colon_rel,
     colon_def,
     boxed,
-    // This is [3:0]u8 instead of []const u8 to save space in the Tag type.
-    accent: [3:0]u8,
+    accent: Accent,
+    variant: Variant,
     begin: Environment,
     end: Environment,
-    variant: Variant,
 };
 
 const spacing = struct {
@@ -70,7 +69,10 @@ const spacing = struct {
     const thin = "0.1667em";
 };
 
-const Environment = enum { matrix, bmatrix, cases };
+const Accent = enum {
+    @"→",
+    @"^",
+};
 
 const Variant = enum {
     normal,
@@ -78,6 +80,8 @@ const Variant = enum {
     double_struck,
     script,
 };
+
+const Environment = enum { matrix, bmatrix, cases };
 
 fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
     const base: enum(u8) { a = 'a', A = 'A' } = switch (char) {
@@ -133,8 +137,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "langle", .{ .mo_delimiter = "⟨" } },
         .{ "rangle", .{ .mo_delimiter = "⟩" } },
         // Accents
-        .{ "vec", .{ .accent = "→".* } },
-        .{ "hat", .{ .accent = "^\x00\x00".* } },
+        .{ "vec", .{ .accent = .@"→" } },
+        .{ "hat", .{ .accent = .@"^" } },
         // Functions
         .{ "log", .{ .mi = "log" } },
         .{ "lim", .{ .mi = "lim" } },
@@ -425,9 +429,9 @@ const Tag = union(enum) {
     munderover,
     munderover_arg,
 
+    accent: Accent,
     environment: Environment,
     boxed,
-    accent: [3:0]u8,
 
     fn isArg(self: Tag) bool {
         return switch (self) {
@@ -438,9 +442,7 @@ const Tag = union(enum) {
 
     fn hasImplicitMrow(self: Tag) bool {
         return switch (self) {
-            .mtext,
-            .mover,
-            => unreachable,
+            .mtext, .mover => unreachable,
             .mrow, .mrow_elide, .msqrt, .mphantom, .environment, .boxed => true,
             .math, .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
         };
@@ -463,11 +465,10 @@ const Tag = union(enum) {
         switch (self) {
             .math => unreachable,
             .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
-            // TODO consider CSS classs instead (or not: bad for rss)
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "<mtable><mtr><mtd>",
-                // Add an mrow otherwise Firefox doesn't stretch the bracket.
+                // TODO! Add an mrow otherwise Firefox doesn't stretch the bracket.
                 // Should really do this for all stretchy (doesn't matter right
                 // now because I'm not using \left and \right anywhere).
                 .bmatrix => "<mrow><mo>[</mo><mtable><mtr><mtd>",
@@ -480,14 +481,11 @@ const Tag = union(enum) {
     pub fn writeCloseTag(self: Tag, writer: anytype) !void {
         switch (self) {
             .math => unreachable,
-            .mrow_elide,
-            .mfrac_arg,
-            .munderover_arg,
-            => {},
-            .accent => |text| if (text[0] == "→"[0]) // TODO! fix
-                try writer.print("<mo stretchy=\"false\" lspace=\"0\" rspace=\"0\">{s}</mo>", .{@as([*:0]const u8, &text)})
-            else
-                try writer.print("<mo stretchy=\"false\">{s}</mo>", .{@as([*:0]const u8, &text)}),
+            .mrow_elide, .mfrac_arg, .munderover_arg => {},
+            .accent => |accent| try writer.print(
+                "<mo stretchy=\"false\"{s}>{s}</mo>",
+                .{ attrs(accent == .@"→", "lspace=\"0\" rspace=\"0\""), @tagName(accent) },
+            ),
             .boxed => try writer.writeAll("</mrow>"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "</mtd></mtr></mtable>",
@@ -501,6 +499,10 @@ const Tag = union(enum) {
 
 fn top(self: MathML) Tag {
     return self.stack.top() orelse .math;
+}
+
+fn attrs(condition: bool, comptime attributes: []const u8) []const u8 {
+    return if (condition) " " ++ attributes else "";
 }
 
 pub fn delimiter(self: MathML) []const u8 {
@@ -584,20 +586,20 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
             writer.print("<mo>{s}</mo>", .{text}),
-        .mo_delimiter => |text| try if (stretchy)
-            writer.print("<mo>{s}</mo>", .{text})
-        else
-            writer.print("<mo stretchy=\"false\">{s}</mo>", .{text}),
+        .mo_delimiter => |text| try writer.print(
+            "<mo{s}>{s}</mo>",
+            .{ attrs(!stretchy, "stretchy=\"false\""), text },
+        ),
         .mo_prefix => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
         .mo_postfix => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
-        .mo_prefix_or_infix => |text| if (prefix)
-            try writer.print("<mo form=\"prefix\">{s}</mo>", .{text})
-        else
-            try writer.print("<mo>{s}</mo>", .{text}),
-        .mo_closed => |text| if (infix)
-            try writer.print("<mo>{s}</mo>", .{text})
-        else
-            try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
+        .mo_prefix_or_infix => |text| try writer.print(
+            "<mo{s}>{s}</mo>",
+            .{ attrs(prefix, "form=\"prefix\""), text },
+        ),
+        .mo_closed => |text| try writer.print(
+            "<mo{s}>{s}</mo>",
+            .{ attrs(infix, "lspace=\"0\" rspace=\"0\""), text },
+        ),
         .mo_closed_always => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
