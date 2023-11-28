@@ -39,11 +39,12 @@ const Token = union(enum) {
     mi: []const u8,
     mi_normal: []const u8,
     mo: []const u8,
-    mo_delimiter: []const u8,
+    mo_left_delim: []const u8,
+    mo_right_delim: []const u8,
     mo_prefix: []const u8,
     mo_postfix: []const u8,
     mo_prefix_or_infix: []const u8,
-    mo_closed: []const u8,
+    mo_closed_if_infix: []const u8,
     mo_closed_always: []const u8,
     mspace: []const u8,
     // Other
@@ -134,8 +135,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "rvert", .{ .mo_postfix = "|" } },
         .{ "lVert", .{ .mo_prefix = "‖" } },
         .{ "rVert", .{ .mo_postfix = "‖" } },
-        .{ "langle", .{ .mo_delimiter = "⟨" } },
-        .{ "rangle", .{ .mo_delimiter = "⟩" } },
+        .{ "langle", .{ .mo_left_delim = "⟨" } },
+        .{ "rangle", .{ .mo_right_delim = "⟩" } },
         // Accents
         .{ "vec", .{ .accent = .@"→" } },
         .{ "hat", .{ .accent = .@"^" } },
@@ -165,8 +166,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "vdots", .{ .mi = "⋮" } },
         // Operators
         .{ "approx", .{ .mo = "≈" } },
-        .{ "ast", .{ .mo_closed = "∗" } },
-        .{ "bullet", .{ .mo_closed = "∙" } },
+        .{ "ast", .{ .mo_closed_if_infix = "∗" } },
+        .{ "bullet", .{ .mo_closed_if_infix = "∙" } },
         .{ "cdot", .{ .mo = "⋅" } },
         .{ "coloneqq", .{ .mo = "≔" } },
         .{ "cup", .{ .mo = "∪" } },
@@ -176,8 +177,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
-        .{ "odot", .{ .mo_closed = "⊙" } },
-        .{ "oplus", .{ .mo_closed = "⊕" } },
+        .{ "odot", .{ .mo_closed_if_infix = "⊙" } },
+        .{ "oplus", .{ .mo_closed_if_infix = "⊕" } },
         .{ "pm", .{ .mo_prefix_or_infix = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
@@ -251,7 +252,8 @@ const Tokenizer = struct {
             '.', '/' => .{ .mo_closed_always = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
-            '(', ')', '[', ']' => .{ .mo_delimiter = scanner.source[start..scanner.offset] },
+            '(', '[' => .{ .mo_left_delim = scanner.source[start..scanner.offset] },
+            ')', ']' => .{ .mo_right_delim = scanner.source[start..scanner.offset] },
             '0'...'9' => {
                 if (consume_multiple_digits) while (scanner.peek()) |char| switch (char) {
                     '0'...'9', '.' => scanner.eat(),
@@ -265,7 +267,8 @@ const Tokenizer = struct {
                     '\\' => .@"\\",
                     ';' => .{ .mspace = spacing.thick },
                     ',' => .{ .mspace = spacing.thin },
-                    '{', '}' => .{ .mo_delimiter = scanner.source[after_backslash..scanner.offset] },
+                    '{' => .{ .mo_left_delim = scanner.source[after_backslash..scanner.offset] },
+                    '}' => .{ .mo_right_delim = scanner.source[after_backslash..scanner.offset] },
                     else => unreachable,
                 };
                 while (scanner.peek()) |char| switch (char) {
@@ -468,9 +471,7 @@ const Tag = union(enum) {
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "<mtable><mtr><mtd>",
-                // TODO! Add an mrow otherwise Firefox doesn't stretch the bracket.
-                // Should really do this for all stretchy (doesn't matter right
-                // now because I'm not using \left and \right anywhere).
+                // Firefox needs an <mrow> around stretchy delimiters in order to stretch them.
                 .bmatrix => "<mrow><mo>[</mo><mtable><mtr><mtd>",
                 .cases => "<mrow><mo>{</mo><mtable><mtr><mtd>",
             }),
@@ -548,7 +549,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     const infix = self.next_is_infix;
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = (token == .mo_prefix_or_infix or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
-    self.next_is_infix = token == .mi or (token == .mo_delimiter and token.mo_delimiter[0] == ')');
+    self.next_is_infix = token == .mi or token == .mo_right_delim;
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -586,17 +587,28 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
         else
             writer.print("<mo>{s}</mo>", .{text}),
-        .mo_delimiter => |text| try writer.print(
-            "<mo{s}>{s}</mo>",
-            .{ attrs(!stretchy, "stretchy=\"false\""), text },
-        ),
+        .mo_left_delim => |text| {
+            // Firefox needs an <mrow> around stretchy delimiters in order to stretch them.
+            if (stretchy) try self.stack.push(writer, .mrow);
+            try writer.print(
+                "<mo{s}>{s}</mo>",
+                .{ attrs(!stretchy, "stretchy=\"false\""), text },
+            );
+        },
+        .mo_right_delim => |text| {
+            try writer.print(
+                "<mo{s}>{s}</mo>",
+                .{ attrs(!stretchy, "stretchy=\"false\""), text },
+            );
+            if (stretchy) try self.stack.popTag(writer, .mrow);
+        },
         .mo_prefix => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
         .mo_postfix => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
         .mo_prefix_or_infix => |text| try writer.print(
             "<mo{s}>{s}</mo>",
             .{ attrs(prefix, "form=\"prefix\""), text },
         ),
-        .mo_closed => |text| try writer.print(
+        .mo_closed_if_infix => |text| try writer.print(
             "<mo{s}>{s}</mo>",
             .{ attrs(infix, "lspace=\"0\" rspace=\"0\""), text },
         ),
@@ -774,7 +786,7 @@ test "Unicode symbols" {
 
 test "delimiters" {
     try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .{});
-    try expect("<math><mo>(</mo><mi>A</mi><mo>)</mo></math>", "\\left(A\\right)", .{});
+    try expect("<math><mrow><mo>(</mo><mi>A</mi><mo>)</mo></mrow></math>", "\\left(A\\right)", .{});
 }
 
 test "sqrt" {
