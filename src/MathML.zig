@@ -41,11 +41,11 @@ const Token = union(enum) {
     mo: []const u8,
     mo_left_delim: []const u8,
     mo_right_delim: []const u8,
-    mo_prefix: []const u8,
-    mo_postfix: []const u8,
+    mo_sym_left_delim: []const u8,
+    mo_sym_right_delim: []const u8,
     mo_prefix_or_infix: []const u8,
+    mo_closed: []const u8,
     mo_closed_if_infix: []const u8,
-    mo_closed_always: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -131,10 +131,10 @@ fn lookupMacro(name: []const u8) ?Token {
         // Delimiters
         .{ "left", .stretchy },
         .{ "right", .stretchy },
-        .{ "lvert", .{ .mo_prefix = "|" } },
-        .{ "rvert", .{ .mo_postfix = "|" } },
-        .{ "lVert", .{ .mo_prefix = "‖" } },
-        .{ "rVert", .{ .mo_postfix = "‖" } },
+        .{ "lvert", .{ .mo_sym_left_delim = "|" } },
+        .{ "rvert", .{ .mo_sym_right_delim = "|" } },
+        .{ "lVert", .{ .mo_sym_left_delim = "‖" } },
+        .{ "rVert", .{ .mo_sym_right_delim = "‖" } },
         .{ "langle", .{ .mo_left_delim = "⟨" } },
         .{ "rangle", .{ .mo_right_delim = "⟩" } },
         // Accents
@@ -249,7 +249,7 @@ const Tokenizer = struct {
             // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
             '-' => .{ .mo_prefix_or_infix = "−" },
-            '.', '/' => .{ .mo_closed_always = scanner.source[start..scanner.offset] },
+            '.', '/' => .{ .mo_closed = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
             '(', '[' => .{ .mo_left_delim = scanner.source[start..scanner.offset] },
@@ -602,17 +602,18 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             );
             if (stretchy) try self.stack.popTag(writer, .mrow);
         },
-        .mo_prefix => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
-        .mo_postfix => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
+        // TODO combine with above, should support stretchy too
+        .mo_sym_left_delim => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
+        .mo_sym_right_delim => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
         .mo_prefix_or_infix => |text| try writer.print(
             "<mo{s}>{s}</mo>",
             .{ attrs(prefix, "form=\"prefix\""), text },
         ),
+        .mo_closed => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .mo_closed_if_infix => |text| try writer.print(
             "<mo{s}>{s}</mo>",
             .{ attrs(infix, "lspace=\"0\" rspace=\"0\""), text },
         ),
-        .mo_closed_always => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
         .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
