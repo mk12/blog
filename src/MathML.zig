@@ -39,12 +39,12 @@ const Token = union(enum) {
     mi_normal: []const u8,
     mo: []const u8,
     mo_sign: []const u8,
+    mo_closed: []const u8,
+    mo_closed_prefix: []const u8,
     mo_left: []const u8,
     mo_right: []const u8,
     mo_sym_left: []const u8,
     mo_sym_right: []const u8,
-    mo_closed: []const u8,
-    mo_closed_prefix: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -172,14 +172,14 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
         .{ "sum", .{ .mo = "∑" } },
-        .{ "times", .{ .mo = "×" } },
+        .{ "times", .{ .mo_closed_prefix = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
     return std.ComptimeStringMap(Token, list).get(name);
 }
 
 fn lookupUnicode(bytes: []const u8) ?Token {
-    const Kind = enum { mi, mo, mo_sign };
+    const Kind = enum { mi, mo, mo_sign, mo_closed_prefix };
     const list = .{
         // Letters
         .{ "ℵ", .mi },
@@ -195,7 +195,7 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "∞", .mi },
         // Operators
         .{ "±", .mo_sign },
-        .{ "×", .mo },
+        .{ "×", .mo_closed_prefix },
         .{ "≠", .mo },
         .{ "≤", .mo },
         .{ "≥", .mo },
@@ -474,7 +474,7 @@ const Tag = union(enum) {
             .mrow_elide, .mfrac_arg, .munderover_arg => {},
             .accent => |accent| try writer.print(
                 "<mo stretchy=\"false\"{s}>{s}</mo>",
-                .{ attrs(accent == .@"→", "lspace=\"0\" rspace=\"0\""), @tagName(accent) },
+                .{ if (accent == .@"→") " lspace=\"0\" rspace=\"0\"" else "", @tagName(accent) },
             ),
             .boxed => try writer.writeAll("</mrow>"),
             .environment => |environment| try writer.writeAll(switch (environment) {
@@ -491,8 +491,13 @@ fn top(self: MathML) Tag {
     return self.stack.top() orelse .math;
 }
 
-fn attrs(condition: bool, comptime attributes: []const u8) []const u8 {
-    return if (condition) " " ++ attributes else "";
+fn inUnderOrOver(self: MathML) bool {
+    const len = self.stack.len();
+    if (len < 2) return false;
+    return switch (self.stack.get(len - 2)) {
+        .munder, .munderover_arg => true,
+        else => false,
+    };
 }
 
 pub fn delimiter(self: MathML) []const u8 {
@@ -568,36 +573,20 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo, .mo_sign, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right, .mo_closed, .mo_closed_prefix => |text| {
+        .mo, .mo_sign, .mo_closed, .mo_closed_prefix, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right => |text| {
+            const left = token == .mo_left or token == .mo_sym_left;
+            const right = token == .mo_right or token == .mo_sym_right;
+            const delim = left or right;
             // Firefox needs an <mrow> around stretchy delimiters in order to stretch them.
-            if (stretchy and (token == .mo_left or token == .mo_sym_left))
-                if (stretchy) try self.stack.push(writer, .mrow);
-            try writer.print(
-                "<mo{s}{s}{s}{s}>{s}</mo>",
-                .{
-                    attrs(
-                        !stretchy and (token == .mo_left or token == .mo_right or token == .mo_sym_left or token == .mo_sym_right),
-                        "stretchy=\"false\"",
-                    ),
-                    attrs(
-                        (prefix and token == .mo_sign) or (token == .mo_sym_left),
-                        "form=\"prefix\"",
-                    ),
-                    attrs(
-                        token == .mo_sym_right,
-                        "form=\"postfix\"",
-                    ),
-                    attrs(
-                        token == .mo_closed or (prefix and token == .mo_closed_prefix) or
-                            (token == .mo and ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
-                            (prefix and std.mem.eql(u8, text, "×")))),
-                        "lspace=\"0\" rspace=\"0\"",
-                    ),
-                    text,
-                },
-            );
-            if (stretchy and (token == .mo_right or token == .mo_sym_right))
-                try self.stack.popTag(writer, .mrow);
+            if (stretchy and left) try self.stack.push(writer, .mrow);
+            try writer.writeAll("<mo");
+            if (!stretchy and delim) try writer.writeAll(" stretchy=\"false\"");
+            if (token == .mo_sym_left or (prefix and token == .mo_sign)) try writer.writeAll(" form=\"prefix\"");
+            if (token == .mo_sym_right) try writer.writeAll(" form=\"postfix\"");
+            if (token == .mo_closed or (prefix and token == .mo_closed_prefix) or (!delim and token != .mo_sign and self.inUnderOrOver()))
+                try writer.writeAll(" lspace=\"0\" rspace=\"0\"");
+            try writer.print(">{s}</mo>", .{text});
+            if (stretchy and right) try self.stack.popTag(writer, .mrow);
         },
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
@@ -736,7 +725,7 @@ test "Unicode symbols" {
         \\<mi>…</mi><mi>…</mi>
         \\<mi>∞</mi><mi>∞</mi>
         \\<mo>±</mo><mo form="prefix">±</mo>
-        \\<mo lspace="0" rspace="0">×</mo><mo lspace="0" rspace="0">×</mo>
+        \\<mo lspace="0" rspace="0">×</mo><mo>×</mo>
         \\<mo>≠</mo><mo>≠</mo>
         \\<mo>≤</mo><mo>≤</mo>
         \\<mo>≥</mo><mo>≥</mo>
@@ -880,6 +869,20 @@ test "summation equation" {
         \\</mrow><mn>2</mn></mfrac></math>
     ,
         "\\sum_ \n {k=1}^n \n k=\\frac{k \n (k+1) \n }2",
+        .{},
+    );
+}
+
+// TODO not right
+test "underover with expression" {
+    try expect(
+        \\<math><munderover><mo>∑</mo>
+        \\<mrow><mi>a</mi><mo>+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
+        \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow>
+        \\<mrow><mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo>
+        \\<mi>c</mi><mo>×</mo><mi>d</mi></mrow></munderover></math>
+    ,
+        "\\sum_ \n {a+b = \n c\\times d} ^ \n {a+b = \n c\\times d}",
         .{},
     );
 }
