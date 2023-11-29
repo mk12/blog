@@ -17,7 +17,6 @@ options: Options,
 tokenizer: Tokenizer = .{},
 stack: TagStack(Tag) = .{},
 next_is_prefix: bool = true,
-next_is_infix: bool = false,
 next_is_stretchy: bool = false,
 
 pub const Options = struct { block: bool = false };
@@ -45,7 +44,7 @@ const Token = union(enum) {
     mo_sym_left: []const u8,
     mo_sym_right: []const u8,
     mo_closed: []const u8,
-    mo_closed_noninfix: []const u8,
+    mo_closed_prefix: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -156,8 +155,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "vdots", .{ .mi = "⋮" } },
         // Operators
         .{ "approx", .{ .mo = "≈" } },
-        .{ "ast", .{ .mo_closed_noninfix = "∗" } },
-        .{ "bullet", .{ .mo_closed_noninfix = "∙" } },
+        .{ "ast", .{ .mo_closed = "∗" } },
+        .{ "bullet", .{ .mo_closed_prefix = "∙" } },
         .{ "cdot", .{ .mo = "⋅" } },
         .{ "coloneqq", .{ .mo = "≔" } },
         .{ "cup", .{ .mo = "∪" } },
@@ -167,8 +166,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
-        .{ "odot", .{ .mo_closed_noninfix = "⊙" } },
-        .{ "oplus", .{ .mo_closed_noninfix = "⊕" } },
+        .{ "odot", .{ .mo_closed_prefix = "⊙" } },
+        .{ "oplus", .{ .mo_closed_prefix = "⊕" } },
         .{ "pm", .{ .mo_sign = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
@@ -536,10 +535,8 @@ fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
 
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
-    const infix = self.next_is_infix;
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = (token == .mo_sign or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
-    self.next_is_infix = token == .mi or token == .mo_right;
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -571,7 +568,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo, .mo_sign, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right, .mo_closed, .mo_closed_noninfix => |text| {
+        .mo, .mo_sign, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right, .mo_closed, .mo_closed_prefix => |text| {
             // Firefox needs an <mrow> around stretchy delimiters in order to stretch them.
             if (stretchy and (token == .mo_left or token == .mo_sym_left))
                 if (stretchy) try self.stack.push(writer, .mrow);
@@ -591,7 +588,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
                         "form=\"postfix\"",
                     ),
                     attrs(
-                        token == .mo_closed or (!infix and token == .mo_closed_noninfix) or
+                        token == .mo_closed or (prefix and token == .mo_closed_prefix) or
                             (token == .mo and ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
                             (prefix and std.mem.eql(u8, text, "×")))),
                         "lspace=\"0\" rspace=\"0\"",
@@ -766,6 +763,11 @@ test "Unicode symbols" {
         \\∉\notin
         \\⊆\subseteq
     , .{});
+}
+
+test "unary and binary operators" {
+    try expect("<math><mo lspace=\"0\" rspace=\"0\">∗</mo><mi>x</mi></math>", "\\ast x", .{});
+    try expect("<math><mi>x</mi><mo>⊕</mo><mi>y</mi></math>", "x \\oplus y", .{});
 }
 
 test "tuple of operators" {

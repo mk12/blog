@@ -12,6 +12,7 @@
 - consider var for single character math element
 - remove TypeScript implementation
 - upload new website
+- consider not quoting attributes
 + math: more UTF-8 (e.g. `\ne`)
 + generate.zig url generation stuff
     + full https://... links in XML
