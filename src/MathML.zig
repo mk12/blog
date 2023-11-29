@@ -39,13 +39,13 @@ const Token = union(enum) {
     mi: []const u8,
     mi_normal: []const u8,
     mo: []const u8,
-    mo_left_delim: []const u8,
-    mo_right_delim: []const u8,
-    mo_sym_left_delim: []const u8,
-    mo_sym_right_delim: []const u8,
-    mo_prefix_or_infix: []const u8,
+    mo_sign: []const u8,
+    mo_left: []const u8,
+    mo_right: []const u8,
+    mo_sym_left: []const u8,
+    mo_sym_right: []const u8,
     mo_closed: []const u8,
-    mo_closed_if_infix: []const u8,
+    mo_closed_noninfix: []const u8,
     mspace: []const u8,
     // Other
     @"{",
@@ -70,18 +70,8 @@ const spacing = struct {
     const thin = "0.1667em";
 };
 
-const Accent = enum {
-    @"→",
-    @"^",
-};
-
-const Variant = enum {
-    normal,
-    bold,
-    double_struck,
-    script,
-};
-
+const Accent = enum { @"→", @"^" };
+const Variant = enum { normal, bold, double_struck, script };
 const Environment = enum { matrix, bmatrix, cases };
 
 fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
@@ -131,12 +121,12 @@ fn lookupMacro(name: []const u8) ?Token {
         // Delimiters
         .{ "left", .stretchy },
         .{ "right", .stretchy },
-        .{ "lvert", .{ .mo_sym_left_delim = "|" } },
-        .{ "rvert", .{ .mo_sym_right_delim = "|" } },
-        .{ "lVert", .{ .mo_sym_left_delim = "‖" } },
-        .{ "rVert", .{ .mo_sym_right_delim = "‖" } },
-        .{ "langle", .{ .mo_left_delim = "⟨" } },
-        .{ "rangle", .{ .mo_right_delim = "⟩" } },
+        .{ "lvert", .{ .mo_sym_left = "|" } },
+        .{ "rvert", .{ .mo_sym_right = "|" } },
+        .{ "lVert", .{ .mo_sym_left = "‖" } },
+        .{ "rVert", .{ .mo_sym_right = "‖" } },
+        .{ "langle", .{ .mo_left = "⟨" } },
+        .{ "rangle", .{ .mo_right = "⟩" } },
         // Accents
         .{ "vec", .{ .accent = .@"→" } },
         .{ "hat", .{ .accent = .@"^" } },
@@ -166,8 +156,8 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "vdots", .{ .mi = "⋮" } },
         // Operators
         .{ "approx", .{ .mo = "≈" } },
-        .{ "ast", .{ .mo_closed_if_infix = "∗" } },
-        .{ "bullet", .{ .mo_closed_if_infix = "∙" } },
+        .{ "ast", .{ .mo_closed_noninfix = "∗" } },
+        .{ "bullet", .{ .mo_closed_noninfix = "∙" } },
         .{ "cdot", .{ .mo = "⋅" } },
         .{ "coloneqq", .{ .mo = "≔" } },
         .{ "cup", .{ .mo = "∪" } },
@@ -177,9 +167,9 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
-        .{ "odot", .{ .mo_closed_if_infix = "⊙" } },
-        .{ "oplus", .{ .mo_closed_if_infix = "⊕" } },
-        .{ "pm", .{ .mo_prefix_or_infix = "±" } },
+        .{ "odot", .{ .mo_closed_noninfix = "⊙" } },
+        .{ "oplus", .{ .mo_closed_noninfix = "⊕" } },
+        .{ "pm", .{ .mo_sign = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
         .{ "sum", .{ .mo = "∑" } },
@@ -190,7 +180,7 @@ fn lookupMacro(name: []const u8) ?Token {
 }
 
 fn lookupUnicode(bytes: []const u8) ?Token {
-    const Kind = enum { mi, mo, mo_prefix_or_infix };
+    const Kind = enum { mi, mo, mo_sign };
     const list = .{
         // Letters
         .{ "ℵ", .mi },
@@ -205,7 +195,7 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "…", .mi },
         .{ "∞", .mi },
         // Operators
-        .{ "±", .mo_prefix_or_infix },
+        .{ "±", .mo_sign },
         .{ "×", .mo },
         .{ "≠", .mo },
         .{ "≤", .mo },
@@ -243,17 +233,17 @@ const Tokenizer = struct {
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
             '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
-            '+' => .{ .mo_prefix_or_infix = scanner.source[start..scanner.offset] },
+            '+' => .{ .mo_sign = scanner.source[start..scanner.offset] },
             // Convert ASCII hyphen-minus to a Unicode minus sign. We shouldn't need to:
             // "MathML renderers should treat U+002D HYPHEN-MINUS as equivalent to U+2212 MINUS SIGN
             // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
-            '-' => .{ .mo_prefix_or_infix = "−" },
+            '-' => .{ .mo_sign = "−" },
             '.', '/' => .{ .mo_closed = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
-            '(', '[' => .{ .mo_left_delim = scanner.source[start..scanner.offset] },
-            ')', ']' => .{ .mo_right_delim = scanner.source[start..scanner.offset] },
+            '(', '[' => .{ .mo_left = scanner.source[start..scanner.offset] },
+            ')', ']' => .{ .mo_right = scanner.source[start..scanner.offset] },
             '0'...'9' => {
                 if (consume_multiple_digits) while (scanner.peek()) |char| switch (char) {
                     '0'...'9', '.' => scanner.eat(),
@@ -267,8 +257,8 @@ const Tokenizer = struct {
                     '\\' => .@"\\",
                     ';' => .{ .mspace = spacing.thick },
                     ',' => .{ .mspace = spacing.thin },
-                    '{' => .{ .mo_left_delim = scanner.source[after_backslash..scanner.offset] },
-                    '}' => .{ .mo_right_delim = scanner.source[after_backslash..scanner.offset] },
+                    '{' => .{ .mo_left = scanner.source[after_backslash..scanner.offset] },
+                    '}' => .{ .mo_right = scanner.source[after_backslash..scanner.offset] },
                     else => unreachable,
                 };
                 while (scanner.peek()) |char| switch (char) {
@@ -370,13 +360,13 @@ test "scan fraction" {
 test "scan text" {
     try expectTokens(&[_]Token{
         .{ .mi = "x" },
-        .{ .mo_prefix_or_infix = "+" },
+        .{ .mo_sign = "+" },
         .mtext_start,
         .{ .mtext_content = "some stuff" },
         .@"\n",
         .{ .mtext_content = "more here" },
         .mtext_end,
-        .{ .mo_prefix_or_infix = "−" },
+        .{ .mo_sign = "−" },
         .{ .mi = "y" },
         .eof,
     },
@@ -389,9 +379,9 @@ test "scan quadratic formula" {
     try expectTokens(&[_]Token{
         .{ .mi = "x" },
         .{ .mo = "=" },
-        .{ .mo_prefix_or_infix = "−" },
+        .{ .mo_sign = "−" },
         .{ .mi = "b" },
-        .{ .mo_prefix_or_infix = "±" },
+        .{ .mo_sign = "±" },
         .mfrac,
         .@"{",
         .msqrt,
@@ -399,7 +389,7 @@ test "scan quadratic formula" {
         .{ .mi = "b" },
         .@"^",
         .{ .mn = "2" },
-        .{ .mo_prefix_or_infix = "−" },
+        .{ .mo_sign = "−" },
         .{ .mn = "4" },
         .{ .mi = "a" },
         .{ .mi = "c" },
@@ -548,8 +538,8 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     const prefix = self.next_is_prefix;
     const infix = self.next_is_infix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = (token == .mo_prefix_or_infix or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
-    self.next_is_infix = token == .mi or token == .mo_right_delim;
+    self.next_is_prefix = (token == .mo_sign or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
+    self.next_is_infix = token == .mi or token == .mo_right;
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -581,39 +571,37 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        // TODO! factor this out
-        .mo => |text| try if ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
-            (prefix and std.mem.eql(u8, text, "×")))
-            writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text})
-        else
-            writer.print("<mo>{s}</mo>", .{text}),
-        .mo_left_delim => |text| {
+        .mo, .mo_sign, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right, .mo_closed, .mo_closed_noninfix => |text| {
             // Firefox needs an <mrow> around stretchy delimiters in order to stretch them.
-            if (stretchy) try self.stack.push(writer, .mrow);
+            if (stretchy and (token == .mo_left or token == .mo_sym_left))
+                if (stretchy) try self.stack.push(writer, .mrow);
             try writer.print(
-                "<mo{s}>{s}</mo>",
-                .{ attrs(!stretchy, "stretchy=\"false\""), text },
+                "<mo{s}{s}{s}{s}>{s}</mo>",
+                .{
+                    attrs(
+                        !stretchy and (token == .mo_left or token == .mo_right or token == .mo_sym_left or token == .mo_sym_right),
+                        "stretchy=\"false\"",
+                    ),
+                    attrs(
+                        (prefix and token == .mo_sign) or (token == .mo_sym_left),
+                        "form=\"prefix\"",
+                    ),
+                    attrs(
+                        token == .mo_sym_right,
+                        "form=\"postfix\"",
+                    ),
+                    attrs(
+                        token == .mo_closed or (!infix and token == .mo_closed_noninfix) or
+                            (token == .mo and ((self.stack.len() >= 2 and (self.stack.get(self.stack.len() - 2) == .munder or self.stack.get(self.stack.len() - 2) == .munderover_arg)) or
+                            (prefix and std.mem.eql(u8, text, "×")))),
+                        "lspace=\"0\" rspace=\"0\"",
+                    ),
+                    text,
+                },
             );
+            if (stretchy and (token == .mo_right or token == .mo_sym_right))
+                try self.stack.popTag(writer, .mrow);
         },
-        .mo_right_delim => |text| {
-            try writer.print(
-                "<mo{s}>{s}</mo>",
-                .{ attrs(!stretchy, "stretchy=\"false\""), text },
-            );
-            if (stretchy) try self.stack.popTag(writer, .mrow);
-        },
-        // TODO combine with above, should support stretchy too
-        .mo_sym_left_delim => |text| try writer.print("<mo stretchy=\"false\" form=\"prefix\">{s}</mo>", .{text}),
-        .mo_sym_right_delim => |text| try writer.print("<mo stretchy=\"false\" form=\"postfix\">{s}</mo>", .{text}),
-        .mo_prefix_or_infix => |text| try writer.print(
-            "<mo{s}>{s}</mo>",
-            .{ attrs(prefix, "form=\"prefix\""), text },
-        ),
-        .mo_closed => |text| try writer.print("<mo lspace=\"0\" rspace=\"0\">{s}</mo>", .{text}),
-        .mo_closed_if_infix => |text| try writer.print(
-            "<mo{s}>{s}</mo>",
-            .{ attrs(infix, "lspace=\"0\" rspace=\"0\""), text },
-        ),
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
         .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
@@ -711,24 +699,19 @@ test "variable" {
     try expect("<math display=\"block\"><mi>x</mi></math>", "x", .{ .block = true });
 }
 
-test "prefix operator" {
+test "signs" {
     try expect("<math><mo form=\"prefix\">+</mo><mi>x</mi></math>", "+x", .{});
     try expect("<math><mo form=\"prefix\">−</mo><mi>x</mi></math>", "-x", .{});
     try expect("<math><mo form=\"prefix\">±</mo><mi>x</mi></math>", "\\pm x", .{});
 }
 
-test "operators as values" {
-    try expect(
-        "<math><mo stretchy=\"false\">(</mo><mi>ℤ</mi><mo>,</mo>" ++
-            "<mo form=\"prefix\">+</mo><mo>,</mo><mo lspace=\"0\" rspace=\"0\">×</mo>" ++
-            "<mo stretchy=\"false\">)</mo></math>",
-        "(\\mathbb{Z},+,\\times)",
-        .{},
-    );
-}
-
 test "basic expression" {
     try expect("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>", "x + 1", .{});
+}
+
+test "delimiters" {
+    try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .{});
+    try expect("<math><mrow><mo>(</mo><mi>A</mi><mo>)</mo></mrow></math>", "\\left(A\\right)", .{});
 }
 
 test "entities" {
@@ -785,9 +768,22 @@ test "Unicode symbols" {
     , .{});
 }
 
-test "delimiters" {
-    try expect("<math><mo stretchy=\"false\">(</mo><mi>A</mi><mo stretchy=\"false\">)</mo></math>", "(A)", .{});
-    try expect("<math><mrow><mo>(</mo><mi>A</mi><mo>)</mo></mrow></math>", "\\left(A\\right)", .{});
+test "tuple of operators" {
+    try expect(
+        \\<math><mo stretchy="false">(</mo><mi>ℤ</mi><mo>,</mo>
+        \\<mo form="prefix">+</mo><mo>,</mo><mo lspace="0" rspace="0">×</mo><mo>,</mo>
+        \\<mo lspace="0" rspace="0">∗</mo><mo>,</mo><mo lspace="0" rspace="0">∙</mo><mo>,</mo>
+        \\<mo lspace="0" rspace="0">⊙</mo><mo>,</mo><mo lspace="0" rspace="0">⊕</mo>
+        \\<mo stretchy="false">)</mo></math>
+    ,
+        \\(\mathbb{Z},
+        \\+,\times,
+        \\\ast,\bullet,
+        \\\odot,\oplus
+        \\)
+    ,
+        .{},
+    );
 }
 
 test "sqrt" {
@@ -838,9 +834,8 @@ test "squared expression" {
     // take this lazy approach as well.
     try expect(
         \\<math><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>
-        ++
         \\<msup><mo stretchy="false">)</mo><mn>2</mn></msup></math>
-    , "(x+y)^2", .{});
+    , "(x+y\n)^2", .{});
 }
 
 test "vectors" {
