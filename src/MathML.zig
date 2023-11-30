@@ -37,10 +37,13 @@ const Token = union(enum) {
     mn: []const u8,
     mi: []const u8,
     mi_normal: []const u8,
+    mi_under: []const u8,
     mo: []const u8,
     mo_sign: []const u8,
+    mo_postfix: []const u8,
     mo_closed: []const u8,
     mo_closed_prefix: []const u8,
+    mo_underover: []const u8,
     mo_left: []const u8,
     mo_right: []const u8,
     mo_sym_left: []const u8,
@@ -131,7 +134,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "hat", .{ .accent = .@"^" } },
         // Functions
         .{ "log", .{ .mi = "log" } },
-        .{ "lim", .{ .mi = "lim" } },
+        .{ "lim", .{ .mi_under = "lim" } },
         // Letters
         .{ "aleph", .{ .mi = "ℵ" } },
         .{ "alpha", .{ .mi = "α" } },
@@ -171,7 +174,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "pm", .{ .mo_sign = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
         .{ "subseteq", .{ .mo = "⊆" } },
-        .{ "sum", .{ .mo = "∑" } },
+        .{ "sum", .{ .mo_underover = "∑" } },
         .{ "times", .{ .mo_closed_prefix = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
@@ -231,13 +234,14 @@ const Tokenizer = struct {
                 return @field(Token, &.{char});
             },
             'a'...'z', 'A'...'Z', '?' => .{ .mi = scanner.source[start..scanner.offset] },
-            '=', '>', ',', ';', '!' => .{ .mo = scanner.source[start..scanner.offset] },
+            '=', '>', ',', ';' => .{ .mo = scanner.source[start..scanner.offset] },
             '+' => .{ .mo_sign = scanner.source[start..scanner.offset] },
             // Convert ASCII hyphen-minus to a Unicode minus sign. We shouldn't need to:
             // "MathML renderers should treat U+002D HYPHEN-MINUS as equivalent to U+2212 MINUS SIGN
             // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
             '-' => .{ .mo_sign = "−" },
+            '!' => .{ .mo_postfix = scanner.source[start..scanner.offset] },
             '.', '/' => .{ .mo_closed = scanner.source[start..scanner.offset] },
             ':' => .colon_rel,
             '<' => .{ .mo = "&lt;" },
@@ -539,8 +543,10 @@ fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = (token == .mo_sign or (token == .mo and token.mo[0] != '!')) or
-        token == .@"&" or token == .@"\\";
+    self.next_is_prefix = switch (token) {
+        .mo_sign, .mo, .mo_closed, .mo_closed_prefix, .mo_left, .mo_sym_left, .@"&", .@"\\" => true,
+        else => false,
+    };
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -548,12 +554,11 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     };
     const original_stack_len = self.stack.len();
     if (scanner.peek()) |char| switch (char) {
-        '_' => try if (token == .mo and std.mem.eql(u8, token.mo, "∑"))
-            self.stack.append(writer, .{ .munderover, .munderover_arg })
-        else if (token == .mi and std.mem.eql(u8, token.mi, "lim"))
-            self.stack.append(writer, .{.munder})
-        else
-            self.stack.push(writer, .msub),
+        '_' => try switch (token) {
+            .mo_underover => self.stack.append(writer, .{ .munderover, .munderover_arg }),
+            .mi_under => self.stack.push(writer, .munder),
+            else => self.stack.push(writer, .msub),
+        },
         '^' => if (self.top() != .munderover_arg) try self.stack.push(writer, .msup),
         else => {},
     };
@@ -570,9 +575,9 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mtext_content => |text| return writer.writeAll(text),
         .mtext_end => try self.stack.popTag(writer, .mtext),
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
-        .mi => |text| try writer.print("<mi>{s}</mi>", .{text}),
+        .mi, .mi_under => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo, .mo_sign, .mo_closed, .mo_closed_prefix, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right => |text| {
+        .mo, .mo_sign, .mo_postfix, .mo_closed, .mo_closed_prefix, .mo_underover, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right => |text| {
             const left = token == .mo_left or token == .mo_sym_left;
             const right = token == .mo_right or token == .mo_sym_right;
             const delim = left or right;
@@ -724,7 +729,7 @@ test "Unicode symbols" {
         \\<mi>…</mi><mi>…</mi>
         \\<mi>∞</mi><mi>∞</mi>
         \\<mo>±</mo><mo form="prefix">±</mo>
-        \\<mo lspace="0" rspace="0">×</mo><mo>×</mo>
+        \\<mo lspace="0" rspace="0">×</mo><mo lspace="0" rspace="0">×</mo>
         \\<mo>≠</mo><mo>≠</mo>
         \\<mo>≤</mo><mo>≤</mo>
         \\<mo>≥</mo><mo>≥</mo>
@@ -774,6 +779,14 @@ test "tuple of operators" {
     ,
         .{},
     );
+}
+
+test "factorial spacing" {
+    try expect("<math><mi>x</mi><mo>!</mo><mo>+</mo><mi>y</mi></math>", "x!+y", .{});
+    try expect(
+        \\<math><mi>x</mi><mo>!</mo><mo>+</mo><mo stretchy="false">(</mo>
+        \\<mo form="prefix">−</mo><mi>y</mi><mo stretchy="false">)</mo></math>
+    , "x!+(\n-y)", .{});
 }
 
 test "sqrt" {
