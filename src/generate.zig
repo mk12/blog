@@ -275,6 +275,27 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
     try buffer.flush();
 }
 
+fn generatePost(allocator: Allocator, ctx: FileContext, post: Post, neighbors: Neighbors) !void {
+    var dir = try ctx.dirs.@"/post".makeOpenPath(post.slug, .{});
+    defer dir.close();
+    var file = try dir.createFile("index.html", .{});
+    defer file.close();
+    const url_builder = UrlBuilder{ .allocator = allocator, .base = ctx.base_url.relative, .post_slug = post.slug };
+    const variables = try Value.init(allocator, .{
+        .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+        .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
+        .date = status(post.meta.status, .long),
+        .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true }),
+        .newer = try if (neighbors.newer) |newer| url_builder.post(newer.slug) else url_builder.fmt("/", .{}),
+        .older = try if (neighbors.older) |older| url_builder.post(older.slug) else url_builder.fmt("/post/", .{}),
+    });
+    var scope = ctx.scope.initChild(variables);
+    var hooks = MarkdownHooks{ .url_builder = url_builder, .resolver = ctx.resolver };
+    var buffer = std.io.bufferedWriter(file.writer());
+    try ctx.templates.@"post.html".execute(allocator, ctx.reporter, buffer.writer(), &hooks, &scope);
+    try buffer.flush();
+}
+
 const num_recent = 10;
 const Summary = struct { date: Value, title: Value, href: []const u8, excerpt: Value };
 
@@ -398,27 +419,6 @@ const Neighbors = struct {
         };
     }
 };
-
-fn generatePost(allocator: Allocator, ctx: FileContext, post: Post, neighbors: Neighbors) !void {
-    var dir = try ctx.dirs.@"/post".makeOpenPath(post.slug, .{});
-    defer dir.close();
-    var file = try dir.createFile("index.html", .{});
-    defer file.close();
-    const url_builder = UrlBuilder{ .allocator = allocator, .base = ctx.base_url.relative, .post_slug = post.slug };
-    const variables = try Value.init(allocator, .{
-        .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
-        .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
-        .date = status(post.meta.status, .long),
-        .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true }),
-        .newer = try if (neighbors.newer) |newer| url_builder.post(newer.slug) else url_builder.fmt("/", .{}),
-        .older = try if (neighbors.older) |older| url_builder.post(older.slug) else url_builder.fmt("/post/", .{}),
-    });
-    var scope = ctx.scope.initChild(variables);
-    var hooks = MarkdownHooks{ .url_builder = url_builder, .resolver = ctx.resolver };
-    var buffer = std.io.bufferedWriter(file.writer());
-    try ctx.templates.@"post.html".execute(allocator, ctx.reporter, buffer.writer(), &hooks, &scope);
-    try buffer.flush();
-}
 
 fn status(s: Status, style: Date.Style) Value {
     return switch (s) {
