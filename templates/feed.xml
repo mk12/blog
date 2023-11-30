@@ -5,18 +5,19 @@
     <link>{{ base_url }}/</link>
     <language>en-us</language>
     <lastBuildDate>{{ last_build_date }}</lastBuildDate>
-    <atom:link href="{{ base_url }}/index.xml" rel="self" type="application/rss+xml" />
-    {{ range posts }}
+    <atom:link href="{{ base_url }}/index.xml" rel="self" type="application/rss+xml"/>
+    {{ range items }}
     <item>
+      <guid>{{ url }}</guid>
+      <link>{{ url }}</link>
+      <pubDate>{{ if date }}{{ . }}{{ else }}{{ last_build_date }}{{ end }}</pubDate>
       <title>{{ title }}</title>
-      {{ if url }}
-      <guid>{{ . }}</guid>
-      <link>{{ . }}</link>
-      {{ end }}
-      {{ if date }}
-      <pubDate>{{ . }}</pubDate>
-      {{ end }}
-      <description><![CDATA[{{ subtitle }}]]></description>
+      <description>
+<![CDATA[
+<p><i>{{ subtitle }}</i></p>
+{{ content }}
+]]>
+      </description>
     </item>
     {{ end }}
   </channel>

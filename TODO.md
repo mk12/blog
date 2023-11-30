@@ -13,6 +13,9 @@
 - remove TypeScript implementation
 - upload new website
 - consider not quoting attributes
+- complete RSS feed
+    - make SVGs visible in dark mode
+    - avoid relying on CSS e.g. fonts
 + math: more UTF-8 (e.g. `\ne`)
 + generate.zig url generation stuff
     + full https://... links in XML

@@ -237,7 +237,7 @@ const Tokenizer = struct {
             '+' => .{ .mo_sign = scanner.source[start..scanner.offset] },
             // Convert ASCII hyphen-minus to a Unicode minus sign. We shouldn't need to:
             // "MathML renderers should treat U+002D HYPHEN-MINUS as equivalent to U+2212 MINUS SIGN
-            // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
+            // in formula contexts such as `mo`" (https://www.w3.org/TR/MathML/chapter7.html).
             // But Chrome doesn't seem to respect this.
             '-' => .{ .mo_sign = "−" },
             '!' => .{ .mo_postfix = scanner.source[start..scanner.offset] },

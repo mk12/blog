@@ -5,15 +5,16 @@ import { extname, join } from "path";
 
 async function main() {
   const server = startServer();
-  console.log(`listening on ${server.rootUrl}`);
+  console.log(`listening on ${server.baseUrl}`);
+  const onChange = changeHandler(server.baseUrl);
   // Pretend main.zig changed so that we run zig build first.
-  await handleChange("src/main.zig");
+  await onChange("src/main.zig");
   server.reloadClients()
   const watcher = startWatcher();
   try {
     for await (const path of watcher.changes()) {
       console.log(`changed: ${path}`);
-      await handleChange(path);
+      await onChange(path);
       server.reloadClients();
     }
   } finally {
@@ -60,7 +61,7 @@ function startServer() {
     }
   });
   return {
-    rootUrl: `http://${server.hostname}:${server.port}`,
+    baseUrl: `http://${server.hostname}:${server.port}`,
     reloadClients: () => {
       for (const ws of sockets) ws.close();
       sockets.clear();
@@ -105,23 +106,25 @@ function startWatcher() {
   }
 }
 
-async function handleChange(path: string) {
-  if (path.endsWith(".zig")) {
-    const ok = await run("zig", "build");
-    if (!ok) return;
-  }
-  await run("./zig-out/bin/genblog", "-d", outDir);
+function changeHandler(baseUrl: string) {
+  return async function (path: string) {
+    if (path.endsWith(".zig")) {
+      const ok = await run(["zig", "build"]);
+      if (!ok) return;
+    }
+    await run(["./zig-out/bin/genblog", "-d", outDir], { BASE_URL: baseUrl });
+  };
 }
 
 let htmlStatus: string | null = null;
 function clearStatus() { htmlStatus = null; }
 function setStatus(html: string) { htmlStatus = `<body>${html}</body>`; }
 
-async function run(...args: [string, ...string[]]) {
+async function run(args: [string, ...string[]], env?: Record<string, string>) {
   const cmdline = args.join(" ");
   setStatus(`Command in progress: <code>${cmdline}</code>`);
   console.log(`running: ${cmdline}`);
-  const cmd = Bun.spawn(args, { stdout: "inherit", stderr: "pipe" });
+  const cmd = Bun.spawn(args, { stdout: "inherit", stderr: "pipe", env });
   if (await cmd.exited === 0) {
     clearStatus();
     return true;

@@ -251,7 +251,7 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
     const variables = switch (page) {
         .@"/index.html" => try Value.init(allocator, .{
             .title = "Mitchell Kember",
-            .posts = try recentPostSummaries(allocator, url_builder, posts),
+            .posts = try recentPostSummaries(url_builder, posts),
         }),
         .@"/post/index.html" => try Value.init(allocator, .{
             .title = "Post Archive", // TODO <title> should have my name
@@ -264,8 +264,8 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
         .@"/index.xml" => try Value.init(allocator, .{
             .title = "Mitchell Kember",
             .base_url = ctx.base_url.absolute,
-            .posts = .{}, // TODO
             .last_build_date = date(Date.fromTimestamp(std.time.timestamp()), .rfc822),
+            .items = try allFeedItems(allocator, url_builder, posts),
         }),
     };
     var scope = ctx.scope.initChild(variables);
@@ -278,8 +278,7 @@ fn generatePage(allocator: Allocator, ctx: FileContext, posts: []const Post, pag
 const num_recent = 10;
 const Summary = struct { date: Value, title: Value, href: []const u8, excerpt: Value };
 
-fn recentPostSummaries(allocator: Allocator, url_builder: UrlBuilder, posts: []const Post) ![num_recent]Summary {
-    _ = allocator;
+fn recentPostSummaries(url_builder: UrlBuilder, posts: []const Post) ![num_recent]Summary {
     var summaries: [num_recent]Summary = undefined;
     for (0..num_recent) |i| {
         const post = posts[i];
@@ -300,8 +299,7 @@ const Entry = struct {
     title: Value,
     href: []const u8,
 
-    fn init(allocator: Allocator, post: Post, url_builder: UrlBuilder) !Entry {
-        _ = allocator;
+    fn init(post: Post, url_builder: UrlBuilder) !Entry {
         return Entry{
             .date = status(post.meta.status, .short),
             .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
@@ -324,7 +322,7 @@ fn groupPostsByYear(allocator: Allocator, url_builder: UrlBuilder, posts: []cons
         };
         try flushYearGroup(allocator, &groups, year, &entries, post_year);
         year = post_year;
-        try entries.append(try Entry.init(allocator, post, url_builder));
+        try entries.append(try Entry.init(post, url_builder));
     }
     try flushYearGroup(allocator, &groups, year, &entries, unset_year);
     return groups.items;
@@ -349,7 +347,7 @@ fn groupPostsByCategory(allocator: Allocator, url_builder: UrlBuilder, posts: []
             try categories.append(post.meta.category);
             result.value_ptr.* = .{};
         }
-        try result.value_ptr.append(allocator, try Entry.init(allocator, post, url_builder));
+        try result.value_ptr.append(allocator, try Entry.init(post, url_builder));
     }
     mem.sort([]const u8, categories.items, {}, cmpStringsAscending);
     var groups = try std.ArrayList(Group).initCapacity(allocator, categories.items.len);
@@ -362,6 +360,31 @@ fn groupPostsByCategory(allocator: Allocator, url_builder: UrlBuilder, posts: []
 
 fn cmpStringsAscending(_: void, lhs: []const u8, rhs: []const u8) bool {
     return mem.order(u8, lhs, rhs) == .lt;
+}
+
+const FeedItem = struct {
+    url: []const u8,
+    date: Value,
+    title: Value,
+    subtitle: Value,
+    content: Value,
+};
+
+fn allFeedItems(allocator: Allocator, url_builder: UrlBuilder, posts: []const Post) ![]FeedItem {
+    const items = try allocator.alloc(FeedItem, posts.len);
+    for (posts, items) |post, *item| {
+        item.* = FeedItem{
+            .url = try url_builder.post(post.slug),
+            .date = switch (post.meta.status) {
+                .draft => Value.null,
+                .published => |d| date(d, .rfc822),
+            },
+            .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
+            .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
+            .content = markdown(post.body, post.context, .{}),
+        };
+    }
+    return items;
 }
 
 const Neighbors = struct {
