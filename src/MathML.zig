@@ -21,7 +21,6 @@ next_is_stretchy: bool = false,
 
 pub const Options = struct { block: bool = false };
 
-// TODO reorder/reorganize these
 const Token = union(enum) {
     // Special
     eof,
@@ -34,6 +33,7 @@ const Token = union(enum) {
     mtext_start,
     mtext_content: []const u8,
     mtext_end,
+    mspace: []const u8,
     mn: []const u8,
     mi: []const u8,
     mi_normal: []const u8,
@@ -48,7 +48,6 @@ const Token = union(enum) {
     mo_right: []const u8,
     mo_sym_left: []const u8,
     mo_sym_right: []const u8,
-    mspace: []const u8,
     // Other
     @"{",
     @"}",
@@ -408,8 +407,8 @@ test "scan quadratic formula" {
     );
 }
 
-// TODO reorder/reorganize these
 const Tag = union(enum) {
+    // MathML tags
     math,
     mrow,
     mrow_elide,
@@ -424,7 +423,7 @@ const Tag = union(enum) {
     mover,
     munderover,
     munderover_arg,
-
+    // Other
     accent: Accent,
     environment: Environment,
     boxed,
@@ -574,6 +573,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mtext_start => return self.stack.push(writer, .mtext),
         .mtext_content => |text| return writer.writeAll(text),
         .mtext_end => try self.stack.popTag(writer, .mtext),
+        .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi, .mi_under => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
@@ -594,7 +594,6 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         },
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
-        .mspace => |width| try writer.print("<mspace width=\"{s}\"/>", .{width}),
         .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
         .begin => |environment| try self.stack.push(writer, .{ .environment = environment }),
         .end => |environment| switch (self.top()) {
