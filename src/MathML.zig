@@ -492,12 +492,10 @@ fn top(self: MathML) Tag {
 }
 
 fn inUnderOrOver(self: MathML) bool {
-    const len = self.stack.len();
-    if (len < 2) return false;
-    return switch (self.stack.get(len - 2)) {
-        .munder, .munderover_arg => true,
-        else => false,
-    };
+    return self.top() == .mrow and for (self.stack.items.slice()) |tag| switch (tag) {
+        .munder, .munderover, .munderover_arg => break true,
+        else => {},
+    } else false;
 }
 
 pub fn delimiter(self: MathML) []const u8 {
@@ -541,7 +539,8 @@ fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
 fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
-    self.next_is_prefix = (token == .mo_sign or (token == .mo and token.mo[0] != '!')) or token == .@"&" or token == .@"\\";
+    self.next_is_prefix = (token == .mo_sign or (token == .mo and token.mo[0] != '!')) or
+        token == .@"&" or token == .@"\\";
     self.next_is_stretchy = token == .stretchy;
     if (token == .@"}") switch (self.top()) {
         .mrow, .mrow_elide => try self.stack.pop(writer),
@@ -583,7 +582,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             if (!stretchy and delim) try writer.writeAll(" stretchy=\"false\"");
             if (token == .mo_sym_left or (prefix and token == .mo_sign)) try writer.writeAll(" form=\"prefix\"");
             if (token == .mo_sym_right) try writer.writeAll(" form=\"postfix\"");
-            if (token == .mo_closed or (prefix and token == .mo_closed_prefix) or (!delim and token != .mo_sign and self.inUnderOrOver()))
+            if (token == .mo_closed or (prefix and token == .mo_closed_prefix) or (!delim and self.inUnderOrOver()))
                 try writer.writeAll(" lspace=\"0\" rspace=\"0\"");
             try writer.print(">{s}</mo>", .{text});
             if (stretchy and right) try self.stack.popTag(writer, .mrow);
@@ -873,17 +872,16 @@ test "summation equation" {
     );
 }
 
-// TODO not right
 test "underover with expression" {
     try expect(
-        \\<math><munderover><mo>∑</mo>
-        \\<mrow><mi>a</mi><mo>+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
+        \\<math display="block"><munderover><mo>∑</mo>
+        \\<mrow><mi>a</mi><mo lspace="0" rspace="0">+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
         \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow>
-        \\<mrow><mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo>
-        \\<mi>c</mi><mo>×</mo><mi>d</mi></mrow></munderover></math>
+        \\<mrow><mi>a</mi><mo lspace="0" rspace="0">+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
+        \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow></munderover></math>
     ,
         "\\sum_ \n {a+b = \n c\\times d} ^ \n {a+b = \n c\\times d}",
-        .{},
+        .{ .block = true },
     );
 }
 
