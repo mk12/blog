@@ -11,8 +11,13 @@
 - consider fallible Markdown tokenizer for stricter checks
 - consider var for single character math element
 - remove TypeScript implementation
+- run vnu? (I run it in mitchellkember.com repo)
+- reconsider `<section>` tags in categories
 - upload new website
 - consider not quoting attributes
+- figure out FONT_URL
+    - probably removing webfonts in the redesign
+    - but for now, FONT_URL seems unused? Now that css uses /fonts/
 - complete RSS feed
     - make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
