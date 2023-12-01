@@ -26,23 +26,32 @@ const outDir = "./public";
 
 function startServer() {
   const sockets: Set<ServerWebSocket> = new Set();
+  const pending: Map<number, "ok" | "reload"> = new Map();
+  let nextClientId = 0;
   const server = Bun.serve<undefined>({
     async fetch(request, server) {
+      const url = new URL(request.url);
       if (request.headers.get("upgrade") === "websocket") {
-        if (!server.upgrade(request)) return new Response("Upgrade failed", { status: 400 });
+        const id = parseInt(url.searchParams.get("id") ?? "");
+        if (!server.upgrade(request, { data: { id } }))
+          return new Response("Upgrade failed", { status: 400 });
         return new Response();
       }
-      let path = new URL(request.url).pathname;
+      const path = url.pathname;
       console.log(`handling: ${request.method} ${path}`);
       let target = path;
       if (extname(path) === "") target += "/index.html";
       else if (path.endsWith("/")) target += "index.html";
       const root = path.startsWith("/fonts/") ? "." : outDir;
       const file = Bun.file(join(root, target));
-      if (target.endsWith(".html")) return new Response(
-        injectLiveReloadScript(htmlStatus ?? await file.text()),
-        { headers: { "Content-Type": "text/html" } }
-      );
+      if (target.endsWith(".html")) {
+        const id = nextClientId++;
+        pending.set(id, "ok");
+        return new Response(
+          injectLiveReloadScript(htmlStatus ?? await file.text(), id),
+          { headers: { "Content-Type": "text/html" } }
+        );
+      }
       return new Response(file);
     },
     error(error: any) {
@@ -51,7 +60,14 @@ function startServer() {
     websocket: {
       open(ws) {
         console.log("websocket: opened");
-        sockets.add(ws);
+        const id = (ws.data as any).id;
+        const status = pending.get(id);
+        if (status === undefined) {
+          console.error(`got websocket connection for unexpected client id: ${id}`);
+          return;
+        }
+        pending.delete(id);
+        if (status === "reload") ws.close(); else sockets.add(ws);
       },
       message() { },
       close(ws) {
@@ -63,16 +79,17 @@ function startServer() {
   return {
     baseUrl: `http://${server.hostname}:${server.port}`,
     reloadClients: () => {
+      for (const id of pending.keys()) pending.set(id, "reload");
       for (const ws of sockets) ws.close();
       sockets.clear();
     },
   };
 }
 
-function injectLiveReloadScript(html: string): string {
+function injectLiveReloadScript(html: string, id: number): string {
   return html.replace("</body>", `
 <script>
-const socket = new WebSocket("ws://" + location.host);
+const socket = new WebSocket("ws://" + location.host + "?id=${id}");
 socket.addEventListener("close", () => location.reload());
 </script>
 </body>
