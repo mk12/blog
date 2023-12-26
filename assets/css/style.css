@@ -11,6 +11,29 @@ article, figure, figcaption, nav, section, summary {
   padding: 0
 }
 
+/* Colors */
+
+:root {
+  color-scheme: light dark;
+  --bg: #fff;
+  --block: #f6f6f6;
+  --border: #ccc;
+  --subtle-1: #999;
+  --subtle-2: #888;
+  --active: #b00;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #202020;
+        --block: #2e2e2e;
+        --border: #666;
+        --subtle-1: #999;
+        --subtle-2: #888;
+        --active: #e26969;
+    }
+}
+
 /* Fonts */
 
 @font-face {
@@ -66,6 +89,7 @@ article, figure, figcaption, nav, section, summary {
 
 body {
   font: 24px/1.4 'Equity B', Georgia, serif;
+  background: var(--bg);
   padding: 0 10px;
   max-width: 720px;
   margin: 0 auto;
@@ -74,13 +98,13 @@ body {
 
 a {
   text-decoration: none;
-  color: #000;
-  border-bottom: 1px dotted #999;
+  color: currentColor;
+  border-bottom: 1px dotted var(--subtle-1);
 }
 
 a:hover, a:active {
-  color: #b00;
-  border-bottom: 1px solid #b00;
+  color: var(--active);
+  border-bottom: 1px solid currentColor;
 }
 
 p { margin-bottom: 1.2em; }
@@ -89,24 +113,9 @@ em { font-style: italic; }
 
 math[display="block"] { margin-bottom: 1.2em; }
 
-/* @font-face {
-  font-family: "Latin Modern Math";
-  src: url('/latinmodern-math.otf') format('opentype');
-} */
-
-/* math {
-  font-family: local("Latin Modern Math");
-  font-weight: 600;
-} */
-
-/* KaTeX CSS uses 1.21em, which is too big beside 1em Equity Text. */
-/* .katex {
-  font-size: 1.08em;
-} */
-
 blockquote {
   font-family: 'Concourse 3';
-  background-color: #f6f6f6;
+  background-color: var(--block);
   margin-bottom: 1.2em;
   padding: 0.75em 1em;
 }
@@ -172,7 +181,7 @@ table {
 }
 
 tr {
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--border);
 }
 
 td, th {
@@ -187,7 +196,7 @@ th {
 
 hr {
   border: 0;
-  border-bottom: 3px double #ccc;
+  border-bottom: 3px double var(--border);
   margin: 2em auto;
 }
 
@@ -198,13 +207,13 @@ hr {
 }
 
 header .page-nav {
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 60px;
   margin-top: 0px;
 }
 
 footer .page-nav {
-  border-top: 1px solid #ccc;
+  border-top: 1px solid var(--border);
   margin-top: 50px;
 }
 
@@ -222,12 +231,12 @@ footer .page-nav {
   display: block;
   padding: 10px 20px 0;
   height: 50px;
-  color: #999;
+  color: var(--subtle-1);
   border-bottom: none;
 }
 
 .page-nav a:hover {
-  color: #000;
+  color: currentColor;
 }
 
 .nav-newer { float: left; }
@@ -235,11 +244,11 @@ footer .page-nav {
 .nav-newer a { padding-left: 10px; }
 .nav-older a { padding-right: 10px; }
 
-.nav-home, .nav-toc { border-left: 1px solid #ccc; }
-.nav-toc { border-right: 1px solid #ccc; }
+.nav-home, .nav-toc { border-left: 1px solid var(--border); }
+.nav-toc { border-right: 1px solid var(--border); }
 
 .copyright {
-  border-top: 1px solid #ccc;
+  border-top: 1px solid var(--border);
   text-align: center;
   font-family: 'Equity B Caps', Georgia, serif;
   text-transform: lowercase;
@@ -254,8 +263,8 @@ footer .page-nav {
 /* Blog-specific (originally equanimity.css) */
 
 .no-ul, .no-ul:hover { border: none; }
-.subtle { color: #888; }
-.subtle:hover { color: #b00; }
+.subtle { color: var(--subtle-2); }
+.subtle:hover { color: var(--active); }
 
 code {
   font: 22px 'Source Code Pro', 'Courier New', monospace;
@@ -282,7 +291,7 @@ code {
 
 .post-description {
   font: 28px 'Concourse 3', Helvetica, Arial, sans-serif; 
-  color: #888;
+  color: var(--subtle-2);
   margin: 0 0 30px;
 }
 
@@ -293,7 +302,7 @@ h2 {
 
 .post-meta {
   font: 20px 'Equity B', Helvetica, Arial, sans-serif;
-  color: #888;
+  color: var(--subtle-2);
 }
 
 .read-more-link {
@@ -356,14 +365,9 @@ li.post-li {
   font-size: 20px;
 }
 
-/* TODO: remove */
-.footnotes p {
-  margin: 0;
-}
-
 pre {
   margin: 28.8px -70px; /* 1.2 * 24px = 28.8px */
-  background-color: #f6f6f6;
+  background-color: var(--block);
   padding: 0.75em 1em;
   line-height: 16px;
   font: 17px 'Source Code Pro', 'Courier New', monospace;
@@ -377,7 +381,7 @@ pre code {
   pre {
     margin-left: 0;
     margin-right: 0;
-    background: #fff;
+    background: var(--bg);
   }
 }
 
@@ -392,7 +396,7 @@ pre code {
   /* Note: The ".page-nav" is necessary otherwise this has lower specificity
   than the ".page-nav li" rule. */
   .page-nav .nav-home { display: none; }
-  .page-nav .nav-toc { border-left: 1px solid #ccc; }
+  .page-nav .nav-toc { border-left: 1px solid var(--border); }
 }
 
 /* Code highlighting */
@@ -403,26 +407,10 @@ pre code {
 .ca { color: #0060d5; }
 .cb { color: #986801; }
 
-/*
-.op, .er { font-weight: bold; }  operators (assertion arrows), errors 
-.cs { font-style: italic; }      console output 
-
-.kw { color: #a626a4; }        keywords (special forms) 
-.fu { color: #0060d5; }        functions 
-.cn { color: #307a06; }        constants 
-.at, .er { color: #c0392b; }   attention (comments, escapes), errors 
-.qu { color: #986801; }        quoted 
-.cs { color: #6d6d6d; }        console output 
-.op { color: #888; }           operators (assertion arrows) 
-*/
-
-/* 
 @media (prefers-color-scheme: dark) {
     .kw { color: #c678dd; }
-    .fu { color: #61afef; }
     .cn { color: #98c379; }
-    .at, .er { color: #e7727b; }
-    .qu { color: #e5c07b; }
-    .cs { color: #959595; }
-    .op { color: #888; }
-} */
+    .co { color: #e7727b; }
+    .ca { color: #61afef; }
+    .cb { color: #e5c07b; }
+}

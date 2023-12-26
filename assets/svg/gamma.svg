@@ -1,5 +1,5 @@
-<svg viewBox="0 0 720 345" style="font-family:'Concourse 3';font-size:30px">
-<g fill="none" stroke="#000" stroke-width="2">
+<svg viewBox="0 0 720 345" style="font-family:'Concourse 3';font-size:30px" fill="currentColor">
+<g fill="none" stroke="currentColor" stroke-width="2">
 <path d="M44.5 304s.32-88.012 79.5-160C194.802 79.628 344.5 4 344.5 4M411.906 304s88.012-.32 160-79.5c64.372-70.802 140-220.5 140-220.5" stroke="#c20"/>
 <path d="M44.5 3v300h300M411.906 3v300h300"/>
 <path d="m44.5 304 300-300M411.906 304l300-300" stroke-dasharray="4,2,0,0"/>

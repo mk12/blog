@@ -9,7 +9,7 @@
 <text x="292" y="296.85">B</text>
 <text x="478.5" y="134.85">C</text>
 </g>
-<path fill="none" stroke="#000" stroke-width="2" d="M6 354.03L557 3.034m-9.62.754l10.69-1.656-4.29 9.292"/>
+<path fill="none" stroke="currentColor" stroke-width="2" d="M6 354.03L557 3.034m-9.62.754l10.69-1.656-4.29 9.292"/>
 <g fill="#c20">
 <circle cx="253" cy="197" r="5"/>
 <circle cx="396" cy="106" r="5"/>

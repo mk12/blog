@@ -1,4 +1,4 @@
-<svg viewBox="0 0 535 280" style="font-family:'Concourse 3';font-size:30">
+<svg viewBox="0 0 535 280" style="font-family:'Concourse 3';font-size:30" fill="currentColor">
 <path d="M0 159h535M0 99h535m0-60H0m0 180h535M104 0v280M319 0v280M211 0v280M426 0v280" fill="none" stroke-width="2" stroke="#ccc"/>
 <g style="font-size:25;font-weight:600">
 <text x="33" y="75.425">nice</text>

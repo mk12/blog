@@ -17,8 +17,8 @@
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
-- complete RSS feed
-    - make SVGs visible in dark mode
++ complete RSS feed
+    + make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
 - avoid showing build status page, loses scroll position
 + in index.xml, render links to other article in summaries with full URL
