@@ -8,7 +8,7 @@ I host it at https://mitchellkember.com/blog.
 
 Run `make` to build the site.
 
-Run `make serve` to serve it locally.
+Run `make serve` for a live-reloading local server.
 
 ## Fonts
 

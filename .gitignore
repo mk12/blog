@@ -1,9 +1,5 @@
 /public
+# TODO remove
 /fonts
-/build
 zig-cache
 zig-out
-# TODO update this stuff
-node_modules
-*.sock
-*.fifo

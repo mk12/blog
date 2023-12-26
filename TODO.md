@@ -4,12 +4,11 @@
 - consistent way of inserting edits/later comments in posts
 - first year OCD note
 - render footnotes as sidenotes (?)
-- dark mode (including SVGs)
+- full dark mode (SVG palettes, including in RSS)
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
 - consider var for single character math element
-- remove TypeScript implementation
 - run vnu? (I run it in mitchellkember.com repo)
 - reconsider `<section>` tags in categories
 - upload new website
@@ -20,6 +19,7 @@
 + complete RSS feed
     + make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
++ remove TypeScript implementation
 + avoid showing build status page, loses scroll position
 + in index.xml, render links to other article in summaries with full URL
 + math: more UTF-8 (e.g. `\ne`)

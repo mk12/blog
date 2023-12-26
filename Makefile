@@ -29,21 +29,16 @@ export DESTDIR ?= $(default_destdir)
 export FONT_URL ?= $(default_font_url)
 export PORT ?= $(default_port)
 
-bin := zig-out/bin/genblog
-
 .SUFFIXES:
 
-all: $(bin)
-	$^ $(DESTDIR)
+all:
+	env -u DESTDIR zig build run -- $(DESTDIR)
 
 help:
 	$(info $(usage))
 	@:
 
 check: all fmt validate
-
-$(bin): build.zig $(wildcard src/*.zig)
-	env -u DESTDIR zig build
 
 serve:
 	bun run serve.ts
