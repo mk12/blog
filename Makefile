@@ -43,7 +43,7 @@ help:
 check: all fmt validate
 
 $(bin): build.zig $(wildcard src/*.zig)
-	zig build
+	env -u DESTDIR zig build
 
 serve:
 	bun run serve.ts
