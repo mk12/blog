@@ -116,13 +116,13 @@ fn parseEnvironment() Environment {
 
 fn readPosts(allocator: Allocator, reporter: *Reporter, include_drafts: bool) ![]const Post {
     var posts = std.ArrayList(Post).init(allocator);
-    var iterable = try fs.cwd().openIterableDir(constants.post_dir, .{});
-    defer iterable.close();
-    var iter = iterable.iterate();
+    var dir = try fs.cwd().openDir(constants.post_dir, .{});
+    defer dir.close();
+    var iter = dir.iterate();
     while (try iter.next()) |entry| {
         if (entry.name[0] == '.') continue;
         var scanner = Scanner{
-            .source = try iterable.dir.readFileAlloc(allocator, entry.name, constants.max_file_size),
+            .source = try dir.readFileAlloc(allocator, entry.name, constants.max_file_size),
             .filename = try fs.path.join(allocator, &.{ constants.post_dir, entry.name }),
             .reporter = reporter,
         };
@@ -140,10 +140,10 @@ fn cmpPostsReverseChronological(_: void, lhs: Post, rhs: Post) bool {
 
 fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(Template) {
     var templates = std.StringHashMap(Template).init(allocator);
-    var iterable = try fs.cwd().openIterableDir(constants.template_dir, .{});
-    defer iterable.close();
+    var dir = try fs.cwd().openDir(constants.template_dir, .{});
+    defer dir.close();
     {
-        var iter = iterable.iterate();
+        var iter = dir.iterate();
         while (try iter.next()) |entry| {
             if (entry.name[0] == '.') continue;
             const key = try allocator.dupe(u8, entry.name);
@@ -154,7 +154,7 @@ fn readTemplates(allocator: Allocator, reporter: *Reporter) !std.StringHashMap(T
     while (iter.next()) |entry| {
         const name = entry.key_ptr.*;
         var scanner = Scanner{
-            .source = try iterable.dir.readFileAlloc(allocator, name, constants.max_file_size),
+            .source = try dir.readFileAlloc(allocator, name, constants.max_file_size),
             .filename = try fs.path.join(allocator, &.{ constants.template_dir, name }),
             .reporter = reporter,
         };

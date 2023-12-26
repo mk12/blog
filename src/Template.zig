@@ -448,22 +448,21 @@ pub const Value = union(enum) {
             bool => return .{ .bool = object },
             else => {},
         }
-        if (comptime std.meta.trait.isZigString(Type))
-            return .{ .string = object };
-        if (comptime std.meta.trait.isTuple(Type)) {
-            var array = std.ArrayListUnmanaged(Value){};
-            inline for (object) |item| try array.append(allocator, try init(allocator, item));
-            return .{ .array = array };
-        }
-        if (comptime std.meta.trait.isIndexable(Type)) {
-            var array = std.ArrayListUnmanaged(Value){};
-            for (object) |item| try array.append(allocator, try init(allocator, item));
-            return .{ .array = array };
-        }
         switch (@typeInfo(Type)) {
-            .Struct => |the_struct| {
+            .Array => |array_type| return initArray(allocator, object, array_type.child),
+            .Pointer => |pointer_type| return if (pointer_type.size == .Slice)
+                initArray(allocator, object, pointer_type.child)
+            else switch (@typeInfo(pointer_type.child)) {
+                .Array => |array_type| initArray(allocator, object, array_type.child),
+                else => @compileError("invalid pointer type: " ++ @typeName(Type)),
+            },
+            .Struct => |struct_type| if (struct_type.is_tuple) {
+                var array = std.ArrayListUnmanaged(Value){};
+                inline for (object) |item| try array.append(allocator, try init(allocator, item));
+                return .{ .array = array };
+            } else {
                 var dict = std.StringHashMapUnmanaged(Value){};
-                inline for (the_struct.fields) |field| {
+                inline for (struct_type.fields) |field| {
                     const field_value = try init(allocator, @field(object, field.name));
                     try dict.put(allocator, field.name, field_value);
                 }
@@ -471,6 +470,13 @@ pub const Value = union(enum) {
             },
             else => @compileError("invalid type: " ++ @typeName(Type)),
         }
+    }
+
+    fn initArray(allocator: Allocator, object: anytype, comptime ItemType: type) !Value {
+        if (ItemType == u8) return .{ .string = object };
+        var array = std.ArrayListUnmanaged(Value){};
+        for (object) |item| try array.append(allocator, try init(allocator, item));
+        return .{ .array = array };
     }
 };
 
