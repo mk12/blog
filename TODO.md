@@ -5,7 +5,6 @@
 - first year OCD note
 - render footnotes as sidenotes (?)
 - dark mode (including SVGs)
-- in index.xml, render links to other article in summaries with full URL
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
@@ -21,6 +20,8 @@
 - complete RSS feed
     - make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
+- avoid showing build status page, loses scroll position
++ in index.xml, render links to other article in summaries with full URL
 + math: more UTF-8 (e.g. `\ne`)
 + generate.zig url generation stuff
     + full https://... links in XML

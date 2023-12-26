@@ -1,1 +1,11 @@
-<svg viewBox="0 0 720 345" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-miterlimit:1.41421"><path d="M44.5 304s.32-88.012 79.5-160C194.802 79.628 344.5 4 344.5 4M411.906 304s88.012-.32 160-79.5c64.372-70.802 140-220.5 140-220.5" style="fill:none;stroke-width:2px;stroke:#c20"/><path d="M44.5 3v300h300M411.906 3v300h300" style="fill:none;stroke-width:2px;stroke:#000"/><path d="m44.5 304 300-300M411.906 304l300-300" style="fill:none;stroke-width:2px;stroke-dasharray:4,2,0,0;stroke:#000"/><text x="97" y="334.26" style="font-family:'Concourse 3';font-size:30px;font-weight:300;fill:#000">ac<tspan x="122.8px 132.1px" y="334.26px 334.26px">tu</tspan>al luminance</text><text x="486.156" y="334.26" style="font-family:'Concourse 3';font-size:30px;font-weight:300;fill:#000">input v<tspan x="565.356px 580.056px 586.956px 595.956px 609.456px" y="334.26px 334.26px 334.26px 334.26px 334.26px">oltag</tspan>e</text><text x="-159.196" y="978.602" style="font-family:'Concourse 3';font-size:30px;font-weight:300;fill:#000" transform="rotate(-90 -419.994 531.848)">per<tspan x="-121.696px -109.696px" y="978.602px 978.602px">ce</tspan>iv<tspan x="-76.3958px -62.8958px" y="978.602px 978.602px">ed</tspan> luminance</text><text x="208.21" y="961.502" style="font-family:'Concourse 3';font-size:30px;font-weight:300;fill:#000" transform="rotate(-90 -52.588 514.748)">output luminance</text></svg>
+<svg viewBox="0 0 720 345" style="font-family:'Concourse 3';font-size:30px">
+<g fill="none" stroke="#000" stroke-width="2">
+<path d="M44.5 304s.32-88.012 79.5-160C194.802 79.628 344.5 4 344.5 4M411.906 304s88.012-.32 160-79.5c64.372-70.802 140-220.5 140-220.5" stroke="#c20"/>
+<path d="M44.5 3v300h300M411.906 3v300h300"/>
+<path d="m44.5 304 300-300M411.906 304l300-300" stroke-dasharray="4,2,0,0"/>
+</g>
+<text x="97" y="334.26">actual luminance</text>
+<text x="486.156" y="334.26">input voltage</text>
+<text x="-159.196" y="978.602" transform="rotate(-90 -419.994 531.848)">perceived luminance</text>
+<text x="208.21" y="961.502" transform="rotate(-90 -52.588 514.748)">output luminance</text>
+</svg>
