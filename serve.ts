@@ -90,7 +90,9 @@ function injectLiveReloadScript(html: string, id: number): string {
   return html.replace("</body>", `
 <script>
 const socket = new WebSocket("ws://" + location.host + "?id=${id}");
-socket.addEventListener("close", () => location.reload());
+const reload = () => location.reload();
+socket.addEventListener("close", reload);
+addEventListener("beforeunload", () => socket.removeEventListener("close", reload));
 </script>
 </body>
 `);
