@@ -6,7 +6,7 @@ I host it at https://mitchellkember.com/blog.
 
 ## Usage
 
-Run `make` to build the site.
+Run `make` to build the blog.
 
 Run `make serve` for a live-reloading local server.
 

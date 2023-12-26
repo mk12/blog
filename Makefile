@@ -25,14 +25,16 @@ default_destdir := public
 default_font_url := ../fonts
 default_port := 8080
 
-export DESTDIR ?= $(default_destdir)
+unexport DESTDIR
+DESTDIR ?= $(default_destdir)
+
 export FONT_URL ?= $(default_font_url)
 export PORT ?= $(default_port)
 
 .SUFFIXES:
 
 all:
-	env -u DESTDIR zig build run -- $(DESTDIR)
+	zig build run -- $(DESTDIR)
 
 help:
 	$(info $(usage))
