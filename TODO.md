@@ -20,7 +20,7 @@
 + complete RSS feed
     + make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
-- avoid showing build status page, loses scroll position
++ avoid showing build status page, loses scroll position
 + in index.xml, render links to other article in summaries with full URL
 + math: more UTF-8 (e.g. `\ne`)
 + generate.zig url generation stuff

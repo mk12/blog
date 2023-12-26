@@ -47,10 +47,10 @@ function startServer() {
       if (target.endsWith(".html")) {
         const id = nextClientId++;
         pending.set(id, "ok");
-        return new Response(
-          injectLiveReloadScript(htmlStatus ?? await file.text(), id),
-          { headers: { "Content-Type": "text/html" } }
-        );
+        let html = await file.text();
+        html = injectRunStatus(html);
+        html = injectLiveReloadScript(html, id);
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
       }
       return new Response(file);
     },
@@ -135,27 +135,36 @@ function changeHandler(baseUrl: string) {
   };
 }
 
-let htmlStatus: string | null = null;
-function clearStatus() { htmlStatus = null; }
-function setStatus(html: string) { htmlStatus = `<body>${html}</body>`; }
-
+let runStatus: string | null = null;
 async function run(args: [string, ...string[]], env?: Record<string, string>) {
   const cmdline = args.join(" ");
-  setStatus(`Command in progress: <code>${cmdline}</code>`);
+  runStatus = `<b>Command in progress:<b>\n\n${cmdline}`;
   console.log(`running: ${cmdline}`);
   const cmd = Bun.spawn(args, { stdout: "inherit", stderr: "pipe", env });
   if (await cmd.exited === 0) {
-    clearStatus();
+    runStatus = null;
     return true;
   }
   const stderr = await Bun.readableStreamToText(cmd.stderr as ReadableStream);
   console.error(`Command failed: ${cmdline}\n${stderr}`);
-  setStatus(`
-<h1>Command failed</h1>
-<p>Command: <code>${cmdline}</code></p>
-<pre>${stderr}</pre>`
-  );
+  runStatus = `<b>Command failed:</b>\n\n${cmdline}\n\n<b>stderr:</b>\n\n${stderr}`;
   return false;
+}
+
+const modalStyle = `
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: #fffd;
+  margin: 50px;
+  font: 18px monospace;
+`;
+
+function injectRunStatus(html: string): string {
+  if (runStatus === null) return html;
+  return html.replace("</body>", `<pre style="${modalStyle}">${runStatus}</pre></body>`);
 }
 
 const die = (msg: string): never => { throw Error(msg); }
