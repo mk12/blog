@@ -87,14 +87,13 @@ function startServer() {
 }
 
 function injectLiveReloadScript(html: string, id: number): string {
-  return html.replace("</body>", `
+  return injectBeforeCloseBody(html, `
 <script>
 const socket = new WebSocket("ws://" + location.host + "?id=${id}");
 const reload = () => location.reload();
 socket.addEventListener("close", reload);
 addEventListener("beforeunload", () => socket.removeEventListener("close", reload));
 </script>
-</body>
 `);
 }
 
@@ -151,22 +150,42 @@ async function run(args: [string, ...string[]], env?: Record<string, string>) {
   return false;
 }
 
-const modalStyle = `
+const modalDivStyle = `
   position: fixed;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
-  background: #fffd;
-  margin: 50px;
+  padding: 10px;
+  background: inherit;
+  opacity: 0.7;
+  pointer-events: none;
+`;
+
+const modalPreStyle = `
+  position: fixed;
+  left: 0;
+  top: 0;
   font: 18px monospace;
+  margin: 50px;
+  border: 2px solid currentColor;
+  padding: 10px;
+  background: inherit;
 `;
 
 function injectRunStatus(html: string): string {
   if (runStatus === null) return html;
-  return html.replace("</body>", `<pre style="${modalStyle}">${runStatus}</pre></body>`);
+  return injectBeforeCloseBody(html, `
+<div style="${modalDivStyle}"></div>
+<pre style="${modalPreStyle}">${runStatus}</pre>`);
 }
 
-const die = (msg: string): never => { throw Error(msg); }
+function injectBeforeCloseBody(html: string, inject: string) {
+  const index = html.indexOf("</body>");
+  if (index === -1) return `<html><body>${inject}</body></html>`;
+  return html.slice(0, index) + inject + html.slice(index);
+}
+
+function die(msg: string): never { throw Error(msg); }
 
 await main();
