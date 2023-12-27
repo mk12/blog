@@ -28,8 +28,8 @@ article, figure, figcaption, nav, section, summary {
         --bg: #202020;
         --block: #2e2e2e;
         --border: #666;
-        --subtle-1: #999;
-        --subtle-2: #888;
+        --subtle-1: #888;
+        --subtle-2: #999;
         --active: #e26969;
     }
 }
