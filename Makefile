@@ -25,8 +25,8 @@ default_destdir := public
 default_font_url := ../fonts
 default_port := 8080
 
-unexport DESTDIR
 DESTDIR ?= $(default_destdir)
+unexport DESTDIR
 
 export FONT_URL ?= $(default_font_url)
 export PORT ?= $(default_port)
