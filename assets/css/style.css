@@ -160,10 +160,6 @@ sub {
   top: 0.25em;
 }
 
-del {
-  text-decoration: line-through;
-}
-
 ul, ol, dl { margin-bottom: 1.2em; }
 
 ul > li {
@@ -253,6 +249,7 @@ footer .page-nav {
   font-family: 'Equity B Caps', Georgia, serif;
   text-transform: lowercase;
   padding-top: 5px;
+  margin-top: 60px;
   margin-bottom: 10px;
 }
 
@@ -289,7 +286,7 @@ code {
   margin: 2px 0 15px;
 }
 
-.post-description {
+.post-subtitle {
   font: 28px 'Concourse 3', Helvetica, Arial, sans-serif; 
   color: var(--subtle-2);
   margin: 0 0 30px;
@@ -300,7 +297,7 @@ h2 {
   margin: 20px 0 10px;
 }
 
-.post-meta {
+.post-date {
   font: 20px 'Equity B', Helvetica, Arial, sans-serif;
   color: var(--subtle-2);
 }
@@ -313,7 +310,6 @@ h2 {
 .list-links {
   text-align: center;
   font: 28px 'Concourse 3', Helvetica, Arial, sans-serif;
-  margin-bottom: 60px;
 }
 
 .list-links a {
@@ -351,10 +347,6 @@ h2 {
 
 li.post-li {
   font: 26px 'Concourse 3', Helvetica, Arial, sans-serif;
-}
-
-.after-posts {
-  margin-bottom: 60px;
 }
 
 .footnotes {

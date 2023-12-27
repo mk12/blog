@@ -4,14 +4,14 @@
 <header>
 {{ include "pagenav.html" }}
 </header>
-<article>
+<main>
   <header>
-    <span class="post-meta">{{ date }}</span>
+    <span class="post-date">{{ date }}</span>
     <h1 class="post-title">{{ title }}</h1>
-    <p class="post-description">{{ subtitle }}</p>
+    <p class="post-subtitle">{{ subtitle }}</p>
   </header>
-{{ content }}
-</article>
+  {{ content }}
+</main>
 <footer>
 {{ include "pagenav.html" }}
 </footer>

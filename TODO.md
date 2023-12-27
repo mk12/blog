@@ -1,5 +1,6 @@
 - update README
 - redesign, retro
+- add favicon
 - code block in narrow mode should still have background
 - consistent way of inserting edits/later comments in posts
 - first year OCD note
@@ -8,14 +9,20 @@
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
-- consider var for single character math element
-- run vnu? (I run it in mitchellkember.com repo)
 - reconsider `<section>` tags in categories
-- upload new website
 - consider not quoting attributes
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
+x remove analytics
+    x useful to see there and in notes4u
+x use `<time>` tag
+    x pubdate isn't part of HTML5 anymore
+x use current time instead of "Draft"
++ upload new website
++ run vnu? (I run it in mitchellkember.com repo)
+x consider var for single character math element
+    x too hard to match font
 + complete RSS feed
     + make SVGs visible in dark mode
     - avoid relying on CSS e.g. fonts
