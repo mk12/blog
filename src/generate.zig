@@ -53,6 +53,7 @@ pub fn generate(args: struct {
     defer per_file_arena.deinit();
     const per_file_allocator = per_file_arena.allocator();
     try symlink(per_file_allocator, dirs.@"/", constants.asset_dir ++ "/css/style.css", "style.css");
+    try symlink(per_file_allocator, dirs.@"/", constants.asset_dir ++ "/js/footnote.js", "footnote.js");
     for (std.enums.values(Page)) |page| {
         _ = per_file_arena.reset(.retain_capacity);
         try generatePage(per_file_allocator, file_ctx, args.posts, page);
@@ -281,13 +282,15 @@ fn generatePost(allocator: Allocator, ctx: FileContext, post: Post, neighbors: N
     var file = try dir.createFile("index.html", .{});
     defer file.close();
     const url_builder = UrlBuilder{ .allocator = allocator, .base = ctx.base_url.relative, .post_slug = post.slug };
+    var has_footnotes = Value{ .bool = false };
     const variables = try Value.init(allocator, .{
         .title = markdown(post.meta.title, post.context, .{ .is_inline = true }),
         .subtitle = markdown(post.meta.subtitle, post.context, .{ .is_inline = true }),
         .date = status(post.meta.status, .long),
-        .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true }),
+        .content = markdown(post.body, post.context, .{ .shift_heading_level = 1, .highlight_code = true, .auto_heading_ids = true, .out_has_footnotes = &has_footnotes.bool }),
         .newer = try if (neighbors.newer) |newer| url_builder.post(newer.slug) else url_builder.fmt("/", .{}),
         .older = try if (neighbors.older) |older| url_builder.post(older.slug) else url_builder.fmt("/post/", .{}),
+        .has_footnotes = &has_footnotes,
     });
     var scope = ctx.scope.initChild(variables);
     var hooks = MarkdownHooks{ .url_builder = url_builder, .resolver = ctx.resolver };

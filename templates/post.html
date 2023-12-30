@@ -15,4 +15,7 @@
 <footer>
 {{ include "pagenav.html" }}
 </footer>
+{{ if has_footnotes }}
+<script src="{{ base_url }}/footnote.js"></script>
+{{ end }}
 {{ end }}
