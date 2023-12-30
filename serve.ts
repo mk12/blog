@@ -156,7 +156,6 @@ const modalDivStyle = `
   top: 0;
   width: 100%;
   height: 100%;
-  padding: 10px;
   background: inherit;
   opacity: 0.7;
   pointer-events: none;
@@ -169,8 +168,12 @@ const modalPreStyle = `
   font: 18px monospace;
   margin: 50px;
   border: 2px solid currentColor;
+  box-sizing: border-box;
   padding: 10px;
   background: inherit;
+  max-width: calc(100vw - 100px);
+  max-height: calc(100vh - 100px);
+  overflow: auto;
 `;
 
 function injectRunStatus(html: string): string {
