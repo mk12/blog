@@ -567,6 +567,7 @@ pub const Options = struct {
     highlight_code: bool = false,
     auto_heading_ids: bool = false,
     shift_heading_level: i8 = 0,
+    out_has_footnotes: ?*bool = null,
 };
 
 fn WithDefaultHooks(comptime Inner: type) type {
@@ -839,10 +840,12 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     break;
                 },
                 // Footnotes
-                .@"[^x]" => |number| if (!options.first_block_only)
+                .@"[^x]" => |number| if (!options.first_block_only) {
                     try writer.print(
-                        \\<sup id="fnref:{0s}"><a href="#fn:{0s}">{0s}</a></sup>
-                    , .{number}),
+                        \\<sup id="fnref:{0s}" class="fnref"><a href="#fn:{0s}">{0s}</a></sup>
+                    , .{number});
+                    if (options.out_has_footnotes) |out| out.* = true;
+                },
                 .@"[^x]: " => |label| try blocks.push(writer, .{ .footnote_ol = label }),
                 // Links
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
@@ -1518,8 +1521,8 @@ test "render space-aware smart typography when space is already consumed" {
 
 test "render footnotes" {
     try expect(
-        \\<p>Foo<sup id="fnref:1"><a href="#fn:1">1</a></sup>.</p>
-        \\<p>Bar<sup id="fnref:2"><a href="#fn:2">2</a></sup>.</p>
+        \\<p>Foo<sup id="fnref:1" class="fnref"><a href="#fn:1">1</a></sup>.</p>
+        \\<p>Bar<sup id="fnref:2" class="fnref"><a href="#fn:2">2</a></sup>.</p>
         \\<hr>
         \\<ol class="footnotes">
         \\<li id="fn:1"><em>first</em>&nbsp;<a href="#fnref:1">↩︎</a></li>
@@ -1542,6 +1545,20 @@ test "no footnotes if first block only" {
         \\Foo[^1].
         \\[^1]: second
     , .{ .first_block_only = true });
+}
+
+test "out_has_footnotes false" {
+    var has_footnotes = false;
+    try expect("<p>Foo</p>", "Foo", .{ .out_has_footnotes = &has_footnotes });
+    try testing.expectEqual(false, has_footnotes);
+}
+
+test "out_has_footnotes true" {
+    var has_footnotes = false;
+    try expect(
+        \\<p>Foo<sup id="fnref:1" class="fnref"><a href="#fn:1">1</a></sup></p>
+    , "Foo[^1]", .{ .out_has_footnotes = &has_footnotes });
+    try testing.expectEqual(true, has_footnotes);
 }
 
 test "render figure (url)" {
