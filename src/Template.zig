@@ -13,7 +13,7 @@
 //!     {{ define foo }}...{{ end }}           define a variable as sub-template
 //!
 //! A value is either null, a bool, string, array of values, dictionary from
-//! strings to values, sub-template, date object, or Markdown object.
+//! strings to values, pointer to a Value, sub-template, date, or Markdown.
 //!
 //! Everything is truthy except false, null, empty arrays, and empty strings.
 //! {{ if }} is actually an alias for {{ range }}; ranging over a non-array
@@ -429,6 +429,7 @@ pub const Value = union(enum) {
     string: []const u8,
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
+    pointer: *const Value,
     template: *const Template,
     date: struct { date: Date, style: Date.Style },
     markdown: struct { markdown: Markdown, options: Markdown.Options },
@@ -452,6 +453,8 @@ pub const Value = union(enum) {
             .Array => |array_type| return initArray(allocator, object, array_type.child),
             .Pointer => |pointer_type| return if (pointer_type.size == .Slice)
                 initArray(allocator, object, pointer_type.child)
+            else if (pointer_type.child == Value)
+                .{ .pointer = object }
             else switch (@typeInfo(pointer_type.child)) {
                 .Array => |array_type| initArray(allocator, object, array_type.child),
                 else => @compileError("invalid pointer type: " ++ @typeName(Type)),
@@ -491,6 +494,7 @@ test "value" {
         .empty = .{},
         .array = .{ true, "hello" },
         .slice = &[_]bool{ true, false },
+        .pointer = &Value{ .bool = false },
         .nested = .{ .true = true, .string = "hello" },
         .value = try Value.init(arena.allocator(), "hello"),
     });
@@ -549,12 +553,16 @@ pub const Scope = struct {
 };
 
 fn lookup(self: Template, ctx: anytype, scope: *const Scope, variable: Variable) !Value {
-    return scope.lookup(variable) orelse ctx.reporter.failAt(
+    const value = scope.lookup(variable) orelse return ctx.reporter.failAt(
         self.filename,
         Location.fromPtr(self.source, variable.ptr),
         "{s}: variable not found",
         .{variable},
     );
+    return switch (value) {
+        .pointer => |ptr| ptr.*,
+        else => value,
+    };
 }
 
 fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
@@ -568,6 +576,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
             .template => |template| try template.exec(ctx, scope),
             .date => |args| try args.date.render(ctx.writer, args.style),
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
+            .pointer => unreachable,
             else => |value| return ctx.reporter.failAt(
                 self.filename,
                 Location.fromPtr(self.source, variable.ptr),
@@ -583,6 +592,7 @@ fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
                 .bool => |value| if (value) break :blk try body.exec(ctx, scope),
                 .string => |string| if (string.len > 0) break :blk try body.exec(ctx, child.reset(Value{ .string = string })),
                 .array => |array| if (array.items.len > 0) break :blk for (array.items) |item| try body.exec(ctx, child.reset(item)),
+                .pointer => unreachable,
                 else => |value| break :blk try body.exec(ctx, child.reset(value)),
             }
             if (control.else_body) |else_body| try else_body.exec(ctx, scope);
