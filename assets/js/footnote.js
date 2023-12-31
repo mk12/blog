@@ -72,6 +72,6 @@ if (!matchMedia('(hover: none)').matches) {
             if (show) active = popover.show();
         });
         sup.addEventListener("click", e => e.stopPropagation());
-        addEventListener("click", hideActive);
+        document.addEventListener("click", hideActive);
     }
 }

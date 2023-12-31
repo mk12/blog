@@ -364,7 +364,11 @@ li.post-li {
 }
 
 .fnref > a:hover { color: currentColor; }
-.fnref:hover > a, .fnref--active > a { background: var(--border); }
+.fnref--active > a { background: var(--border); }
+
+@media (hover: hover) {
+  .fnref > a:hover { background: var(--border); }
+}
 
 .fnref-wrapper {
   box-sizing: border-box;
