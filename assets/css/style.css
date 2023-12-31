@@ -162,12 +162,15 @@ sub {
 
 ul, ol, dl { margin-bottom: 1.2em; }
 
+li, dt { margin-left: 1em; }
+
 ul > li {
   list-style-type: disc;
 }
 
 ol > li {
   list-style-type: decimal;
+  margin-left: 1.2em;
 }
 
 table {
@@ -221,6 +224,7 @@ footer .page-nav {
   display: inline-block;
   list-style-type: none;
   clear: none;
+  margin: 0;
 }
 
 .page-nav a {
