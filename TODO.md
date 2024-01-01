@@ -2,18 +2,20 @@
 - redesign, retro
 - add favicon
 - code block in narrow mode should still have background
-- consistent way of inserting edits/later comments in posts
-- first year OCD note
-- render footnotes as sidenotes (?)
 - full dark mode (SVG palettes, including in RSS)
 - broken link http://lindenmayer.mitchellkember.com/koch/4
 - lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
-- reconsider `<section>` tags in categories
-- consider not quoting attributes
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
+- serve.ts: when doing git operations, avoid so many rebuilds
+x reconsider `<section>` tags in categories
+x consider not quoting attributes
+x consistent way of inserting edits/later comments in posts
++ footnote popovers
+x render footnotes as sidenotes (?)
++ first year OCD note
 x remove analytics
     x useful to see there and in notes4u
 x use `<time>` tag
