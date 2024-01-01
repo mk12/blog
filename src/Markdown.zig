@@ -857,9 +857,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 },
                 .@"]" => if (inlines.top() == .a) {
                     try inlines.pop(writer);
-                } else {
+                } else if (blocks.top() != null and blocks.top().? == .figcaption) {
                     try blocks.popTag(writer, .figcaption);
                     try blocks.popTag(writer, .figure);
+                } else {
+                    return tokenizer.fail("unexpected \"]\"", .{});
                 },
                 // Figures
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
