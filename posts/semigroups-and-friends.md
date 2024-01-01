@@ -23,7 +23,7 @@ Now we're ready to get acquainted with the semigroup and its friends. Of the sev
 
 This axiom is arguably redundant, since an operation on $S$ has codomain $S$ by definition, therefore it must be closed. However, it's customary to include it anyway, for some reasons that I won't go into now.
 
-Most common algebraic properties have names. The closure property is so common that a statement like, "The operation $\bullet$ has closure over $S$," is rarely accompanied by further explanation. In those cases where explanation is necessary, mathematicians tend to prefer symbols over words for their conciseness and precision. Rather than saying, "If $a$ and $b$ are in $S$, then $a\bullet b$ is in $S$ as well," we can write, $\forall a,b ∈ S\colon a\bullet b∈S$. Pronouncing $\forall$ as "for all" and $∈$ as "in," this reads, "For all $a$ and $b$ in $S$, $a\bullet b$ is in $S$."
+Most common algebraic properties have names. The closure property is so common that a statement like, "The operation $\bullet$ has closure over $S$," is rarely accompanied by further explanation. In those cases where explanation is necessary, mathematicians sometimes prefer symbols over words for their conciseness and precision. Rather than saying, "If $a$ and $b$ are in $S$, then $a\bullet b$ is in $S$ as well," we can write, $\forall a,b ∈ S\colon a\bullet b∈S$. Pronouncing $\forall$ as "for all" and $∈$ as "in," this reads, "For all $a$ and $b$ in $S$, $a\bullet b$ is in $S$."
 
 We still have six types of algebraic structure left to go, but instead of defining them one at a time, I'm going to throw five axioms at you:
 

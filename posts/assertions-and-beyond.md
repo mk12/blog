@@ -58,7 +58,7 @@ One of the biggest problems in testing is _data_. If you're unit testing a singl
 
 One approach is to maintain a special collection of test data, striving for a reasonable variety without going overboard. In Rails, these are called <dfn>fixtures</dfn>, and they are stored in YAML files. This doesn't sound bad, but it can become painful when there are complex relationships between objects. Another problem with fixtures is that they can become brittle due to badly written test cases depending on a very particular configuration. In those situations, it's far from obvious what you can add or change without breaking existing tests. If written carefully and used properly, though, fixtures can be an excellent solution.
 
-Factories are an alternative method of generating test data. [FactoryGirl][fg] is a popular Ruby library that uses this method. I can't say too much about it because I've never used it, but many people cite advantages over fixtures: less brittle, more flexible, easier to keep up to date, and generally more pleasant to work with. I certainly think it's an option worth exploring.
+Factories are an alternative method of generating test data. [FactoryBot][fb] is a popular Ruby library that uses this method. I can't say too much about it because I've never used it, but many people cite advantages over fixtures: less brittle, more flexible, easier to keep up to date, and generally more pleasant to work with. I certainly think it's an option worth exploring.
 
 # Mocks, stubs, and expectations
 
@@ -136,5 +136,5 @@ Software testing is an active area of research and exploration. Nowadays it's un
 [^2]: A <dfn>pure function</dfn> is a function that is idempotent and has no side effects. Idempotence means always returning the same output for a given set of inputs. Side effects include things such as  mutating global state and external I/O.
 
 [tdd]: https://dhh.dk/2014/tdd-is-dead-long-live-testing.html
-[fg]: https://github.com/thoughtbot/factory_girl
+[fb]: https://github.com/thoughtbot/factory_bot
 [mocha]: https://github.com/freerange/mocha

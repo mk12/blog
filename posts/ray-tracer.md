@@ -63,7 +63,7 @@ There are three common models for light sources. The first is a point source, wh
 
 # Exposure and gamma correction
 
-Once we've calculated the colours of all the pixels, we're still not done. The values we write to disk will ultimately be in the 8-bit-per-channel format, which divides each channel into 256 shades. We need to map the intensities to the range $[0,255]$ and round to the nearest integer -- this is where we control the <i>exposure</i> of the image. There are two simple ways we can do this: by clipping all colours greater than some arbitrary maximum, or by moving the white point to make all intensities fit in the target range.
+Once we've calculated the colours of all the pixels, we're still not done. The values we write to disk will ultimately be in the 8-bit-per-channel format, which divides each channel into 256 shades. We need to map the intensities to the range \[0, 255\] and round to the nearest integer -- this is where we control the <i>exposure</i> of the image. There are two simple ways we can do this: by clipping all colours greater than some arbitrary maximum, or by moving the white point to make all intensities fit in the target range.
 
 ![Exposure control by clipping (left) and by scaling intensities down (right)](../assets/svg/clip-scale.svg)
 

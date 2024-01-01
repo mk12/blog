@@ -5,15 +5,15 @@ category: Algorithms
 date: 2015-03-30T15:52:37-04:00
 ---
 
-Whenever I play around with a new language, I always start by writing a program to crack a Caesar cipher. This problem is perfect for getting a sense of what it's like to work in a given language. It's significantly more interesting than "Hello, World!" but it only takes about a hundred lines to write -- in fact, the line count by itself is a good indication of how expressive the language is.
+Whenever I play around with a new language, I like to start by writing a program to crack a Caesar cipher. This problem is perfect for getting a sense of what it's like to work in a given language. It's significantly more interesting than "Hello, World!" but it only takes about a hundred lines to write -- in fact, the line count by itself is a good indication of how expressive the language is.
 
-You've probably heard of the ROT-13 cipher, where you rotate each letter around the alphabet by 13 positions. The result of doing this to the plaintext (message) is called the ciphertext (coded message). The Caesar cipher generalizes this to numbers other than 13. We only need to consider numbers between 0 and 25, since adding multiples of 26 makes no difference. Notice that with the Caesar cipher, we have to distinguish between encryption and decryption -- one goes forwards and the other goes backwards. The exceptions are 0, which is pretty useless, and 13, which is ROT-13.
+You might have heard of the ROT-13 cipher, where you rotate each letter around the alphabet by 13 positions. The result of doing this to the plaintext (message) is called the ciphertext (coded message). The Caesar cipher generalizes this to numbers other than 13. We only need to consider numbers between 0 and 25, since adding multiples of 26 makes no difference. Notice that with the Caesar cipher, we have to distinguish between encryption and decryption -- one goes forwards and the other goes backwards. The exceptions are 0, which is pretty useless, and 13, which is ROT-13.
 
 The Caesar cipher is a special case of the substitution cipher, which maps all possible pieces of plaintext (usually single letters, but not always) to corresponding pieces of ciphertext. There are only 26 Caesar ciphers; on the other hand, there 26! possible letter substitution ciphers.[^1] Our goal is to crack a Caesar-encrypted message, which means to find its _key_, the rotation number used to encrypt it. We can easily do this by brute force, by trying all 26 possible keys. The result of decrypting the message will almost certainly be gibberish for all but one key, but how can a computer recognize plausible English?
 
 You could try each key and do a dictionary check on the results. This would work, since the true message should have by far the most English words in it. However, we're going to use a different method: _frequency analysis_. Most English writing uses all 26 letters, but it's never a uniform distribution -- <i>e</i> is far more common than <i>z</i>, for example. We can exploit this fact to crack the Caesar cipher by scoring each of the 26 potential plaintexts for its likeness to English, based on letter frequencies. But how should we calculate this score? We could just count the occurrences of <i>e</i>, but there is a better way.
 
-We begin by computing the relative frequencies of the 26 letters. Each relative frequency is a fraction between zero and one, and when we add all 26 of them together we get 1.0. For example, the relative frequencies of the string "AB" in alphabetical order are 0.5, 0.5, and 24 zeros. Since the whole point of this exercise is to test drive awesome languages, I'm going to implement the algorithm in [Haskell][hs], a purely functional language.[^2] Check out my [Caesar project][go] written in Go to see an imperative approach.
+We begin by computing the relative frequencies of the 26 letters. Each relative frequency is a fraction between zero and one, and when we add all 26 of them together we get 1.0. For example, the relative frequencies of the string "AB" in alphabetical order are 0.5, 0.5, and 24 zeros. Since the whole point of this exercise is to test drive fun languages, I'm going to implement the algorithm in [Haskell][hs], a purely functional language. Check out my [Caesar project][go] written in Go to see an imperative approach.
 
 ```haskell
 import Data.Char (toLower)
@@ -40,7 +40,7 @@ The relative frequencies will be different for every text, but not _that_ differ
  7.23, 7.64, 2.14, 0.12, 6.28,  6.51, 9.28, 2.73, 1.05, 1.68, 0.23, 1.66, 0.09]
 ```
 
-Now we know what the correct frequencies should look like, but how do we measure the distance between two sets of relative frequencies? If you've never taken a statistics course, you might think we should just add up the absolute differences letter-wise. \[_Feb. 2018_: I realize that sounds condescending; I was including myself in that description, as I hadn't taken my first statistics course yet, and so I didn't understand the theory behind the technique in this article. &mdash;MK\] That might work, but I'm going to jump straight to the best method: Pearson's chi-squared test. We calculate the cumulative chi-squared test-statistic by
+Now we know what the correct frequencies should look like, but how do we measure the distance between two sets of relative frequencies? One idea would be to add up the absolute differences letter-wise. That might work, but I'm going to jump straight to the best method: Pearson's chi-squared test. We calculate the cumulative chi-squared test-statistic by
 
 $$χ^2 = \sum_{i=1}^n\frac{(O_i - E_i)^2}{E_i}$$
 
@@ -72,7 +72,7 @@ decrypt :: Int -> String -> String
 decrypt = map . shift . negate
 ```
 
-The `ord` function returns a character's ASCII value, and `chr` does the opposite conversion. We subtract the value of <i>a</i> to get a number between 0 and 25, then we do modular addition of the shift value, and finally we convert back to a character. The encryption function partially applies its input to `shift`, which then gets mapped over the string. Decryption is similar, but negates the number first (since decryption goes backwards). These two functions are written in the [point-free style][pf],[^3] much loved by Haskellers -- it's easy to read once you're used to it.
+The `ord` function returns a character's ASCII value, and `chr` does the opposite conversion. We subtract the value of <i>a</i> to get a number between 0 and 25, then we do modular addition of the shift value, and finally we convert back to a character. The encryption function partially applies its input to `shift`, which then gets mapped over the string. Decryption is similar, but negates the number first (since decryption goes backwards). These two functions are written in the [point-free style][pf],[^2] much loved by Haskellers -- it's easy to read once you're used to it.
 
 We're almost there. We just need two more functions. The `rotate` function will rotate a list around by a given number of positions. The `minIndex` function will return the index of the smallest element in the list:
 
@@ -101,13 +101,11 @@ crack s = minIndex chis
 
 First we find the relative frequencies. Next, we try all possible rotations and calculate the test-statistic for each one, where `englishFreqs` is the frequency list we talked about earlier. Finally, we return the index of the best one. The secret message is just one call to `decrypt` away!
 
-I encourage you to try encrypting any English text you like and seeing if the cracker works. It's hit-or-miss for extremely short strings, but incredibly accurate for substantial amounts of text. Only classical ciphers are so easily cracked by frequency analysis, and no one uses them anymore for obvious reasons, but I think it's a fun problem regardless. If you're new to Haskell, I hoped this has piqued your interest; and be sure to take a look at the [Go implementation][go] if you want to implement the cracker in a language that you're more comfortable with.
+I encourage you to try encrypting any English text you like and seeing if the cracker works. It's hit-or-miss for extremely short strings, but incredibly accurate for substantial amounts of text. Only classical ciphers are so easily cracked by frequency analysis, and no one uses them anymore for obvious reasons, but I think it's a fun problem regardless. If you're new to Haskell, I hoped this has piqued your interest; and be sure to take a look at the [Go implementation][go] if you're more comfortable with that.
 
 [^1]: That's 26 factorial, approximately 4×10<sup>26</sup> -- one substitution cipher for each of the atoms in your body, give or take. And that's just the English alphabet!
 
-[^2]: This was actually my first Haskell program. I fell in love with Haskell, and after that I always solved this problem when trying out new languages.
-
-[^3]: Witty people refer to it as the _pointless_ style.
+[^2]: Witty people refer to it as the _pointless_ style.
 
 [hs]: https://www.haskell.org/
 [go]: https://github.com/mk12/caesar
