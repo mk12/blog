@@ -26,7 +26,7 @@ const outDir = "./public";
 
 function startServer() {
   const sockets: Set<ServerWebSocket> = new Set();
-  const pending: Map<number, "ok" | "reload"> = new Map();
+  const pending: Set<number> = new Set();
   let nextClientId = 0;
   const server = Bun.serve<undefined>({
     async fetch(request, server) {
@@ -46,7 +46,7 @@ function startServer() {
       const file = Bun.file(join(root, target));
       if (target.endsWith(".html")) {
         const id = nextClientId++;
-        pending.set(id, "ok");
+        pending.add(id);
         let html = await file.text();
         html = injectRunStatus(html);
         html = injectLiveReloadScript(html, id);
@@ -61,13 +61,9 @@ function startServer() {
       open(ws) {
         console.log("websocket: opened");
         const id = (ws.data as any).id;
-        const status = pending.get(id);
-        if (status === undefined) {
-          console.error(`got websocket connection for unexpected client id: ${id}`);
-          return;
-        }
-        pending.delete(id);
-        if (status === "reload") ws.close(); else sockets.add(ws);
+        // If this ID is known to be pending, we're good. Otherwise, something
+        // is off, e.g. another change happened in the meantime; force a reload.
+        if (pending.delete(id)) sockets.add(ws); else ws.close();
       },
       message() { },
       close(ws) {
@@ -79,7 +75,7 @@ function startServer() {
   return {
     baseUrl: `http://${server.hostname}:${server.port}`,
     reloadClients: () => {
-      for (const id of pending.keys()) pending.set(id, "reload");
+      pending.clear();
       for (const ws of sockets) ws.close();
       sockets.clear();
     },
