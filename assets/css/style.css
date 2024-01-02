@@ -21,6 +21,7 @@ article, figure, figcaption, nav, section, summary {
   --subtle-1: #999;
   --subtle-2: #888;
   --active: #b00;
+  --fg: #000;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +32,7 @@ article, figure, figcaption, nav, section, summary {
         --subtle-1: #888;
         --subtle-2: #999;
         --active: #e26969;
+        --fg: #fff;
     }
 }
 
@@ -89,6 +91,7 @@ article, figure, figcaption, nav, section, summary {
 
 body {
   font: 24px/1.4 'Equity B', Georgia, serif;
+  color: var(--fg);
   background: var(--bg);
   padding: 0 10px;
   max-width: 720px;
@@ -113,18 +116,18 @@ em { font-style: italic; }
 
 math[display="block"] { margin-bottom: 1.2em; }
 
-blockquote {
+blockquote, aside {
   font-family: 'Concourse 3';
   background-color: var(--block);
   margin-bottom: 1.2em;
   padding: 0.75em 1em;
 }
 
-blockquote p:last-child {
+blockquote p:last-child, aside p:last-child {
   margin-bottom: 0;
 }
 
-blockquote em {
+blockquote em, aside em {
   font-style: normal;
   font-weight: bold;
 }
@@ -425,6 +428,11 @@ li.post-li {
 }
 
 .footnotes code {
+  font-size: 20px;
+}
+
+.edit-date {
+  color: var(--subtle-2);
   font-size: 20px;
 }
 
