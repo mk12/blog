@@ -2,12 +2,12 @@
 - redesign, retro
 - add favicon
 - full dark mode (SVG palettes, including in RSS)
-- broken link http://lindenmayer.mitchellkember.com/koch/4
-- lindenmayer heroku
 - consider fallible Markdown tokenizer for stricter checks
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
++ broken link http://lindenmayer.mitchellkember.com/koch/4
+x lindenmayer heroku
 + code block in narrow mode should still have background
 + serve.ts: when doing git operations, avoid so many rebuilds
     + don't need to debounce
