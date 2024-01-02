@@ -11,11 +11,24 @@ async function main() {
   await onChange("src/main.zig");
   server.reloadClients()
   const watcher = startWatcher();
+  const iter = watcher.changes();
+  let change = iter.next();
   try {
-    for await (const path of watcher.changes()) {
+    while (true) {
+      const result = await change;
+      if (result.done) break;
+      const path = result.value;
       console.log(`changed: ${path}`);
       await onChange(path);
       server.reloadClients();
+      // Process as many changes as possible during a 0 second sleep, i.e. all
+      // changes that are already available without blocking. This avoids
+      // many redundant rebuilds e.g. when performing git operations.
+      let done = false;
+      await Promise.all([
+        (async () => { await Bun.sleep(0); done = true; })(),
+        (async () => { while (!done) await (change = iter.next()); })(),
+      ]);
     }
   } finally {
     watcher.kill();

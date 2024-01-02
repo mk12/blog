@@ -9,7 +9,10 @@
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
-- serve.ts: when doing git operations, avoid so many rebuilds
++ serve.ts: when doing git operations, avoid so many rebuilds
+    + don't need to debounce
+    + just need to avoid queuing up changes
+    + I have --on-busy-update=do-nothing but that's only for new events during the cat, not during the other command which serve.ts runs
 x reconsider `<section>` tags in categories
 x consider not quoting attributes
 x consistent way of inserting edits/later comments in posts
