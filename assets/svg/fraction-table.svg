@@ -1,6 +1,6 @@
-<svg viewBox="0 0 360 360" style="font-family:'Concourse 3';font-size:20px" fill="currentColor">
-<path fill="none" stroke="#ccc" stroke-width="2" d="M0 160h340M0 100h340M340 40H0M0 220h340M0 280h340M40 0v340M100 0v340M160 0v340M220 0v340M280 0v340"/>
-<g style="font-size:25px;font-weight:600;">
+<svg viewBox="0 0 360 360" fill="currentColor" font-family="Arial" font-size="20px">
+<path fill="none" stroke="#a0a0a080" stroke-width="2" d="M0 160h340M0 100h340M340 40H0M0 220h340M0 280h340M40 0v340M100 0v340M160 0v340M220 0v340M280 0v340"/>
+<g font-size="25px" font-weight="600">
 <text x="14.375" y="79.425">1</text>
 <text x="13.25" y="139.425">2</text>
 <text x="13.5" y="199.425">3</text>
@@ -50,7 +50,7 @@
 <text x="257.9" y="82.76">1</text>
 <text x="257.9" y="322.71">5</text>
 <text x="257.9" y="202.71">3</text>
-<g fill="#aaa">
+<g fill="#a0a0a080">
 <text x="173.1" y="190.21">3</text>
 <text x="113.1" y="130.21">2</text>
 <text x="113.1" y="250.21">2</text>
@@ -64,34 +64,9 @@
 <text x="257.9" y="142.71">2</text>
 <text x="257.9" y="262.71">4</text>
 </g>
-<g style="font-size:30px">
-<text x="63.1" y="136.46">/</text>
-<text x="63.1" y="76.51">/</text>
-<text x="63.1" y="316.46">/</text>
-<text x="63.1" y="196.46">/</text>
-<text x="63.1" y="256.46">/</text>
-<text x="183.5" y="136.46">/</text>
-<text x="183.5" y="76.51">/</text>
-<text x="183.5" y="316.46">/</text>
-<text x="183.5" y="256.46">/</text>
-<text x="123.9" y="76.51">/</text>
-<text x="123.9" y="316.46">/</text>
-<text x="123.9" y="196.46">/</text>
-<text x="303.9" y="136.46">/</text>
-<text x="303.9" y="76.51">/</text>
-<text x="303.9" y="196.46">/</text>
-<text x="303.9" y="256.46">/</text>
-<text x="244.1" y="76.51">/</text>
-<text x="244.1" y="316.46">/</text>
-<text x="244.1" y="196.46">/</text>
-<g fill="#aaa">
-<text x="183.5" y="196.46">/</text>
-<text x="123.9" y="136.46">/</text>
-<text x="123.9" y="256.46">/</text>
-<text x="303.9" y="316.46">/</text>
-<text x="244.1" y="136.46">/</text>
-<text x="244.1" y="256.46">/</text>
-</g>
+<g fill="none" stroke-width="1.5">
+<path stroke="currentColor" d="M63 82L77 58M123 82L137 58M183 82L197 58M243 82L257 58M303 82L317 58M63 142L77 118M183 142L197 118M303 142L317 118M63 202L77 178M123 202L137 178M243 202L257 178M303 202L317 178M63 262L77 238M183 262L197 238M303 262L317 238M63 322L77 298M123 322L137 298M183 322L197 298M243 322L257 298"/>
+<path stroke="#a0a0a0a0" d="M123 142L137 118M243 142L257 118M183 202L197 178M123 262L137 238M243 262L257 238M303 322L317 298"/>
 </g>
 <g fill="none" stroke="#c20" stroke-width="2">
 <path d="M92 70h16M103.05 74.95 108 70l-4.95-4.95"/>

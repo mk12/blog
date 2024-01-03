@@ -16,7 +16,7 @@
 <text x="18.11" y="20.82" dy=".35em">5.0×10<tspan font-size="0.833em" baseline-shift="super">3</tspan></text>
 <text x="18.11" y="7" dy=".35em">6.0×10<tspan font-size="0.833em" baseline-shift="super">3</tspan></text>
 </g>
-<path stroke-dasharray=".5 .5" stroke-width=".2" stroke="gray" fill="none" d="M19.11 89.93H147.4M19.11 76.11H147.4M19.11 62.28H147.4M19.11 48.46H147.4M19.11 34.64H147.4M19.11 20.82H147.4M19.11 7H147.4M21.11 5v86.93M45.97 5v86.93M70.83 5v86.93M95.69 5v86.93M120.54 5v86.93M145.4 5v86.93"/>
+<path stroke-dasharray=".5 .5" stroke-width=".2" stroke="#999" fill="none" d="M19.11 89.93H147.4M19.11 76.11H147.4M19.11 62.28H147.4M19.11 48.46H147.4M19.11 34.64H147.4M19.11 20.82H147.4M19.11 7H147.4M21.11 5v86.93M45.97 5v86.93M70.83 5v86.93M95.69 5v86.93M120.54 5v86.93M145.4 5v86.93"/>
 <g fill="#00BFFF">
 <rect x="21.2px" y="24px" width="120.5" height="65.9"/>
 <path d="M21.11 18.64h.6v71.29h-.6zm.61 2.91h.6v68.37h-.6zm.6-.8h.6v69.17h-.6zm.61-.26h.6v69.44h-.6zm.6 1.17h.6v68.26h-.6zm.61-.31h.6v68.58h-.6z"/>

@@ -1,45 +1,45 @@
-<svg viewBox="0 0 680 410" style="font-family:'Concourse 3';font-size:25px" fill="currentColor">
-<text x="6.19" y="343.317" style="font-weight:600">Time</text>
+<svg viewBox="0 0 680 410" fill="currentColor" font-family="Arial" font-size="22px" text-anchor="middle">
+<text x="32" y="343.317" font-weight="600">Time</text>
 <path d="M68.965 336.587v-.94H662.08l-8.823-8.823.708-.707 10 10-10 10-.708-.707 8.823-8.823H68.965Z"/>
-<text x="60.683" y="122.227">create file</text>
-<text x="170.756" y="247.985">modify</text>
-<text x="320.157" y="148.102">read</text>
-<text x="329.236" y="255.06">copy</text>
-<text x="559.3" y="401.509">delete</text>
+<text x="108" y="122.227">create file</text>
+<text x="205" y="247.985">modify</text>
+<text x="341" y="148.102">read</text>
+<text x="352" y="255.06">copy</text>
+<text x="588" y="401.509">delete</text>
 <g fill="none" stroke="currentColor">
-<circle cx="108.183" cy="116.802" r="54.219"/>
-<circle cx="205.006" cy="242.56" r="42.604"/>
-<circle cx="341.282" cy="142.677" r="30.604"/>
-<circle cx="351.861" cy="249.635" r="32.104"/>
-<path d="M398.738 58.234v316.375M587.504 58.234v316.375"/>
+<circle cx="108" cy="116.802" r="54.219"/>
+<circle cx="205" cy="242.56" r="42.604"/>
+<circle cx="341" cy="142.677" r="30.604"/>
+<circle cx="352" cy="249.635" r="32.104"/>
+<path d="M399 58.234v316.375M588 58.234v316.375"/>
 </g>
-<g fill="#737373">
-<text x="433.508" y="317.672">grace period</text>
-<text x="602.06" y="199.047">deleted</text>
-<text x="265.639" y="398.971">expire</text>
-<path d="M327.935 164.777h59v1.45h-59z" transform="translate(-62.296 227.369)"/>
-<text x="369.238" y="398.972">expire</text>
-<text x="198.381" y="277.56">*</text>
-<text x="340.84" y="391.698">*</text>
+<g fill="#999">
+<text x="493" y="317.672">grace period</text>
+<text x="640" y="199.047">deleted</text>
+<text x="295.14" y="398.971">expire</text>
+<text x="399" y="398.972">expire</text>
+<text x="205" y="277.56">*</text>
+<text x="346" y="391.698">*</text>
 </g>
-<g fill="none" stroke="#737373">
+<g fill="none" stroke="#999">
+<path stroke-width="1.5" d="M264 392h62"/>
 <path d="M332.965 393.286v-.553h27.941l-4.864-4.864.391-.391 5.532 5.531-5.532 5.532-.391-.392 4.864-4.863h-27.941Z"/>
 <path stroke-dasharray="10,10,0,0" d="M295.14 58.234v316.375"/>
 </g>
 <g fill="#d92626">
-<text x="491.573" y="118.493">read:</text>
-<text x="492.448" y="143.493">error</text>
+<text x="516" y="118.493">read:</text>
+<text x="516" y="143.493">error</text>
 </g>
-<circle fill="none" stroke="#d92626" cx="516.073" cy="125.568" r="39.712"/>
+<circle fill="none" stroke="#d92626" cx="516" cy="125.568" r="39.712"/>
 <g fill="#0d79f2">
-<text x="204.168" y="127.103">move</text>
-<text x="453.36" y="226.047">clear</text>
-<text x="428.11" y="251.047">expiration</text>
-<text x="310.008" y="22.584">no expiration</text>
+<text x="231" y="127.103">move</text>
+<text x="476" y="226.047">clear</text>
+<text x="476" y="251.047">expiration</text>
+<text x="370" y="22.584">no expiration</text>
 </g>
 <g fill="none" stroke="#0d79f2">
-<circle cx="230.543" cy="121.678" r="34.604"/>
-<circle cx="476.361" cy="233.122" r="56.604"/>
+<circle cx="231" cy="121.678" r="34.604"/>
+<circle cx="476" cy="233.122" r="56.604"/>
 <path d="M230.543 87.074V16.622h68.422M454.948 180.715V51.848l-20.315-20.315"/>
 </g>
 </svg>

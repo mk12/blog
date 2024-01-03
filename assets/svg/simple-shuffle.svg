@@ -14,7 +14,7 @@
 <text x="15.77" y="27.73" dy=".35em">3×10<tspan font-size="0.833em" baseline-shift="super">4</tspan></text>
 <text x="15.77" y="7" dy=".35em">4×10<tspan font-size="0.833em" baseline-shift="super">4</tspan></text>
 </g>
-<path stroke-dasharray=".5 .5" stroke-width=".2" stroke="gray" fill="none" d="M16.77 89.93H147.4M16.77 69.2H147.4M16.77 48.46H147.4M16.77 27.73H147.4M16.77 7H147.4M18.77 5v86.93M44.09 5v86.93M69.42 5v86.93M94.75 5v86.93M120.07 5v86.93M145.4 5v86.93"/>
+<path stroke-dasharray=".5 .5" stroke-width=".2" stroke="#999" fill="none" d="M16.77 89.93H147.4M16.77 69.2H147.4M16.77 48.46H147.4M16.77 27.73H147.4M16.77 7H147.4M18.77 5v86.93M44.09 5v86.93M69.42 5v86.93M94.75 5v86.93M120.07 5v86.93M145.4 5v86.93"/>
 <g fill="#00BFFF">
 <path d="M18.77 20.2h.62v69.72h-.62z"/>
 <path d="M19.38 59.19H20v30.73h-.62zm.62.27h.62v30.47H20zm.62-.31h.62v30.77h-.62z"/>
