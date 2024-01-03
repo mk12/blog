@@ -1,29 +1,29 @@
-<svg viewBox="0 0 535 280" style="font-family:'Concourse 3';font-size:30" fill="currentColor">
-<path d="M0 159h535M0 99h535m0-60H0m0 180h535M104 0v280M319 0v280M211 0v280M426 0v280" fill="none" stroke-width="2" stroke="#ccc"/>
-<g style="font-size:25;font-weight:600">
-<text x="33" y="75.425">nice</text>
-<text x="26" y="135.425">mean</text>
-<text x="9.5" y="195.425">alternate</text>
-<text x="9.25" y="255.363">tit for tat</text>
-<text x="138" y="25.595">nice</text>
-<text x="238.5" y="25.595">mean</text>
-<text x="329.5" y="25.595">alternate</text>
-<text x="436.75" y="25.595">tit for tat</text>
+<svg viewBox="0 0 535 280" fill="currentColor" font-family="Arial" font-size="30" text-anchor="middle">
+<path d="M0 159h535M0 99h535m0-60H0m0 180h535M104 0v280M319 0v280M211 0v280M426 0v280" fill="none" stroke-width="1" stroke="currentColor"/>
+<g font-size="22" font-weight="600">
+<text x="51" y="75">nice</text>
+<text x="51" y="135">mean</text>
+<text x="51" y="195">alternate</text>
+<text x="51" y="255">tit for tat</text>
+<text x="157" y="25">nice</text>
+<text x="265" y="25">mean</text>
+<text x="373" y="25">alternate</text>
+<text x="480" y="25">tit for tat</text>
 </g>
-<text x="149.4" y="78.51">2</text>
-<text x="149.7" y="138.51">3</text>
-<text x="137.25" y="198.51">2.5</text>
-<text x="149.4" y="258.51">2</text>
-<text x="256.15" y="78.51">0</text>
-<text x="258.25" y="138.51">1</text>
-<text x="244.3" y="198.51">0.5</text>
-<text x="258.25" y="258.51">1</text>
-<text x="365.75" y="78.51">1</text>
-<text x="364.4" y="138.51">2</text>
-<text x="353.6" y="198.51">1.5</text>
-<text x="353.6" y="258.51">1.5</text>
-<text x="471.9" y="78.51">2</text>
-<text x="473.25" y="138.51">1</text>
-<text x="461.1" y="198.51">1.5</text>
-<text x="471.9" y="258.51">2</text>
+<text x="157" y="78">2</text>
+<text x="157" y="138">3</text>
+<text x="157" y="198">2.5</text>
+<text x="157" y="258">2</text>
+<text x="265" y="78">0</text>
+<text x="265" y="138">1</text>
+<text x="265" y="198">0.5</text>
+<text x="265" y="258">1</text>
+<text x="373" y="78">1</text>
+<text x="373" y="138">2</text>
+<text x="373" y="198">1.5</text>
+<text x="373" y="258">1.5</text>
+<text x="480" y="78">2</text>
+<text x="480" y="138">1</text>
+<text x="480" y="198">1.5</text>
+<text x="480" y="258">2</text>
 </svg>

@@ -1,21 +1,21 @@
-<svg viewBox="0 0 535 280" style="font-family:'Concourse 3';font-size:25" fill="currentColor">
-<path d="M0 159h535M294 0v280M114 0v280M535 39H0" fill="none" stroke="#ccc" stroke-width="2"/>
-<g style="font-weight:600">
-<text x="156.125" y="25.595">cooperate</text>
-<text x="7.313" y="106.595">cooperate</text>
-<text x="384.25" y="25.595">defect</text>
-<text x="24.938" y="226.595">defect</text>
+<svg viewBox="0 0 535 280" fill="currentColor" font-family="Arial" font-size="20" text-anchor="middle">
+<path d="M0 159h535M294 0v280M114 0v280M535 39H0" fill="none" stroke="currentColor" stroke-width="1"/>
+<g font-weight="600">
+<text x="205" y="25">cooperate</text>
+<text x="57" y="106">cooperate</text>
+<text x="414" y="25">defect</text>
+<text x="57" y="226">defect</text>
 </g>
-<g style="font-size:30">
-<text x="164.55" y="91.556">reward</text>
-<text x="140.25" y="211.556">temptation</text>
-<text x="346.85" y="211.556">punishment</text>
-<text x="328.1" y="91.556">sucker’s payoff</text>
+<g font-size="25">
+<text x="205" y="91">reward</text>
+<text x="205" y="211">temptation</text>
+<text x="414" y="211">punishment</text>
+<text x="414" y="91">sucker’s payoff</text>
 </g>
-<g fill="#777">
-<text x="171" y="124.631">(good)</text>
-<text x="147.375" y="244.214">(very good)</text>
-<text x="388" y="244.214">(bad)</text>
-<text x="364.625" y="124.631">(very bad)</text>
+<g fill="gray">
+<text x="205" y="124">(good)</text>
+<text x="205" y="244">(very good)</text>
+<text x="414" y="244">(bad)</text>
+<text x="414" y="124">(very bad)</text>
 </g>
 </svg>
