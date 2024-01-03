@@ -1,11 +1,11 @@
-<svg viewBox="0 0 708 210" style="font-family:'Concourse 3';font-size:20" fill="currentColor">
+<svg viewBox="0 0 708 210" fill="currentColor" font-family="Arial" font-size="20" text-anchor="end">
 <g fill="none" stroke="currentColor" stroke-width="2">
 <path d="M24 1.465v200h300m-308-130h8m-8 130h8 M406 1.465v200h300m-308-130h8m-8 130h8"/>
 <path stroke="#c20" d="M24 87.465s30.623-57 62-57 54.678 106 78 106c23.323 0 33.564-49 58-49s23.148 114 102 114 M406 87.465s30.623-57 62-57 54.678 106 78 106c23.323 0 33.564-49 58-49s23.148 114 102 114"/>
 <path stroke="#c20" stroke-dasharray="4 2 0 0" d="M35 71.96h87 M406 113.465s30.623-44 62-44 54.678 81.825 78 81.825c23.323 0 33.564-37.825 58-37.825s23.148 88 102 88"/>
 </g>
-<text x="4.727" y="78.84">1</text>
-<text x=".727" y="208.84">0</text>
-<text x="386.727" y="78.84">1</text>
-<text x="382.727" y="208.84">0</text>
+<text x="12" y="78.84">1</text>
+<text x="12" y="208.84">0</text>
+<text x="394" y="78.84">1</text>
+<text x="394" y="208.84">0</text>
 </svg>

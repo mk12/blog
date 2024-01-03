@@ -1,5 +1,5 @@
 <svg viewBox="5.5 4.5 147 92" stroke-width=".3" fill="currentColor" font-family="Arial" font-size="3.5">
-<g text-anchor="middle">
+<g text-anchor="middle" opacity="0.7">
 <text x="21.11" y="95.6">0</text>
 <text x="45.97" y="95.6">5.0×10<tspan font-size="0.833em" baseline-shift="super">17</tspan></text>
 <text x="70.83" y="95.6">1.0×10<tspan font-size="0.833em" baseline-shift="super">18</tspan></text>
@@ -7,7 +7,7 @@
 <text x="120.54" y="95.6">2.0×10<tspan font-size="0.833em" baseline-shift="super">18</tspan></text>
 <text x="145.4" y="95.6">2.5×10<tspan font-size="0.833em" baseline-shift="super">18</tspan></text>
 </g>
-<g text-anchor="end">
+<g text-anchor="end" opacity="0.7">
 <text x="18.11" y="89.93" dy=".35em">0</text>
 <text x="18.11" y="76.11" dy=".35em">1.0×10<tspan font-size="0.833em" baseline-shift="super">3</tspan></text>
 <text x="18.11" y="62.28" dy=".35em">2.0×10<tspan font-size="0.833em" baseline-shift="super">3</tspan></text>
