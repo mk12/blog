@@ -5,9 +5,10 @@
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
-* full dark mode (SVG palettes, including in RSS)
++ full dark mode (SVG palettes, including in RSS)
     x not going to use `<style>` in SVG, doesn't work in NetNewsWire
     + just going to stick with currentColor, and #888 can be fine light/dark
+    + in the end used #999 for mid-gray, and #b0b0b040 for faded background
 + broken link http://lindenmayer.mitchellkember.com/koch/4
 x lindenmayer heroku
 + code block in narrow mode should still have background
