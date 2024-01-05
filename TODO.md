@@ -5,6 +5,7 @@
 - figure out FONT_URL
     - probably removing webfonts in the redesign
     - but for now, FONT_URL seems unused? Now that css uses /fonts/
+- try bun watch instead of watchexec
 + full dark mode (SVG palettes, including in RSS)
     x not going to use `<style>` in SVG, doesn't work in NetNewsWire
     + just going to stick with currentColor, and #888 can be fine light/dark
