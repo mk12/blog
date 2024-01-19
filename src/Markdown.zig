@@ -572,19 +572,18 @@ pub const Options = struct {
 
 fn WithDefaultHooks(comptime Inner: type) type {
     return struct {
-        const Self = @This();
         const Underlying = switch (@typeInfo(Inner)) {
             .Pointer => |info| info.child,
             else => Inner,
         };
         inner: Inner,
 
-        fn writeUrl(self: Self, writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
             if (@hasDecl(Underlying, "writeUrl")) return self.inner.writeUrl(writer, context, url);
             try writer.writeAll(url);
         }
 
-        fn writeImage(self: Self, writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeImage(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
             if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, context, url);
             try writer.print("<img src=\"{s}\">", .{url});
         }
