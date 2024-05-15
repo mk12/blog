@@ -1,24 +1,4 @@
-# Writing and artwork
-
-This section applies to the following files:
-
-- Markdown files in [posts/](posts/)
-- Artwork in [artwork/](artwork/) and [assets/](assets/)
-
-## No license
-
-© 2023 Mitchell Kember
-
-# Source code
-
-This section applies to the following files:
-
-- Zig source code in [build.zig](build.zig) and [src/](src/)
-- HTML and XML templates in [templates/](templates/)
-- [assets/css/style.css](assets/css/style.css)
-- Scripts such as [Makefile](Makefile) and [serve.ts](serve.ts)
-
-## The MIT License
+# The MIT License
 
 © 2023 Mitchell Kember
 

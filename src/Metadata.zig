@@ -13,12 +13,7 @@ const Metadata = @This();
 title: []const u8,
 subtitle: []const u8,
 category: []const u8,
-status: Status,
-
-pub const Status = union(enum) {
-    draft,
-    published: Date,
-};
+date: Date,
 
 pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
     var meta: Metadata = undefined;
@@ -28,12 +23,9 @@ pub fn parse(scanner: *Scanner) Reporter.Error!Metadata {
         try scanner.expectString(key ++ ": ");
         @field(meta, key) = scanner.consumeUntilEol();
     }
-    if (scanner.consumeString("date: ")) {
-        meta.status = Status{ .published = try Date.parse(scanner) };
-        try scanner.expect('\n');
-    } else {
-        meta.status = Status.draft;
-    }
+    try scanner.expectString("date: ");
+    meta.date = try Date.parse(scanner);
+    try scanner.expect('\n');
     try scanner.expectString(separator);
     return meta;
 }
@@ -55,28 +47,12 @@ fn expectFailure(expected_message: []const u8, source: []const u8) !void {
     try reporter.expectFailure(expected_message, parse(&scanner));
 }
 
-test "draft" {
+test "complete" {
     try expect(Metadata{
         .title = "The title",
         .subtitle = "The subtitle",
         .category = "Category",
-        .status = .draft,
-    },
-        \\---
-        \\title: The title
-        \\subtitle: The subtitle
-        \\category: Category
-        \\---
-        \\
-    );
-}
-
-test "published" {
-    try expect(Metadata{
-        .title = "The title",
-        .subtitle = "The subtitle",
-        .category = "Category",
-        .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
+        .date = Date.from("2023-04-29T15:28:50-07:00"),
     },
         \\---
         \\title: The title
@@ -101,12 +77,13 @@ test "missing fields" {
 
 test "invalid field" {
     try expectFailure(
-        \\<input>:5:1: expected "---\n", got "inva"
+        \\<input>:6:1: expected "---\n", got "inva"
     ,
         \\---
         \\title: The title
         \\subtitle: The subtitle
         \\category: Category
+        \\date: 2023-04-29T15:28:50-07:00
         \\invalid: This is invalid!
         \\---
         \\

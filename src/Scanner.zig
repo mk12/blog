@@ -168,11 +168,11 @@ pub fn failOn(self: *Scanner, token: []const u8, comptime format: []const u8, ar
 }
 
 pub fn failAtOffset(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, Location.fromOffset(self.source, offset), format, args);
+    return self.reporter.fail(self.filename, Location.fromOffset(self.source, offset), format, args);
 }
 
 pub fn failAtPtr(self: *Scanner, ptr: [*]const u8, comptime format: []const u8, args: anytype) Error {
-    return self.reporter.failAt(self.filename, Location.fromPtr(self.source, ptr), format, args);
+    return self.reporter.fail(self.filename, Location.fromPtr(self.source, ptr), format, args);
 }
 
 // Everything is in one test block because to avoid repeating setup code.

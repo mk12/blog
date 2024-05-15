@@ -176,6 +176,8 @@ const Token = union(enum) {
     }
 };
 
+// Note: The tokenizer is currently infallible. It might be worth changing it to
+// be fallible, that way it could be stricter and reveal more problems.
 const Tokenizer = struct {
     scanner: *Scanner,
     token_start: usize,
@@ -568,6 +570,7 @@ pub const Options = struct {
     auto_heading_ids: bool = false,
     shift_heading_level: i8 = 0,
     out_has_footnotes: ?*bool = null,
+    hook_options: ?*const anyopaque = null,
 };
 
 fn WithDefaultHooks(comptime Inner: type) type {
@@ -592,26 +595,21 @@ fn WithDefaultHooks(comptime Inner: type) type {
 
 pub const HookContext = struct {
     reporter: *Reporter,
+    options: Options,
     source: []const u8,
     filename: []const u8,
     ptr: [*]const u8 = undefined,
 
     fn at(self: HookContext, ptr: [*]const u8) HookContext {
-        return HookContext{ .reporter = self.reporter, .source = self.source, .filename = self.filename, .ptr = ptr };
+        return HookContext{ .reporter = self.reporter, .options = self.options, .source = self.source, .filename = self.filename, .ptr = ptr };
     }
 
     pub fn fail(self: HookContext, comptime format: []const u8, args: anytype) Reporter.Error {
-        return self.reporter.failAt(self.filename, Location.fromPtr(self.source, self.ptr), format, args);
+        return self.reporter.fail(self.filename, Location.fromPtr(self.source, self.ptr), format, args);
     }
 };
 
-pub fn render(
-    self: Markdown,
-    reporter: *Reporter,
-    writer: anytype,
-    hooks: anytype,
-    options: Options,
-) !void {
+pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, hooks: anytype, options: Options) !void {
     // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
     const offset = @intFromPtr(self.text.ptr) - @intFromPtr(self.context.source.ptr);
     var scanner = Scanner{
@@ -622,7 +620,7 @@ pub fn render(
     };
     var tokenizer = try Tokenizer.init(&scanner);
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
-    const hook_ctx = HookContext{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename };
+    const hook_ctx = HookContext{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename, .options = options };
     return renderImpl(&tokenizer, writer, full_hooks, hook_ctx, self.context.links, options) catch |err| switch (err) {
         error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{tag_stack.max_depth}),
         else => return err,

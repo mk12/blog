@@ -1,18 +1,17 @@
 # Blog
 
-This is the source for my personal blog.
+This repository is a collection of tools for making a static site generator:
 
-I host it at https://mitchellkember.com/blog.
+* Error reporting: [Reporter.zig](src/Reporter.zig)
+* Text scanning: [Scanner.zig](src/Scanner.zig)
+* Date parsing: [Date.zig](src/Date.zig)
+* Blog posts: [Post.zig](src/Post.zig), [Metadata.zig](src/Metadata.zig)
+* Templating language: [Template.zig](src/Template.zig)
+* Markdown renderer: [Markdown.zig](src/Markdown.zig)
+* MathML renderer: [MathML.zig](src/MathML.zig)
+* Code highlighter: [Highlighter.zig](src/Highlighter.zig)
 
-## Usage
-
-Run `make` to build the blog.
-
-Run `make serve` for a live-reloading local server.
-
-## Fonts
-
-This blog uses the fonts Equity, Concourse, and Triplicate. You can buy them at https://mbtype.com.
+It used to be contain the source for my blog, hence the name. I'm in the middle of converting it to a reusable set of Zig libraries. For now, I'm just providing the code for reference.
 
 ## License
 

@@ -9,21 +9,20 @@
 //!     {{ if foo }}...{{ end }}               if statement
 //!     {{ if foo }}...{{ else }}...{{ end }}  if-else statement
 //!     {{ range foo }}...{{ end }}            range over a collection
-//!     {{ include "file.html" }}              include another template
-//!     {{ define foo }}...{{ end }}           define a variable as sub-template
+//!     {{ template "file.html" }}             include another template
+//!     {{ foo = "..." }}                      define a string variable
+//!     {{ define foo }}...{{ end }}           define a template variable
 //!
 //! A value is either null, a bool, string, array of values, dictionary from
 //! strings to values, pointer to a Value, sub-template, date, or Markdown.
 //!
 //! Everything is truthy except false, null, empty arrays, and empty strings.
-//! {{ if }} is actually an alias for {{ range }}; ranging over a non-array
-//! iterates 0 or 1 times (and executes {{ else }} if 0 times). Within a range,
-//! {{ . }} is bound to the item. If the item is a dictionary, its fields are
-//! brought into scope as variables as well.
+//! Within if/range, {{ . }} is bound to the item. If the item is a dictionary,
+//! its fields are brought into scope as well. {{ template "var" }} is actually
+//! the same thing as {{ var }}, but it can refer to non [a-zA-Z0-9_] variables.
 //!
-//! When {{ if }}, {{ range}}, {{ else }}, or {{ end }} are preceded on their
-//! line only by whitespace, all prior whitespace (even before the line) is
-//! trimmed, similar to {{- foo }} in Go templates.
+//! When a command is preceded on its line only by whitespace, prior whitespace
+//! (even before the line) is trimmed, similar to {{- foo }} in Go templates.
 //!
 //! You can express Jinja-style inheritance like this:
 //!
@@ -32,7 +31,7 @@
 //!     {{ body }}
 //!
 //!     <!-- index.html -->
-//!     {{ include "base.html" }}
+//!     {{ template "base.html" }}
 //!     {{ define body }}...{{ end }}
 //!
 //! This works because definitions are hoisted and dynamically scoped.
@@ -40,7 +39,7 @@
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
-const fmtEscapes = std.zig.fmtEscapes;
+const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const Date = @import("Date.zig");
 const EnumSet = std.enums.EnumSet;
@@ -52,17 +51,19 @@ const Template = @This();
 
 source: []const u8,
 filename: []const u8,
-definitions: std.ArrayListUnmanaged(Definition) = .{},
+offset: usize,
+definitions: std.StringHashMapUnmanaged(Value) = .{},
 commands: std.ArrayListUnmanaged(Command) = .{},
 
 const Variable = []const u8;
 
 const Token = union(enum) {
     text: []const u8,
-    include: []const u8, // template path
     variable: Variable,
+    assign: struct { variable: Variable, string: []const u8 },
     define: Variable,
-    start: Variable, // "if" or "range"
+    @"if": Variable,
+    range: Variable,
     terminator: Terminator,
 };
 
@@ -77,48 +78,41 @@ fn scan(scanner: *Scanner) Reporter.Error!Token {
     scanner.skipMany(' ');
     const word = try scanIdentifier(scanner);
     scanner.skipMany(' ');
-    const Kind = enum { variable, include, define, @"if", range, @"else", end };
+    const Kind = enum { variable, template, define, @"if", range, @"else", end };
     const kind = std.meta.stringToEnum(Kind, word) orelse .variable;
     const token: Token = switch (kind) {
-        .variable => .{ .variable = word },
-        .include => .{
-            .include = blk: {
-                try scanner.expect('"');
-                const path = scanner.consumeLineUntil('"') orelse
-                    return scanner.fail("unclosed '\"'", .{});
+        .variable => switch (scanner.consume('=')) {
+            false => .{ .variable = word },
+            true => blk: {
                 scanner.skipMany(' ');
-                break :blk path;
+                break :blk .{ .assign = .{ .variable = word, .string = try scanStringLiteral(scanner) } };
             },
         },
-        .define => .{
-            .define = blk: {
-                const variable = try scanIdentifier(scanner);
-                scanner.skipMany(' ');
-                break :blk variable;
-            },
-        },
-        .@"if", .range => .{
-            .start = blk: {
-                const variable = try scanIdentifier(scanner);
-                scanner.skipMany(' ');
-                break :blk variable;
-            },
-        },
+        .template => .{ .variable = try scanStringLiteral(scanner) },
+        inline .define, .@"if", .range => |tag| @unionInit(Token, @tagName(tag), try scanIdentifier(scanner)),
         .@"else" => .{ .terminator = .@"else" },
         .end => .{ .terminator = .end },
     };
+    scanner.skipMany(' ');
     try scanner.expectString("}}");
     return token;
 }
 
 fn scanIdentifier(scanner: *Scanner) ![]const u8 {
     const start = scanner.offset;
+    if (scanner.consume('.')) return scanner.source[start..scanner.offset];
     while (scanner.peek()) |char| switch (char) {
-        'A'...'Z', 'a'...'z', '0'...'9', '_', '.' => scanner.eat(),
+        'A'...'Z', 'a'...'z', '0'...'9', '_' => scanner.eat(),
         else => break,
     };
     if (scanner.offset == start) return scanner.fail("expected an identifier", .{});
     return scanner.source[start..scanner.offset];
+}
+
+fn scanStringLiteral(scanner: *Scanner) ![]const u8 {
+    try scanner.expect('"');
+    const string = scanner.consumeLineUntil('"') orelse return scanner.fail("unclosed '\"'", .{});
+    return string;
 }
 
 fn expectTokens(expected: []const Token, source: []const u8) !void {
@@ -154,16 +148,19 @@ test "scan text and variable" {
 
 test "scan everything" {
     try expectTokens(&[_]Token{
-        .{ .include = "base.html" },
+        .{ .variable = "base.html" },
+        .{ .text = "\n" },
+        .{ .assign = .{ .variable = "day", .string = "Monday" } },
         .{ .text = "\n" },
         .{ .define = "var" },
         .{ .text = "\n    " },
-        .{ .start = "thing" },
+        .{ .range = "thing" },
         .{ .text = "\n        Value: " },
-        .{ .start = "bar" },
+        .{ .@"if" = "bar" },
         .{ .variable = "." },
         .{ .terminator = .@"else" },
-        .{ .text = "Fallback" },
+        .{ .text = "day is " },
+        .{ .variable = "day" },
         .{ .terminator = .end },
         .{ .text = ",\n    " },
         .{ .terminator = .end },
@@ -171,70 +168,53 @@ test "scan everything" {
         .{ .terminator = .end },
         .{ .terminator = .eof },
     },
-        \\{{ include "base.html" }}
+        \\{{ template "base.html" }}
+        \\{{ day = "Monday" }}
         \\{{ define var }}
         \\    {{ range thing }}
-        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\        Value: {{if bar}}{{.}}{{else}}day is {{day}}{{end}},
         \\    {{ end }}
         \\{{ end }}
     );
 }
 
-const Definition = struct {
-    variable: Variable,
-    body: Template,
-};
-
 const Command = union(enum) {
     text: []const u8,
     variable: Variable,
-    include: *const Template,
-    control: struct {
-        variable: Variable,
-        body: Template,
-        else_body: ?Template,
-    },
+    @"if": struct { variable: Variable, body: Template, else_body: ?Template },
+    range: struct { variable: Variable, body: Template },
 };
 
-pub fn parse(
-    allocator: Allocator,
-    scanner: *Scanner,
-    include_map: std.StringHashMap(Template),
-) ParseError!Template {
-    const ctx = ParseContext{ .allocator = allocator, .scanner = scanner, .include_map = include_map };
-    return parseUntil(ctx, .eof, .trim_start);
+pub fn parse(allocator: Allocator, scanner: *Scanner) ParseError!Template {
+    return parseUntil(allocator, scanner, .eof, .trim_start);
 }
-
-const ParseContext = struct {
-    allocator: Allocator,
-    scanner: *Scanner,
-    include_map: std.StringHashMap(Template),
-};
 
 const Trim = enum { no_trim, trim_start };
 
-fn parseUntil(ctx: ParseContext, terminator: Terminator, trim: Trim) !Template {
+fn parseUntil(allocator: Allocator, scanner: *Scanner, terminator: Terminator, trim: Trim) !Template {
     const terminators = EnumSet(Terminator).initOne(terminator);
-    const result = try parseUntilAny(ctx, terminators, trim);
+    const result = try parseUntilAny(allocator, scanner, terminators, trim);
     return result.template;
 }
 
-const ParseError = Reporter.Error || Allocator.Error;
+pub const ParseError = Reporter.Error || Allocator.Error;
 const ParseResult = ParseError!struct { template: Template, terminator: Terminator };
 
-fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
-    const scanner = ctx.scanner;
-    var template = Template{ .source = scanner.source, .filename = scanner.filename };
+fn parseUntilAny(allocator: Allocator, scanner: *Scanner, allowed_terminators: EnumSet(Terminator), trim: Trim) ParseResult {
+    var template = Template{ .source = scanner.source, .filename = scanner.filename, .offset = scanner.offset };
     const terminator: Terminator, const offset = while (true) {
         const offset = scanner.offset;
         const command: Command = switch (try scan(scanner)) {
             .terminator => |terminator| break .{ terminator, offset },
+            .assign => |assign| {
+                template.trimLastIfText();
+                try template.definitions.put(allocator, assign.variable, Value{ .string = assign.string });
+                continue;
+            },
             .define => |variable| {
                 template.trimLastIfText();
-                try template.definitions.append(ctx.allocator, Definition{
-                    .variable = variable,
-                    .body = try parseUntil(ctx, .end, .trim_start),
-                });
+                const body = try parseUntil(allocator, scanner, .end, .trim_start);
+                try template.definitions.put(allocator, variable, Value{ .template = body });
                 continue;
             },
             .text => |text| blk: {
@@ -246,27 +226,32 @@ fn parseUntilAny(ctx: ParseContext, allowed_terminators: EnumSet(Terminator), tr
                 break :blk .{ .text = text };
             },
             .variable => |variable| .{ .variable = variable },
-            .include => |path| .{
-                .include = ctx.include_map.getPtr(path) orelse
-                    return scanner.failAtPtr(path.ptr, "{s}: template not found", .{path}),
-            },
-            .start => |variable| blk: {
+            .@"if" => |variable| blk: {
                 template.trimLastIfText();
                 const end_or_else = EnumSet(Terminator).init(.{ .end = true, .@"else" = true });
-                const result = try parseUntilAny(ctx, end_or_else, .no_trim);
+                const result = try parseUntilAny(allocator, scanner, end_or_else, .no_trim);
                 break :blk .{
-                    .control = .{
+                    .@"if" = .{
                         .variable = variable,
                         .body = result.template,
                         .else_body = switch (result.terminator) {
-                            .@"else" => try parseUntil(ctx, .end, .no_trim),
+                            .@"else" => try parseUntil(allocator, scanner, .end, .no_trim),
                             else => null,
                         },
                     },
                 };
             },
+            .range => |variable| blk: {
+                template.trimLastIfText();
+                break :blk .{
+                    .range = .{
+                        .variable = variable,
+                        .body = try parseUntil(allocator, scanner, .end, .no_trim),
+                    },
+                };
+            },
         };
-        try template.commands.append(ctx.allocator, command);
+        try template.commands.append(allocator, command);
     };
     template.trimLastIfText();
     if (!allowed_terminators.contains(terminator)) {
@@ -304,11 +289,11 @@ fn trimEnd(text: []const u8) []const u8 {
     return mem.trimRight(u8, text[0..index], whitespace_chars);
 }
 
-fn expectParse(allocator: Allocator, source: []const u8, include_map: std.StringHashMap(Template)) !Template {
+fn expectParse(allocator: Allocator, source: []const u8) !Template {
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    return parse(allocator, &scanner, include_map);
+    return parse(allocator, &scanner);
 }
 
 fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
@@ -317,8 +302,7 @@ fn expectParseFailure(expected_message: []const u8, source: []const u8) !void {
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    const include_map = std.StringHashMap(Template).init(allocator);
-    try reporter.expectFailure(expected_message, parse(allocator, &scanner, include_map));
+    try reporter.expectFailure(expected_message, parse(allocator, &scanner));
 }
 
 test "parse text" {
@@ -326,59 +310,79 @@ test "parse text" {
     defer arena.deinit();
     const allocator = arena.allocator();
     const source = "foo";
-    const include_map = std.StringHashMap(Template).init(allocator);
-    const template = try expectParse(allocator, source, include_map);
-    try testing.expectEqualSlices(Definition, &.{}, template.definitions.items);
+    const template = try expectParse(allocator, source);
+    try testing.expectEqual(@as(usize, 0), template.definitions.count());
     try testing.expectEqualSlices(Command, &.{Command{ .text = source }}, template.commands.items);
 }
 
 test "parse everything" {
     const source =
-        \\{{ include "base.html" }}
+        \\{{ template "base.html" }}
+        \\{{ day = "Monday" }}
         \\{{ define var }}
         \\    {{ range thing }}
-        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\        Value: {{if bar}}{{.}}{{else}}day is {{day}}{{end}},
         \\    {{ end }}
         \\{{ end }}
     ;
 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const allocator = arena.allocator();
+    const template = try expectParse(arena.allocator(), source);
 
-    var include_map = std.StringHashMap(Template).init(allocator);
-    try include_map.put("base.html", undefined);
-    const base_template: *const Template = include_map.getPtr("base.html").?;
-    const template = try expectParse(allocator, source, include_map);
+    try testing.expectEqualStrings("<input>", template.filename);
+    try testing.expectEqual(@as(usize, 0), template.offset);
 
-    const definitions = template.definitions.items;
-    try testing.expectEqual(@as(usize, 1), definitions.len);
-    const define_var = definitions[0];
-    try testing.expectEqualStrings("var", define_var.variable);
-    try testing.expectEqual(@as(usize, 0), define_var.body.definitions.items.len);
-    const var_body = define_var.body.commands.items;
+    const definitions = template.definitions;
+    try testing.expectEqual(@as(usize, 2), definitions.count());
+    const define_day = definitions.get("day").?.string;
+    try testing.expectEqualStrings("Monday", define_day);
+    const define_var = definitions.get("var").?.template;
+    try testing.expectEqual(@as(usize, 0), define_var.definitions.count());
+    try testing.expectEqualStrings("<input>", define_var.filename);
+    try testing.expectEqual(@as(usize, 63), define_var.offset);
+    const var_body = define_var.commands.items;
     try testing.expectEqual(@as(usize, 1), var_body.len);
-    const range_thing = var_body[0].control;
+    const range_thing = var_body[0].range;
     try testing.expectEqualStrings("thing", range_thing.variable);
-    try testing.expectEqual(@as(usize, 0), range_thing.body.definitions.items.len);
+    try testing.expectEqual(@as(usize, 0), range_thing.body.definitions.count());
     const range_body = range_thing.body.commands.items;
     try testing.expectEqual(@as(usize, 3), range_body.len);
-    try testing.expectEqual(@as(?Template, null), range_thing.else_body);
     try testing.expectEqualStrings("\n        Value: ", range_body[0].text);
-    const if_bar = range_body[1].control;
+    const if_bar = range_body[1].@"if";
     try testing.expectEqualStrings(",", range_body[2].text);
-    try testing.expectEqual(@as(usize, 0), if_bar.body.definitions.items.len);
-    try testing.expectEqual(@as(usize, 0), if_bar.else_body.?.definitions.items.len);
+    try testing.expectEqual(@as(usize, 0), if_bar.body.definitions.count());
+    try testing.expectEqual(@as(usize, 0), if_bar.else_body.?.definitions.count());
     const if_body = if_bar.body.commands.items;
     try testing.expectEqual(@as(usize, 1), if_body.len);
     try testing.expectEqualStrings(".", if_body[0].variable);
     const else_body = if_bar.else_body.?.commands.items;
-    try testing.expectEqual(@as(usize, 1), else_body.len);
-    try testing.expectEqualStrings("Fallback", else_body[0].text);
+    try testing.expectEqual(@as(usize, 2), else_body.len);
+    try testing.expectEqualStrings("day is ", else_body[0].text);
+    try testing.expectEqualStrings("day", else_body[1].variable);
 
     const commands = template.commands.items;
     try testing.expectEqual(@as(usize, 1), commands.len);
-    try testing.expectEqual(base_template, commands[0].include);
+    try testing.expectEqualStrings("base.html", commands[0].variable);
+}
+
+test "parse multiple definitions" {
+    const source =
+        \\{{ define a }}1{{ end }}
+        \\{{ define b }}2{{ end }}
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const template = try expectParse(arena.allocator(), source);
+    try testing.expectEqualSlices(Command, &.{}, template.commands.items);
+    try testing.expectEqual(@as(usize, 2), template.definitions.count());
+    const def_a = template.definitions.get("a").?.template;
+    try testing.expectEqual(@as(usize, 1), def_a.commands.items.len);
+    try testing.expectEqualStrings("1", def_a.commands.items[0].text);
+    const def_b = template.definitions.get("b").?.template;
+    try testing.expectEqual(@as(usize, 1), def_b.commands.items.len);
+    try testing.expectEqualStrings("2", def_b.commands.items[0].text);
 }
 
 test "invalid command" {
@@ -389,11 +393,20 @@ test "invalid command" {
     );
 }
 
+test "invalid dot" {
+    try expectParseFailure(
+        \\<input>:2:12: expected "}}", got ".h"
+    ,
+        \\Good {{ template "base.html" }}
+        \\Bad {{ base.html }}
+    );
+}
+
 test "unterminated command" {
     try expectParseFailure(
-        \\<input>:1:27: expected "}}", got EOF
+        \\<input>:1:26: expected "}}", got EOF
     ,
-        \\Missing closing {{ braces.
+        \\Missing closing {{ braces
     );
 }
 
@@ -414,12 +427,19 @@ test "unexpected end" {
     );
 }
 
-test "invalid include" {
+test "unexpected else" {
     try expectParseFailure(
-        \\<input>:2:13: does_not_exist: template not found
+        \\<input>:1:17: unexpected {{ else }}
     ,
-        \\Some text before.
-        \\{{ include "does_not_exist" }}
+        \\{{ range . }}foo{{ else }}bar{{ end }}
+    );
+}
+
+test "missing string literal" {
+    try expectParseFailure(
+        \\<input>:1:8: expected "\"", got "}"
+    ,
+        \\{{ a = }}
     );
 }
 
@@ -430,7 +450,7 @@ pub const Value = union(enum) {
     array: std.ArrayListUnmanaged(Value),
     dict: std.StringHashMapUnmanaged(Value),
     pointer: *const Value,
-    template: *const Template,
+    template: Template,
     date: struct { date: Date, style: Date.Style },
     markdown: struct { markdown: Markdown, options: Markdown.Options },
 
@@ -447,6 +467,7 @@ pub const Value = union(enum) {
             Value => return object,
             @TypeOf(null) => return .null,
             bool => return .{ .bool = object },
+            Template => return .{ .template = object },
             else => {},
         }
         switch (@typeInfo(Type)) {
@@ -477,37 +498,61 @@ pub const Value = union(enum) {
 
     fn initArray(allocator: Allocator, object: anytype, comptime ItemType: type) !Value {
         if (ItemType == u8) return .{ .string = object };
+        const info = @typeInfo(@TypeOf(object));
+        if (ItemType == Value and info == .Pointer and !info.Pointer.is_const)
+            return .{ .array = std.ArrayListUnmanaged(Value).fromOwnedSlice(object) };
         var array = std.ArrayListUnmanaged(Value){};
         for (object) |item| try array.append(allocator, try init(allocator, item));
         return .{ .array = array };
+    }
+
+    fn truthy(self: Value) bool {
+        return switch (self) {
+            .null => false,
+            .bool => |bool_val| bool_val,
+            .string => |string| string.len > 0,
+            .array => |array| array.items.len > 0,
+            .dict, .template, .date, .markdown => true,
+            .pointer => unreachable,
+        };
     }
 };
 
 test "value" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
+    var bool_array_1 = [2]bool{ true, false };
+    var bool_array_2 = [2]bool{ true, false };
+    var value_1 = Value{ .bool = false };
+    var value_array_1 = [1]Value{.{ .bool = false }};
+    var value_array_2 = [1]Value{.{ .bool = false }};
     _ = try Value.init(arena.allocator(), .{
         .null = null,
         .true = true,
         .false = false,
         .string = "hello",
         .empty = .{},
-        .array = .{ true, "hello" },
-        .slice = &[_]bool{ true, false },
-        .pointer = &Value{ .bool = false },
+        .tuple = .{ true, "hello" },
+        .array = [2]bool{ true, false },
+        .array_ptr = @as(*const [2]bool, &[2]bool{ true, false }),
+        .slice = @as([]const bool, &[2]bool{ true, false }),
+        .array_ptr_mut = @as(*[2]bool, &bool_array_1),
+        .slice_mut = @as([]bool, &bool_array_2),
         .nested = .{ .true = true, .string = "hello" },
         .value = try Value.init(arena.allocator(), "hello"),
+        .value_ptr = @as(*const Value, &Value{ .bool = false }),
+        .value_ptr_mut = @as(*Value, &value_1),
+        .value_tuple = .{Value{ .bool = false }},
+        .value_array = [1]Value{.{ .bool = false }},
+        .value_array_ptr = @as(*const [1]Value, &[1]Value{.{ .bool = false }}),
+        .value_slice = @as([]const Value, &[1]Value{.{ .bool = false }}),
+        .value_array_ptr_mut = @as(*[1]Value, &value_array_1),
+        .value_slice_mut = @as([]Value, &value_array_2),
+        .template = try expectParse(arena.allocator(), "template"),
     });
 }
 
-pub fn execute(
-    self: Template,
-    allocator: Allocator,
-    reporter: *Reporter,
-    writer: anytype,
-    hooks: anytype,
-    scope: *Scope,
-) !void {
+pub fn execute(self: Template, allocator: Allocator, reporter: *Reporter, writer: anytype, hooks: anytype, scope: Scope) !void {
     const ctx = ExecuteContext(@TypeOf(writer), @TypeOf(hooks)){
         .allocator = allocator,
         .reporter = reporter,
@@ -524,25 +569,19 @@ fn ExecuteContext(comptime Writer: type, comptime Hooks: type) type {
 pub const Scope = struct {
     parent: ?*const Scope,
     value: Value,
-    definitions: std.StringHashMapUnmanaged(*const Template),
 
     pub fn init(value: Value) Scope {
-        return Scope{ .parent = null, .value = value, .definitions = .{} };
+        assert(value != .pointer);
+        return Scope{ .parent = null, .value = value };
     }
 
     pub fn initChild(self: *const Scope, value: Value) Scope {
-        return Scope{ .parent = self, .value = value, .definitions = .{} };
-    }
-
-    fn reset(self: *Scope, value: Value) *Scope {
-        self.definitions.clearRetainingCapacity();
-        self.value = value;
-        return self;
+        assert(value != .pointer);
+        return Scope{ .parent = self, .value = value };
     }
 
     fn lookup(self: *const Scope, variable: Variable) ?Value {
         if (mem.eql(u8, variable, ".")) return self.value;
-        if (self.definitions.get(variable)) |template| return Value{ .template = template };
         switch (self.value) {
             .dict => |dict| if (dict.get(variable)) |value| return value,
             else => {},
@@ -552,75 +591,86 @@ pub const Scope = struct {
     }
 };
 
-fn lookup(self: Template, ctx: anytype, scope: *const Scope, variable: Variable) !Value {
-    const value = scope.lookup(variable) orelse return ctx.reporter.failAt(
+fn chase(self: Template, ctx: anytype, variable: Variable, value: Value) !Value {
+    return switch (value) {
+        .pointer => |ptr| switch (ptr.*) {
+            .pointer => ctx.reporter.fail(
+                self.filename,
+                Location.fromPtr(self.source, variable.ptr),
+                "{s}: pointer to pointer not allowed",
+                .{variable},
+            ),
+            else => |pointee| pointee,
+        },
+        else => value,
+    };
+}
+
+fn lookup(self: Template, ctx: anytype, scope: Scope, variable: Variable) !Value {
+    const value = scope.lookup(variable) orelse return ctx.reporter.fail(
         self.filename,
         Location.fromPtr(self.source, variable.ptr),
         "{s}: variable not found",
         .{variable},
     );
-    return switch (value) {
-        .pointer => |ptr| ptr.*,
-        else => value,
-    };
+    return self.chase(ctx, variable, value);
 }
 
-fn exec(self: Template, ctx: anytype, scope: *Scope) !void {
-    for (self.definitions.items) |definition|
-        try scope.definitions.put(ctx.allocator, definition.variable, &definition.body);
+fn exec(self: Template, ctx: anytype, parent: Scope) !void {
+    const scope = if (self.definitions.count() == 0) parent else parent.initChild(Value{ .dict = self.definitions });
     for (self.commands.items) |command| switch (command) {
         .text => |text| try ctx.writer.writeAll(text),
-        .include => |template| try template.exec(ctx, scope),
         .variable => |variable| switch (try self.lookup(ctx, scope, variable)) {
             .string => |string| try ctx.writer.writeAll(string),
-            .template => |template| try template.exec(ctx, scope),
+            .template => |template| template.exec(ctx, scope) catch |err| {
+                if (err == error.ErrorWasReported) {
+                    ctx.reporter.addNote(template.filename, Location.fromOffset(template.source, template.offset), "`{s}` defined here", .{variable});
+                    ctx.reporter.addNote(self.filename, Location.fromPtr(self.source, variable.ptr), "`{s}` referenced here", .{variable});
+                }
+                return err;
+            },
             .date => |args| try args.date.render(ctx.writer, args.style),
             .markdown => |args| try args.markdown.render(ctx.reporter, ctx.writer, ctx.hooks, args.options),
             .pointer => unreachable,
-            else => |value| return ctx.reporter.failAt(
+            else => |value| return ctx.reporter.fail(
                 self.filename,
                 Location.fromPtr(self.source, variable.ptr),
-                "{s}: expected string, got {s}",
+                "{s}: cannot render variable of type {s}",
                 .{ variable, @tagName(value) },
             ),
         },
-        .control => |control| blk: {
-            const body = control.body;
-            var child = scope.initChild(undefined);
-            switch (try self.lookup(ctx, scope, control.variable)) {
-                .null => {},
-                .bool => |value| if (value) break :blk try body.exec(ctx, scope),
-                .string => |string| if (string.len > 0) break :blk try body.exec(ctx, child.reset(Value{ .string = string })),
-                .array => |array| if (array.items.len > 0) break :blk for (array.items) |item| try body.exec(ctx, child.reset(item)),
-                .pointer => unreachable,
-                else => |value| break :blk try body.exec(ctx, child.reset(value)),
-            }
-            if (control.else_body) |else_body| try else_body.exec(ctx, scope);
+        .@"if" => |if_cmd| {
+            const value = try self.lookup(ctx, scope, if_cmd.variable);
+            if (value.truthy())
+                try if_cmd.body.exec(ctx, scope.initChild(value))
+            else if (if_cmd.else_body) |body|
+                try body.exec(ctx, scope);
+        },
+        .range => |range| switch (try self.lookup(ctx, scope, range.variable)) {
+            .null => {},
+            .array => |array| for (array.items) |item| try range.body.exec(ctx, scope.initChild(try self.chase(ctx, range.variable, item))),
+            .pointer => unreachable,
+            else => |value| return ctx.reporter.fail(
+                self.filename,
+                Location.fromPtr(self.source, range.variable.ptr),
+                "{s}: cannot range over variable of type {s}",
+                .{ range.variable, @tagName(value) },
+            ),
         },
     };
 }
 
-fn expectExecute(expected: []const u8, source: []const u8, object: anytype, includes: anytype) !void {
+fn expectExecute(expected: []const u8, source: []const u8, object: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    var include_map = std.StringHashMap(Template).init(allocator);
-    const fields = @typeInfo(@TypeOf(includes)).Struct.fields;
-    inline for (fields) |field| {
-        try include_map.put(field.name, undefined);
-    }
-    inline for (fields) |field| {
-        var scanner = Scanner{ .source = @field(includes, field.name), .reporter = &reporter };
-        include_map.getPtr(field.name).?.* = try parse(allocator, &scanner, include_map);
-    }
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var template = try parse(allocator, &scanner, include_map);
-    const value = try Value.init(allocator, object);
-    var scope = Scope.init(value);
+    var template = try parse(allocator, &scanner);
+    const scope = Scope.init(try Value.init(allocator, object));
     var actual = std.ArrayList(u8).init(allocator);
-    try template.execute(allocator, &reporter, actual.writer(), .{}, &scope);
+    try template.execute(allocator, &reporter, actual.writer(), .{}, scope);
     try testing.expectEqualStrings(expected, actual.items);
 }
 
@@ -630,83 +680,103 @@ fn expectExecuteFailure(expected_message: []const u8, source: []const u8, object
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
-    const include_map = std.StringHashMap(Template).init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var template = try parse(allocator, &scanner, include_map);
-    const value = try Value.init(allocator, object);
-    var scope = Scope.init(value);
+    var template = try parse(allocator, &scanner);
+    const scope = Scope.init(try Value.init(allocator, object));
     try reporter.expectFailure(
         expected_message,
-        template.execute(allocator, &reporter, std.io.null_writer, .{}, &scope),
+        template.execute(allocator, &reporter, std.io.null_writer, .{}, scope),
     );
 }
 
 test "execute text" {
-    try expectExecute("", "", .{}, .{});
-    try expectExecute("Hello world!", "Hello world!", .{}, .{});
+    try expectExecute("", "", .{});
+    try expectExecute("Hello world!", "Hello world!", .{});
 }
 
 test "execute variable" {
-    try expectExecute("foo", "{{ . }}", "foo", .{});
-    try expectExecute("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" }, .{});
+    try expectExecute("foo", "{{ . }}", "foo");
+    try expectExecute("foo bar", "{{ x }} {{ y }}", .{ .x = "foo", .y = "bar" });
 }
 
 test "execute shadowing" {
-    try expectExecute("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } }, .{});
-    try expectExecute("aaa", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .z = "b" } }, .{});
+    try expectExecute("aba", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .x = "b" } });
+    try expectExecute("aaa", "{{ x }}{{ if y }}{{ x }}{{ end }}{{ x }}", .{ .x = "a", .y = .{ .z = "b" } });
 }
 
 test "execute definition" {
-    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{}, .{});
-    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" }, .{});
+    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{});
+    try expectExecute("foo", "{{ define x }}foo{{ end }}{{ x }}", .{ .x = "bar" });
+}
+
+test "execute multiple definitions" {
+    try expectExecute("foobar", "{{ define x }}foo{{ end }}{{ define y }}bar{{ end }}{{ x }}{{ y }}", .{});
+}
+
+test "execute dependent definitions" {
+    try expectExecute("barbar", "{{ define x }}{{ y }}{{ end }}{{ define y }}bar{{ end }}{{ x }}{{ y }}", .{});
 }
 
 test "execute if" {
-    try expectExecute("yes", "{{ if val }}yes{{ end }}", .{ .val = true }, .{});
-    try expectExecute("", "{{ if val }}yes{{ end }}", .{ .val = false }, .{});
+    try expectExecute("yes", "{{ if val }}yes{{ end }}", .{ .val = true });
+    try expectExecute("", "{{ if val }}yes{{ end }}", .{ .val = false });
 }
 
 test "execute if-else bool" {
-    try expectExecute("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true }, .{});
-    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false }, .{});
+    try expectExecute("yes", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = true });
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = false });
 }
 
 test "execute if-else string" {
-    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" }, .{});
-    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") }, .{});
-    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) }, .{});
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = "" });
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, "") });
+    try expectExecute("no", "{{ if val }}yes{{ else }}no{{ end }}", .{ .val = @as(?[]const u8, null) });
 }
 
 test "execute range" {
-    try expectExecute("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" }, .{});
-}
-
-test "execute range-else" {
-    try expectExecute("empty!", "{{ range . }}{{ . }},{{ else }}empty!{{ end }}", .{}, .{});
+    try expectExecute("Alice,Bob,", "{{ range . }}{{ . }},{{ end }}", .{ "Alice", "Bob" });
 }
 
 test "execute not a string" {
-    try expectExecuteFailure("<input>:1:4: .: expected string, got array", "{{ . }}", .{});
+    try expectExecuteFailure("<input>:1:4: .: cannot render variable of type array", "{{ . }}", .{});
 }
 
 test "execute variable not found" {
     try expectExecuteFailure("<input>:1:10: foo: variable not found", "Hello {{ foo }}!", .{});
 }
 
+test "execute double pointer" {
+    try expectExecuteFailure("<input>:1:10: foo: pointer to pointer not allowed", "Hello {{ foo }}!", .{ .foo = &Value{ .pointer = &Value{ .string = "bar" } } });
+}
+
+test "execute double pointer in scope" {
+    try expectExecuteFailure("<input>:1:7: foo: pointer to pointer not allowed", "{{ if foo }}{{ end }}", .{ .foo = &Value{ .pointer = &Value{ .string = "bar" } } });
+}
+
+test "execute double pointer in array" {
+    try expectExecuteFailure("<input>:1:10: .: pointer to pointer not allowed", "{{ range . }}{{ end }}", .{&Value{ .pointer = &Value{ .string = "bar" } }});
+}
+
 test "execute everything" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
     try expectExecute(
         \\From base:
         \\        Value: inner bar,
-        \\        Value: foo,
+        \\        Value: day is Monday,
     ,
-        \\{{ include "base.html" }}
+        \\{{ template "base.html" }}
+        \\{{ day = "Monday" }}
         \\{{ define var }}
         \\    {{ range thing }}
-        \\        Value: {{if bar}}{{.}}{{else}}Fallback{{end}},
+        \\        Value: {{if bar}}{{.}}{{else}}day is {{day}}{{end}},
         \\    {{ end }}
         \\{{ end }}
     ,
-        .{ .bar = true, .thing = .{ .{ .bar = "inner bar" }, "foo" } },
-        .{ .@"base.html" = "From base:{{ var }}" },
+        .{
+            .bar = false,
+            .thing = .{ .{ .bar = "inner bar" }, "foo" },
+            .@"base.html" = try expectParse(arena.allocator(), "From base:{{ var }}"),
+        },
     );
 }

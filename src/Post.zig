@@ -47,7 +47,7 @@ test "parse" {
             .title = "The title",
             .subtitle = "The subtitle",
             .category = "Category",
-            .status = .{ .published = Date.from("2023-04-29T15:28:50-07:00") },
+            .date = Date.from("2023-04-29T15:28:50-07:00"),
         },
         .body = "\nHello world!",
         .context = .{ .source = source, .filename = filename, .links = .{} },
@@ -63,14 +63,5 @@ test "parse" {
 }
 
 pub fn order(lhs: Post, rhs: Post) std.math.Order {
-    return switch (lhs.meta.status) {
-        .draft => switch (rhs.meta.status) {
-            .draft => std.mem.order(u8, lhs.slug, rhs.slug),
-            .published => .gt,
-        },
-        .published => |lhs_date| switch (rhs.meta.status) {
-            .draft => .lt,
-            .published => |rhs_date| std.math.order(lhs_date.sortKey(), rhs_date.sortKey()),
-        },
-    };
+    return std.math.order(lhs.meta.date.sortKey(), rhs.meta.date.sortKey());
 }

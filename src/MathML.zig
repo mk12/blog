@@ -443,6 +443,10 @@ const Tag = union(enum) {
         };
     }
 
+    fn format(self: Tag) std.fmt.Formatter(formatFn) {
+        return .{ .data = self };
+    }
+
     fn formatFn(self: Tag, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try switch (self) {
             .math => unreachable,
@@ -450,10 +454,6 @@ const Tag = union(enum) {
             .mrow_elide => writer.writeAll("<mrow> tag"),
             else => writer.print("<{s}> tag", .{@tagName(self)}),
         };
-    }
-
-    fn format(self: Tag) std.fmt.Formatter(formatFn) {
-        return .{ .data = self };
     }
 
     pub fn writeOpenTag(self: Tag, writer: anytype) !void {
