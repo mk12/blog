@@ -21,16 +21,16 @@ pub fn init(allocator: Allocator) Reporter {
 pub const Error = error{ErrorWasReported};
 
 pub fn fail(self: *Reporter, filename: []const u8, location: Location, comptime format: []const u8, args: anytype) Error {
-    const full_format = "{s}{}: " ++ format;
-    const full_args = .{ filename, location.format() } ++ args;
+    const full_format = "{s}{f}: " ++ format;
+    const full_args = .{ filename, location } ++ args;
     if (@inComptime()) @compileError(std.fmt.comptimePrint(full_format, full_args));
     self.message = std.fmt.allocPrint(self.allocator, full_format, full_args) catch unreachable;
     return error.ErrorWasReported;
 }
 
 pub fn addNote(self: *Reporter, filename: []const u8, location: Location, comptime format: []const u8, args: anytype) void {
-    const full_format = "{s}\n{s}{}: note: " ++ format;
-    const full_args = .{ self.message.?, filename, location.format() } ++ args;
+    const full_format = "{s}\n{s}{f}: note: " ++ format;
+    const full_args = .{ self.message.?, filename, location } ++ args;
     self.message = std.fmt.allocPrint(self.allocator, full_format, full_args) catch unreachable;
 }
 
@@ -73,7 +73,7 @@ pub const Location = struct {
     pub const none = Location{ .line = 0, .column = 0 };
 
     pub fn fromOffset(source: []const u8, offset: usize) Location {
-        const start_of_line = if (std.mem.lastIndexOfScalar(u8, source[0..offset], '\n')) |i| i + 1 else 0;
+        const start_of_line = if (std.mem.findScalarLast(u8, source[0..offset], '\n')) |i| i + 1 else 0;
         const num_newlines = std.mem.count(u8, source[0..start_of_line], "\n");
         return Location{
             .line = @intCast(num_newlines + 1),
@@ -82,17 +82,10 @@ pub const Location = struct {
     }
 
     pub fn fromPtr(source: []const u8, ptr: [*]const u8) Location {
-        // TODO(https://github.com/ziglang/zig/issues/9646): Should be able to subtract pointers at comptime.
-        if (@inComptime()) return Location{ .line = 0, .column = 0 }; // use 0 to indicate it's fake
-        // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-        return fromOffset(source, @intFromPtr(ptr) - @intFromPtr(source.ptr));
+        return fromOffset(source, ptr - source.ptr);
     }
 
-    fn format(self: Location) std.fmt.Formatter(formatFn) {
-        return .{ .data = self };
-    }
-
-    fn formatFn(self: Location, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Location, writer: *std.Io.Writer) !void {
         if (self.line == none.line and self.column == none.column) return;
         try writer.print(":{}:{}", .{ self.line, self.column });
     }
@@ -114,10 +107,12 @@ test "Location.fromPtr" {
     const source = "foo\nbar";
     try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.fromPtr(source, source.ptr));
     try testing.expectEqualDeep(Location{ .line = 2, .column = 1 }, Location.fromPtr(source, source.ptr + 4));
+    comptime try testing.expectEqualDeep(Location{ .line = 1, .column = 1 }, Location.fromPtr(source, source.ptr));
+    comptime try testing.expectEqualDeep(Location{ .line = 2, .column = 1 }, Location.fromPtr(source, source.ptr + 4));
 }
 
 test "Location.format" {
     var buffer: [4]u8 = undefined;
-    try testing.expectEqualStrings("", try std.fmt.bufPrint(&buffer, "{}", .{Location.none.format()}));
-    try testing.expectEqualStrings(":1:2", try std.fmt.bufPrint(&buffer, "{}", .{(Location{ .line = 1, .column = 2 }).format()}));
+    try testing.expectEqualStrings("", try std.fmt.bufPrint(&buffer, "{f}", .{Location.none}));
+    try testing.expectEqualStrings(":1:2", try std.fmt.bufPrint(&buffer, "{f}", .{(Location{ .line = 1, .column = 2 })}));
 }

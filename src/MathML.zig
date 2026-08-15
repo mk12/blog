@@ -43,6 +43,7 @@ const Token = union(enum) {
     mo_postfix: []const u8,
     mo_closed: []const u8,
     mo_closed_prefix: []const u8,
+    mo_subsup: []const u8,
     mo_underover: []const u8,
     mo_left: []const u8,
     mo_right: []const u8,
@@ -102,7 +103,7 @@ fn getVariantLetter(char: u8, variant: Variant) ?[]const u8 {
 }
 
 fn lookupMacro(name: []const u8) ?Token {
-    const list = .{
+    const list = [_]struct { []const u8, Token }{
         // Special
         .{ "text", .mtext_start },
         .{ "begin", .{ .begin = undefined } },
@@ -143,6 +144,7 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "lambda", .{ .mi = "λ" } },
         .{ "mu", .{ .mi = "μ" } },
         .{ "omega", .{ .mi = "ω" } },
+        .{ "pi", .{ .mi = "π" } },
         // Symbols
         .{ "bigcirc", .{ .mi = "◯" } },
         .{ "bigtriangleup", .{ .mi = "△" } },
@@ -164,11 +166,13 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "cup", .{ .mo = "∪" } },
         .{ "ge", .{ .mo = "≥" } },
         .{ "in", .{ .mo = "∈" } },
+        .{ "int", .{ .mo_subsup = "∫" } },
         .{ "le", .{ .mo = "≤" } },
         .{ "mapsto", .{ .mo = "↦" } },
         .{ "ne", .{ .mo = "≠" } },
         .{ "notin", .{ .mo = "∉" } },
         .{ "odot", .{ .mo_closed_prefix = "⊙" } },
+        .{ "oint", .{ .mo_subsup = "∮" } },
         .{ "oplus", .{ .mo_closed_prefix = "⊕" } },
         .{ "pm", .{ .mo_sign = "±" } },
         .{ "setminus", .{ .mo = "∖" } },
@@ -177,12 +181,12 @@ fn lookupMacro(name: []const u8) ?Token {
         .{ "times", .{ .mo_closed_prefix = "×" } },
         .{ "to", .{ .mo = "→" } },
     };
-    return std.ComptimeStringMap(Token, list).get(name);
+    return std.StaticStringMap(Token).initComptime(list).get(name);
 }
 
 fn lookupUnicode(bytes: []const u8) ?Token {
     const Kind = enum { mi, mo, mo_sign, mo_closed_prefix };
-    const list = .{
+    const list = [_]struct { []const u8, Kind }{
         // Letters
         .{ "ℵ", .mi },
         .{ "α", .mi },
@@ -205,7 +209,7 @@ fn lookupUnicode(bytes: []const u8) ?Token {
         .{ "∉", .mo },
         .{ "⊆", .mo },
     };
-    return switch (std.ComptimeStringMap(Kind, list).get(bytes) orelse return null) {
+    return switch (std.StaticStringMap(Kind).initComptime(list).get(bytes) orelse return null) {
         inline else => |kind| @unionInit(Token, @tagName(kind), bytes),
     };
 }
@@ -322,8 +326,8 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var tokenizer = Tokenizer{};
-    var actual = std.ArrayList(Token).init(allocator);
-    for (expected) |_| try actual.append(try tokenizer.next(&scanner));
+    var actual: std.ArrayList(Token) = .empty;
+    for (expected) |_| try actual.append(allocator, try tokenizer.next(&scanner));
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -416,9 +420,11 @@ const Tag = union(enum) {
     mfrac_arg,
     msqrt,
     mphantom,
+    mtext,
     msub,
     msup,
-    mtext,
+    msubsup,
+    msubsup_arg,
     munder,
     mover,
     munderover,
@@ -430,7 +436,7 @@ const Tag = union(enum) {
 
     fn isArg(self: Tag) bool {
         return switch (self) {
-            .mfrac_arg, .munderover_arg => true,
+            .mfrac_arg, .msubsup_arg, .munderover_arg => true,
             else => false,
         };
     }
@@ -439,27 +445,23 @@ const Tag = union(enum) {
         return switch (self) {
             .mtext, .mover => unreachable,
             .mrow, .mrow_elide, .msqrt, .mphantom, .environment, .boxed => true,
-            .math, .mfrac, .mfrac_arg, .msub, .msup, .munder, .munderover, .munderover_arg, .accent => false,
+            .math, .mfrac, .mfrac_arg, .msub, .msup, .msubsup, .msubsup_arg, .munder, .munderover, .munderover_arg, .accent => false,
         };
     }
 
-    fn format(self: Tag) std.fmt.Formatter(formatFn) {
-        return .{ .data = self };
-    }
-
-    fn formatFn(self: Tag, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Tag, writer: *std.Io.Writer) !void {
         try switch (self) {
             .math => unreachable,
-            .environment => |environment| writer.print("{s} environment", .{@tagName(environment)}),
+            .environment => |environment| writer.print("{t} environment", .{environment}),
             .mrow_elide => writer.writeAll("<mrow> tag"),
-            else => writer.print("<{s}> tag", .{@tagName(self)}),
+            else => writer.print("<{t}> tag", .{self}),
         };
     }
 
-    pub fn writeOpenTag(self: Tag, writer: anytype) !void {
+    pub fn writeOpenTag(self: Tag, writer: *std.Io.Writer) !void {
         switch (self) {
             .math => unreachable,
-            .mrow_elide, .mfrac_arg, .munderover_arg, .accent => {},
+            .mrow_elide, .mfrac_arg, .msubsup_arg, .munderover_arg, .accent => {},
             .boxed => try writer.writeAll("<mrow style=\"padding: 0.25em; border: 1px solid\">"),
             .environment => |environment| try writer.writeAll(switch (environment) {
                 .matrix => "<mtable><mtr><mtd>",
@@ -467,17 +469,17 @@ const Tag = union(enum) {
                 .bmatrix => "<mrow><mo>[</mo><mtable><mtr><mtd>",
                 .cases => "<mrow><mo>{</mo><mtable><mtr><mtd>",
             }),
-            else => try writer.print("<{s}>", .{@tagName(self)}),
+            else => try writer.print("<{t}>", .{self}),
         }
     }
 
-    pub fn writeCloseTag(self: Tag, writer: anytype) !void {
+    pub fn writeCloseTag(self: Tag, writer: *std.Io.Writer) !void {
         switch (self) {
             .math => unreachable,
-            .mrow_elide, .mfrac_arg, .munderover_arg => {},
+            .mrow_elide, .mfrac_arg, .msubsup_arg, .munderover_arg => {},
             .accent => |accent| try writer.print(
-                "<mo stretchy=\"false\"{s}>{s}</mo>",
-                .{ if (accent == .@"→") " lspace=\"0\" rspace=\"0\"" else "", @tagName(accent) },
+                "<mo stretchy=\"false\"{s}>{t}</mo>",
+                .{ if (accent == .@"→") " lspace=\"0\" rspace=\"0\"" else "", accent },
             ),
             .boxed => try writer.writeAll("</mrow>"),
             .environment => |environment| try writer.writeAll(switch (environment) {
@@ -485,34 +487,34 @@ const Tag = union(enum) {
                 .bmatrix => "</mtd></mtr></mtable><mo>]</mo></mrow>",
                 .cases => "</mtd></mtr></mtable></mrow>",
             }),
-            else => try writer.print("</{s}>", .{@tagName(self)}),
+            else => try writer.print("</{t}>", .{self}),
         }
     }
 };
 
-fn top(self: MathML) Tag {
+fn top(self: *const MathML) Tag {
     return self.stack.top() orelse .math;
 }
 
-fn inUnderOrOver(self: MathML) bool {
-    return self.top() == .mrow and for (self.stack.items.slice()) |tag| switch (tag) {
+fn inUnderOrOver(self: *const MathML) bool {
+    return self.top() == .mrow and for (self.stack.slice()) |tag| switch (tag) {
         .munder, .munderover, .munderover_arg => break true,
         else => {},
     } else false;
 }
 
-pub fn delimiter(self: MathML) []const u8 {
+pub fn delimiter(self: *const MathML) []const u8 {
     return if (self.options.block) "$$" else "$";
 }
 
-pub fn render(writer: anytype, scanner: *Scanner, options: Options) !?MathML {
-    try writer.writeAll(if (options.block) "<math display=\"block\">" else "<math>");
+pub fn render(writer: *std.Io.Writer, scanner: *Scanner, options: Options) !?MathML {
+    try writer.writeAll(if (options.block) "<div class=\"math-block\"><math display=\"block\">" else "<math>");
     var math = MathML{ .options = options };
     return if (!scanner.eof() and try math.@"resume"(writer, scanner)) null else math;
 }
 
 // TODO(https://github.com/ziglang/zig/issues/6025): Use async.
-pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
+pub fn @"resume"(self: *MathML, writer: *std.Io.Writer, scanner: *Scanner) !bool {
     assert(!scanner.eof());
     while (true) switch (try self.tokenizer.next(scanner)) {
         .eof => return false,
@@ -533,13 +535,14 @@ pub fn @"resume"(self: *MathML, writer: anytype, scanner: *Scanner) !bool {
     };
 }
 
-fn renderEnd(self: *MathML, writer: anytype, scanner: *Scanner) !void {
-    if (self.stack.top()) |tag| return scanner.fail("unclosed {}", .{tag.format()});
+fn renderEnd(self: *MathML, writer: *std.Io.Writer, scanner: *Scanner) !void {
+    if (self.stack.top()) |tag| return scanner.fail("unclosed {f}", .{tag});
     try writer.writeAll("</math>");
+    if (self.options.block) try writer.writeAll("</div>");
     self.* = undefined;
 }
 
-fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) !void {
+fn renderToken(self: *MathML, writer: *std.Io.Writer, scanner: *Scanner, token: Token) !void {
     const prefix = self.next_is_prefix;
     const stretchy = self.next_is_stretchy;
     self.next_is_prefix = switch (token) {
@@ -551,14 +554,15 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mrow, .mrow_elide => try self.stack.pop(writer),
         else => return scanner.failAtOffset(scanner.offset - 1, "unexpected '}}'", .{}),
     };
-    const original_stack_len = self.stack.len();
+    const original_stack_len = self.stack.len;
     if (scanner.peek()) |char| switch (char) {
         '_' => try switch (token) {
-            .mo_underover => self.stack.append(writer, .{ .munderover, .munderover_arg }),
+            .mo_subsup => self.stack.append(writer, &.{ .msubsup, .msubsup_arg }),
+            .mo_underover => self.stack.append(writer, &.{ .munderover, .munderover_arg }),
             .mi_under => self.stack.push(writer, .munder),
             else => self.stack.push(writer, .msub),
         },
-        '^' => if (self.top() != .munderover_arg) try self.stack.push(writer, .msup),
+        '^' => if (self.top() != .msubsup_arg and self.top() != .munderover_arg) try self.stack.push(writer, .msup),
         else => {},
     };
     switch (token) {
@@ -566,7 +570,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         ._, .@"^", .stretchy => return,
         .@"{" => try self.stack.push(writer, try self.tagForOpenBrace(scanner)),
         .@"}" => {},
-        .mfrac => try self.stack.append(writer, .{ .mfrac, .mfrac_arg }),
+        .mfrac => try self.stack.append(writer, &.{ .mfrac, .mfrac_arg }),
         .msqrt => try self.stack.push(writer, .msqrt),
         .mphantom => try self.stack.push(writer, .mphantom),
         .boxed => try self.stack.push(writer, .boxed),
@@ -577,7 +581,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         .mn => |text| try writer.print("<mn>{s}</mn>", .{text}),
         .mi, .mi_under => |text| try writer.print("<mi>{s}</mi>", .{text}),
         .mi_normal => |text| try writer.print("<mi mathvariant=\"normal\">{s}</mi>", .{text}),
-        .mo, .mo_sign, .mo_postfix, .mo_closed, .mo_closed_prefix, .mo_underover, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right => |text| {
+        .mo, .mo_sign, .mo_postfix, .mo_closed, .mo_closed_prefix, .mo_subsup, .mo_underover, .mo_left, .mo_right, .mo_sym_left, .mo_sym_right => |text| {
             const left = token == .mo_left or token == .mo_sym_left;
             const right = token == .mo_right or token == .mo_sym_right;
             const delim = left or right;
@@ -594,13 +598,13 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
         },
         .colon_def => try writer.print("<mo rspace=\"{s}\">:</mo>", .{spacing.thick}),
         .colon_rel => try writer.print("<mo lspace=\"{0s}\" rspace=\"{0s}\">:</mo>", .{spacing.thick}),
-        .accent => |text| try self.stack.append(writer, .{ .mover, .{ .accent = text } }),
+        .accent => |text| try self.stack.append(writer, &.{ .mover, .{ .accent = text } }),
         .begin => |environment| try self.stack.push(writer, .{ .environment = environment }),
         .end => |environment| switch (self.top()) {
             .environment => |begin| if (environment == begin)
                 try self.stack.pop(writer)
             else
-                return scanner.fail("expected \\end{{{s}}}", .{@tagName(begin)}),
+                return scanner.fail("expected \\end{{{t}}}", .{begin}),
             else => return scanner.fail("unexpected end environment", .{}),
         },
         .@"&" => switch (self.top()) {
@@ -612,7 +616,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
             else => return scanner.fail("unexpected \\\\", .{}),
         },
     }
-    if (self.stack.len() <= original_stack_len) while (self.stack.top()) |tag| switch (tag) {
+    if (self.stack.len <= original_stack_len) while (self.stack.top()) |tag| switch (tag) {
         .mrow, .mrow_elide, .environment => break,
         else => {
             try self.stack.popTag(writer, tag);
@@ -621,7 +625,7 @@ fn renderToken(self: *MathML, writer: anytype, scanner: *Scanner, token: Token) 
     };
 }
 
-fn tagForOpenBrace(self: MathML, scanner: *Scanner) !Tag {
+fn tagForOpenBrace(self: *const MathML, scanner: *Scanner) !Tag {
     if (self.top().hasImplicitMrow()) return .mrow_elide;
     const start = scanner.offset;
     defer scanner.offset = start;
@@ -645,7 +649,7 @@ fn tagForOpenBrace(self: MathML, scanner: *Scanner) !Tag {
     return if (second == .@"}") .mrow_elide else .mrow;
 }
 
-fn renderForTest(writer: anytype, scanner: *Scanner, options: Options) !void {
+fn renderForTest(writer: *std.Io.Writer, scanner: *Scanner, options: Options) !void {
     var result = try render(writer, scanner, options);
     if (result) |*math| while (!scanner.eof()) {
         if (try math.@"resume"(writer, scanner)) break;
@@ -659,9 +663,9 @@ fn expect(expected_mathml: []const u8, source: []const u8, options: Options) !vo
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var actual_mathml = std.ArrayList(u8).init(allocator);
-    try renderForTest(actual_mathml.writer(), &scanner, options);
-    try testing.expectEqualStrings(expected_mathml, actual_mathml.items);
+    var actual_mathml: std.Io.Writer.Allocating = .init(allocator);
+    try renderForTest(&actual_mathml.writer, &scanner, options);
+    try testing.expectEqualStrings(expected_mathml, actual_mathml.written());
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
@@ -670,22 +674,23 @@ fn expectFailure(expected_message: []const u8, source: []const u8, options: Opti
     const allocator = arena.allocator();
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_message, renderForTest(std.io.null_writer, &scanner, options));
+    var actual_mathml: std.Io.Writer.Allocating = .init(allocator);
+    try reporter.expectFailure(expected_message, renderForTest(&actual_mathml.writer, &scanner, options));
 }
 
 test "empty input" {
     try expect("<math></math>", "", .{});
-    try expect("<math display=\"block\"></math>", "", .{ .block = true });
+    try expect("<div class=\"math-block\"><math display=\"block\"></math></div>", "", .{ .block = true });
 }
 
 test "newlines passed through" {
     try expect("<math>\n\n</math>", "\n\n", .{});
-    try expect("<math display=\"block\">\n\n</math>", "\n\n", .{ .block = true });
+    try expect("<div class=\"math-block\"><math display=\"block\">\n\n</math></div>", "\n\n", .{ .block = true });
 }
 
 test "variable" {
     try expect("<math><mi>x</mi></math>", "x", .{});
-    try expect("<math display=\"block\"><mi>x</mi></math>", "x", .{ .block = true });
+    try expect("<div class=\"math-block\"><math display=\"block\"><mi>x</mi></math></div>", "x", .{ .block = true });
 }
 
 test "signs" {
@@ -867,6 +872,10 @@ test "limit" {
     );
 }
 
+test "integral" {
+    try expect("<math><msubsup><mo>∫</mo><mi>a</mi><mi>b</mi></msubsup><mi>x</mi><mspace width=\"0.1667em\"/><mi>d</mi><mi>x</mi></math>", "\\int_a^b x\\,dx", .{});
+}
+
 test "summation" {
     try expect("<math><munderover><mo>∑</mo><mi>a</mi><mi>b</mi></munderover></math>", "\\sum_a^b", .{});
 }
@@ -886,11 +895,11 @@ test "summation equation" {
 
 test "underover with expression" {
     try expect(
-        \\<math display="block"><munderover><mo>∑</mo>
+        \\<div class="math-block"><math display="block"><munderover><mo>∑</mo>
         \\<mrow><mi>a</mi><mo lspace="0" rspace="0">+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
         \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow>
         \\<mrow><mi>a</mi><mo lspace="0" rspace="0">+</mo><mi>b</mi><mo lspace="0" rspace="0">=</mo>
-        \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow></munderover></math>
+        \\<mi>c</mi><mo lspace="0" rspace="0">×</mo><mi>d</mi></mrow></munderover></math></div>
     ,
         "\\sum_ \n {a+b = \n c\\times d} ^ \n {a+b = \n c\\times d}",
         .{ .block = true },
@@ -929,11 +938,11 @@ test "mrows" {
 
 test "quadratic formula" {
     try expect(
-        \\<math display="block"><mi>x</mi><mo>=</mo><mo form="prefix">−</mo><mi>b</mi>
-        ++
+        \\<div class="math-block"><math display="block"><mi>x</mi><mo>=</mo><mo form="prefix">−</mo><mi>b</mi>
+    ++
         \\<mo>±</mo><mfrac><msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>−</mo>
-        ++
-        \\<mn>4</mn><mi>a</mi><mi>c</mi></msqrt><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>
+    ++
+        \\<mn>4</mn><mi>a</mi><mi>c</mi></msqrt><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math></div>
     ,
         \\x = -b \pm \frac{\sqrt{b^2 - 4 a c}}{2 a}
     , .{ .block = true });
@@ -941,10 +950,10 @@ test "quadratic formula" {
 
 test "matrix environment" {
     try expect(
-        \\<math display="block"><mtable><mtr><mtd>
+        \\<div class="math-block"><math display="block"><mtable><mtr><mtd>
         \\<mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd>
         \\<mi>c</mi></mtd><mtd><mi>d</mi>
-        \\</mtd></mtr></mtable></math>
+        \\</mtd></mtr></mtable></math></div>
     ,
         \\\begin{matrix}
         \\a & b \\

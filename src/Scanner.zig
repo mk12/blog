@@ -12,7 +12,7 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
-const fmtEscapes = std.zig.fmtEscapes;
+const fmtString = std.zig.fmtString;
 const Reporter = @import("Reporter.zig");
 const Error = Reporter.Error;
 const Location = Reporter.Location;
@@ -81,7 +81,7 @@ pub fn consumeStringEol(self: *Scanner, string: []const u8) bool {
 
 pub fn consumeAny(self: *Scanner, chars: []const u8) ?u8 {
     const c = self.peek() orelse return null;
-    _ = mem.indexOfScalar(u8, chars, c) orelse return null;
+    _ = mem.findScalar(u8, chars, c) orelse return null;
     self.eat();
     return c;
 }
@@ -103,14 +103,37 @@ pub fn consumeLineUntil(self: *Scanner, delimiter: u8) ?[]const u8 {
     return null;
 }
 
+pub fn consumeLineUntilClose(self: *Scanner, open: u8, close: u8) ?[]const u8 {
+    const start = self.offset;
+    var depth: usize = 1;
+    while (self.next()) |c| {
+        if (c == open) {
+            depth += 1;
+        } else if (c == close) {
+            depth -= 1;
+            if (depth == 0) return self.source[start .. self.offset - 1];
+        } else if (c == '\n') {
+            break;
+        }
+    }
+    self.offset = start;
+    return null;
+}
+
+pub fn consumeUntilString(self: *Scanner, delimiter: []const u8) ?[]const u8 {
+    const end = mem.findPos(u8, self.source, self.offset, delimiter) orelse return null;
+    defer self.offset = end + delimiter.len;
+    return self.source[self.offset..end];
+}
+
 pub fn consumeStopString(self: *Scanner, delimiter: []const u8) ?[]const u8 {
-    const end = mem.indexOfPos(u8, self.source, self.offset, delimiter) orelse return null;
+    const end = mem.findPos(u8, self.source, self.offset, delimiter) orelse return null;
     defer self.offset = end;
     return self.source[self.offset..end];
 }
 
 pub fn consumeStopAny(self: *Scanner, delimiters: []const u8) ?[]const u8 {
-    const end = mem.indexOfAnyPos(u8, self.source, self.offset, delimiters) orelse return null;
+    const end = mem.findAnyPos(u8, self.source, self.offset, delimiters) orelse return null;
     defer self.offset = end;
     return self.source[self.offset..end];
 }
@@ -127,7 +150,7 @@ pub fn consumeUntilEol(self: *Scanner) []const u8 {
 }
 
 pub fn consumeWhileAny(self: *Scanner, chars: []const u8) []const u8 {
-    const end = mem.indexOfNonePos(u8, self.source, self.offset, chars) orelse self.source.len;
+    const end = mem.findNonePos(u8, self.source, self.offset, chars) orelse self.source.len;
     defer self.offset = end;
     return self.source[self.offset..end];
 }
@@ -148,15 +171,15 @@ pub fn skipMany(self: *Scanner, char: u8) void {
 
 pub fn expect(self: *Scanner, char: u8) Error!void {
     if (self.consume(char)) return;
-    const actual = self.peek() orelse return self.fail("expected \"{}\", got EOF", .{fmtEscapes(&.{char})});
-    return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(&.{char}), fmtEscapes(&.{actual}) });
+    const actual = self.peek() orelse return self.fail("expected \"{f}\", got EOF", .{fmtString(&.{char})});
+    return self.fail("expected \"{f}\", got \"{f}\"", .{ fmtString(&.{char}), fmtString(&.{actual}) });
 }
 
 pub fn expectString(self: *Scanner, string: []const u8) Error!void {
     if (self.consumeString(string)) return;
-    if (self.eof()) return self.fail("expected \"{}\", got EOF", .{fmtEscapes(string)});
+    if (self.eof()) return self.fail("expected \"{f}\", got EOF", .{fmtString(string)});
     const actual = self.source[self.offset..@min(self.offset + string.len, self.source.len)];
-    return self.fail("expected \"{}\", got \"{}\"", .{ fmtEscapes(string), fmtEscapes(actual) });
+    return self.fail("expected \"{f}\", got \"{f}\"", .{ fmtString(string), fmtString(actual) });
 }
 
 pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
@@ -164,7 +187,7 @@ pub fn fail(self: *Scanner, comptime format: []const u8, args: anytype) Error {
 }
 
 pub fn failOn(self: *Scanner, token: []const u8, comptime format: []const u8, args: anytype) Error {
-    return self.failAtPtr(token.ptr, "\"{}\": " ++ format, .{fmtEscapes(token)} ++ args);
+    return self.failAtPtr(token.ptr, "\"{f}\": " ++ format, .{fmtString(token)} ++ args);
 }
 
 pub fn failAtOffset(self: *Scanner, offset: usize, comptime format: []const u8, args: anytype) Error {
@@ -314,6 +337,26 @@ test "everything" {
         try testing.expectEqual(@as(?u8, '\n'), scanner.next());
         try testing.expectEqualStrings("bar", scanner.consumeLineUntil('.').?);
         try testing.expect(scanner.eof());
+    }
+
+    // consumeLineUntilClose
+    {
+        var scanner = Scanner{ .source = "(foo (bar baz))", .reporter = &reporter };
+        try testing.expectEqual(@as(?u8, '('), scanner.next());
+        try testing.expectEqualStrings("foo (bar baz)", scanner.consumeLineUntilClose('(', ')').?);
+        try testing.expect(scanner.eof());
+    }
+
+    // consumeUntilString
+    {
+        var scanner = Scanner{ .source = "this and that.", .reporter = &reporter };
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeUntilString("---"));
+        try testing.expectEqualStrings("", scanner.consumeUntilString("").?);
+        try testing.expectEqualStrings("this", scanner.consumeUntilString(" and ").?);
+        try testing.expectEqualStrings("that", scanner.consumeUntilString(".").?);
+        try testing.expect(scanner.eof());
+        try testing.expectEqual(@as(?[]const u8, null), scanner.consumeUntilString("x"));
+        try testing.expectEqualStrings("", scanner.consumeUntilString("").?);
     }
 
     // consumeStopString

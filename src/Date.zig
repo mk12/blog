@@ -58,7 +58,7 @@ fn parseField(
     const FieldType = @TypeOf(@field(date, name));
     const field = scanner.consumeLength(length) orelse
         return scanner.fail("unexpected EOF parsing {s}", .{name});
-    const parseNumber = switch (@typeInfo(FieldType).Int.signedness) {
+    const parseNumber = switch (@typeInfo(FieldType).int.signedness) {
         .signed => std.fmt.parseInt,
         .unsigned => std.fmt.parseUnsigned,
     };
@@ -112,6 +112,7 @@ test "comptime from" {
     );
 }
 
+// Restrict timestamps so we only need leap year logic from 2004 to 2096.
 const timestamp_2000_03_01 = 951868800;
 const timestamp_2100_01_01 = 4102444800;
 
@@ -202,10 +203,14 @@ fn weekdayName(self: Date) []const u8 {
     return weekday_names[weekday];
 }
 
-pub const Style = enum { short, long, rfc822, rfc3339 };
+pub const Style = enum { ymd, short, long, rfc822, rfc3339 };
 
-pub fn render(self: Date, writer: anytype, style: Style) !void {
+pub fn render(self: Date, writer: *std.Io.Writer, style: Style) !void {
     switch (style) {
+        .ymd => try writer.print(
+            "{d:0>4}-{d:0>2}-{d:0>2}",
+            .{ self.year, self.month, self.day },
+        ),
         .short => try writer.print(
             "{} {s} {}",
             .{ self.day, self.monthName()[0..3], self.year },
@@ -234,15 +239,16 @@ pub fn render(self: Date, writer: anytype, style: Style) !void {
 }
 
 fn expectRender(expected: []const u8, date: Date, style: Style) !void {
-    var actual = std.ArrayList(u8).init(testing.allocator);
+    var actual: std.Io.Writer.Allocating = .init(testing.allocator);
     defer actual.deinit();
-    try date.render(actual.writer(), style);
-    try testing.expectEqualStrings(expected, actual.items);
+    try date.render(&actual.writer, style);
+    try testing.expectEqualStrings(expected, actual.written());
 }
 
 test "render" {
     const original = "2023-06-09T16:30:07-07:00";
     const date = from(original);
+    try expectRender("2023-06-09", date, .ymd);
     try expectRender("9 Jun 2023", date, .short);
     try expectRender("Friday, 9 June 2023", date, .long);
     try expectRender("Fri, 09 Jun 2023 16:30:07 -0700", date, .rfc822);

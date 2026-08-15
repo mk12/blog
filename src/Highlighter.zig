@@ -113,7 +113,7 @@ fn classifyIdentifier(comptime language: Language, identifier: []const u8) ?Clas
             .{ "zero?", .class_a },
         },
     };
-    return std.ComptimeStringMap(Class, list).get(identifier);
+    return std.StaticStringMap(Class).initComptime(list).get(identifier);
 }
 
 const Token = union(enum) {
@@ -124,7 +124,7 @@ const Token = union(enum) {
     @"&": ?Class,
 };
 
-pub fn render(writer: anytype, language: ?Language) !Highlighter {
+pub fn render(writer: *std.Io.Writer, language: ?Language) !Highlighter {
     try writer.writeAll("<pre>\n<code>");
     return Highlighter{ .language = language };
 }
@@ -132,14 +132,14 @@ pub fn render(writer: anytype, language: ?Language) !Highlighter {
 pub const terminator = "```";
 
 // TODO(https://github.com/ziglang/zig/issues/6025): Use async.
-pub fn @"resume"(self: *Highlighter, writer: anytype, scanner: *Scanner) !bool {
+pub fn @"resume"(self: *Highlighter, writer: *std.Io.Writer, scanner: *Scanner) !bool {
     assert(!scanner.eof());
     const finished = scanner.consumeStringEol(terminator);
     try if (finished) self.renderEnd(writer) else self.renderLine(writer, scanner);
     return finished;
 }
 
-fn renderEnd(self: *Highlighter, writer: anytype) !void {
+fn renderEnd(self: *Highlighter, writer: *std.Io.Writer) !void {
     self.pending_newlines -|= 1;
     try self.flushCloseSpan(writer);
     try self.flushWhitespace(writer);
@@ -147,7 +147,7 @@ fn renderEnd(self: *Highlighter, writer: anytype) !void {
     self.* = undefined;
 }
 
-fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
+fn renderLine(self: *Highlighter, writer: *std.Io.Writer, scanner: *Scanner) !void {
     while (true) {
         const start = scanner.offset;
         const token, const token_offset = while (true) {
@@ -169,7 +169,7 @@ fn renderLine(self: *Highlighter, writer: anytype, scanner: *Scanner) !void {
     self.pending_newlines += 1;
 }
 
-fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !void {
+fn write(self: *Highlighter, writer: *std.Io.Writer, text: []const u8, class: ?Class) !void {
     if (class == self.class) {
         try self.flushWhitespace(writer);
     } else {
@@ -181,14 +181,14 @@ fn write(self: *Highlighter, writer: anytype, text: []const u8, class: ?Class) !
     try writer.writeAll(text);
 }
 
-fn flushCloseSpan(self: *Highlighter, writer: anytype) !void {
+fn flushCloseSpan(self: *Highlighter, writer: *std.Io.Writer) !void {
     if (self.class) |_| {
         try writer.writeAll("</span>");
         self.class = null;
     }
 }
 
-fn flushWhitespace(self: *Highlighter, writer: anytype) !void {
+fn flushWhitespace(self: *Highlighter, writer: *std.Io.Writer) !void {
     while (self.pending_newlines > 0) : (self.pending_newlines -= 1)
         try writer.writeByte('\n');
     if (self.pending_spaces) |spaces| {
@@ -388,7 +388,7 @@ fn scanRestOfIdentifier(scanner: *Scanner, language: Language, start: usize) []c
     return scanner.source[start..scanner.offset];
 }
 
-fn renderForTest(writer: anytype, scanner: *Scanner, language: ?Language) !void {
+fn renderForTest(writer: *std.Io.Writer, scanner: *Scanner, language: ?Language) !void {
     var highlighter = try render(writer, language);
     while (!scanner.eof()) {
         if (try highlighter.@"resume"(writer, scanner)) break;
@@ -402,9 +402,9 @@ fn expect(expected_html: []const u8, source: []const u8, language: ?Language) !v
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    var actual_html = std.ArrayList(u8).init(allocator);
-    try renderForTest(actual_html.writer(), &scanner, language);
-    try testing.expectEqualStrings(expected_html, actual_html.items);
+    var actual_html: std.Io.Writer.Allocating = .init(allocator);
+    try renderForTest(&actual_html.writer, &scanner, language);
+    try testing.expectEqualStrings(expected_html, actual_html.written());
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8, language: ?Language) !void {
@@ -414,7 +414,8 @@ fn expectFailure(expected_message: []const u8, source: []const u8, language: ?La
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
-    try reporter.expectFailure(expected_message, renderForTest(std.io.null_writer, &scanner, language));
+    var actual_html: std.Io.Writer.Allocating = .init(allocator);
+    try reporter.expectFailure(expected_message, renderForTest(&actual_html.writer, &scanner, language));
 }
 
 test "empty input" {

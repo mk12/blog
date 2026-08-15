@@ -21,7 +21,9 @@
 //!
 //! It is customizable with Options and with Hooks. The options are mostly
 //! flags, e.g. whether to enable code highlighting. The hooks allow you to
-//! rewrite URLs in links and to override how images are rendered.
+//! rewrite URLs in links and to override how images are rendered. The hooks
+//! also allow handling of <template src="..."/> and <template>...</template>
+//! directives, which fail by default otherwise.
 
 const std = @import("std");
 const testing = std.testing;
@@ -132,11 +134,16 @@ const Token = union(enum) {
     @"* * *\n",
     @"```x\n": []const u8,
     @"$$",
+    @"![](x)": []const u8, // can also be inline
+    @"![][x]": []const u8, // can also be inline
     @"![...](x)": []const u8,
     @"![...][x]": []const u8,
     @"![^",
     @"[^x]: ": []const u8,
     @"| ",
+    @"<template>\n",
+    @"<template src=.../>\n": []const u8,
+    @"<toc/>\n",
 
     // Inline tokens
     text: []const u8,
@@ -156,18 +163,22 @@ const Token = union(enum) {
     ldquo,
     rdquo,
     @"--",
-    @" -- ",
     @"...",
+    @"<template>",
+    @"<template src=.../>": []const u8,
 
     // Neither block nor inline
     @"]",
     @"](x)": []const u8,
     @"][x]": []const u8,
 
-    fn linkish(url_or_label: []const u8, args: struct { label: bool, figure: bool }) Token {
-        return switch (args.figure) {
-            false => if (args.label) .{ .@"[...][x]" = url_or_label } else .{ .@"[...](x)" = url_or_label },
-            true => if (args.label) .{ .@"![...][x]" = url_or_label } else .{ .@"![...](x)" = url_or_label },
+    fn linkish(url_or_label: []const u8, args: struct { bang: bool, empty: bool, square: bool }) Token {
+        return switch (args.bang) {
+            false => if (args.square) .{ .@"[...][x]" = url_or_label } else .{ .@"[...](x)" = url_or_label },
+            true => switch (args.empty) {
+                false => if (args.square) .{ .@"![...][x]" = url_or_label } else .{ .@"![...](x)" = url_or_label },
+                true => if (args.square) .{ .@"![][x]" = url_or_label } else .{ .@"![](x)" = url_or_label },
+            },
         };
     }
 
@@ -203,6 +214,10 @@ const Tokenizer = struct {
 
     fn fail(self: Tokenizer, comptime format: []const u8, args: anytype) Reporter.Error {
         return self.scanner.failAtOffset(self.token_start, format, args);
+    }
+
+    fn tokenStartPtr(self: Tokenizer) [*]const u8 {
+        return self.scanner.source.ptr + self.token_start;
     }
 
     fn remaining(self: Tokenizer) []const u8 {
@@ -247,14 +262,38 @@ const Tokenizer = struct {
                 const level: u8 = @intCast(1 + scanner.consumeMany('#'));
                 if (level <= 6 and scanner.consume(' ')) return .{ .@"#" = level };
             },
-            '<' => if (scanner.next()) |char| switch (char) {
-                '/', 'a'...'z' => if (scanner.consumeLineUntil('>') != null and scanner.peekEol()) {
-                    self.in_raw_html_block = true;
-                    // We can't just return null here (as we do for raw inline HTML)
-                    // because `in_raw_html_block` needs to apply to this token.
-                    return .{ .text = scanner.source[self.token_start..scanner.offset] };
-                },
-                else => {},
+            '<' => {
+                if (scanner.consumeString("template")) {
+                    if (scanner.consumeStringEol(">")) {
+                        self.block_allowed = true;
+                        return .@"<template>\n";
+                    }
+                    blk: {
+                        if (!scanner.consumeString(" src=\"")) break :blk;
+                        const src = scanner.consumeLineUntil('"') orelse break :blk;
+                        if (!scanner.consumeStringEol("/>")) break :blk;
+                        self.block_allowed = true;
+                        return .{ .@"<template src=.../>\n" = src };
+                    }
+                    scanner.offset = self.token_start + 1;
+                } else if (scanner.consumeStringEol("toc/>")) {
+                    _ = self.recognizeAfterNewline();
+                    self.block_allowed = true;
+                    return .@"<toc/>\n";
+                }
+                if (scanner.next()) |char| switch (char) {
+                    '/', '?', '!', 'a'...'z' => {
+                        if ((char == '!' and scanner.consumeString("--") and scanner.consumeUntilString("-->") != null) or
+                            (scanner.consumeLineUntilClose('<', '>') != null and scanner.peekEol()))
+                        {
+                            self.in_raw_html_block = true;
+                            // We can't just return null here (as we do for raw inline HTML)
+                            // because `in_raw_html_block` needs to apply to this token.
+                            return .{ .text = scanner.source[self.token_start..scanner.offset] };
+                        }
+                    },
+                    else => {},
+                };
             },
             '>' => if (scanner.consume(' ') or scanner.peekEol()) {
                 self.block_allowed = true;
@@ -275,8 +314,6 @@ const Tokenizer = struct {
                 _ = self.recognizeAfterNewline();
                 return .@"* * *\n";
             },
-            '!' => if (scanner.consume('['))
-                if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '|' => {
                 scanner.skipMany(' ');
                 // Skip over | --- | --- | row.
@@ -326,14 +363,27 @@ const Tokenizer = struct {
                 return .@"`";
             },
             '<' => {
+                if (scanner.consumeString("template")) {
+                    if (scanner.consume('>')) return .@"<template>";
+                    blk: {
+                        if (!scanner.consumeString(" src=\"")) break :blk;
+                        const src = scanner.consumeLineUntil('"') orelse break :blk;
+                        if (!scanner.consumeString("/>")) break :blk;
+                        return .{ .@"<template src=.../>" = src };
+                    }
+                    scanner.offset = self.token_start + 1;
+                }
                 if (scanner.peek()) |char| switch (char) {
-                    '/', 'a'...'z' => if (scanner.consumeLineUntil('>')) |_| return null,
+                    '/', '?', 'a'...'z' => if (scanner.consumeLineUntilClose('<', '>')) |_| return null,
+                    '!' => if (scanner.consumeString("!--") and scanner.consumeUntilString("-->") != null) return null,
                     else => {},
                 };
                 return .@"<";
             },
             '\\' => if (scanner.next()) |char| return .{ .@"\\x" = char },
             '$' => return .@"$",
+            '!' => if (scanner.consume('['))
+                if (self.recognizeAfterOpenBracket(.figure)) |token| return token,
             '[' => return self.recognizeAfterOpenBracket(.link),
             ']' => {
                 if (self.link_depth == 0) {
@@ -355,16 +405,15 @@ const Tokenizer = struct {
             '_' => return ._,
             '\'' => {
                 const prev = scanner.prev(1);
-                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(') .lsquo else .rsquo;
+                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(' or prev == '[') .lsquo else .rsquo;
             },
             '"' => {
                 const prev = scanner.prev(1);
-                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(') .ldquo else .rdquo;
+                return if (prev == null or prev == ' ' or prev == '\n' or prev == '(' or prev == '[') .ldquo else .rdquo;
             },
             '-' => if (scanner.consume('-')) return .@"--",
             ' ' => {
                 scanner.skipMany(' ');
-                if (scanner.consumeString("-- ")) return .@" -- ";
                 if (scanner.consume('|')) return self.recognizeAfterPipe();
             },
             '|' => return self.recognizeAfterPipe(),
@@ -375,7 +424,7 @@ const Tokenizer = struct {
     }
 
     fn recognizeAfterNewline(self: *Tokenizer) Token {
-        if (self.scanner.consumeMany('\n') > 0) self.in_raw_html_block = false;
+        if (self.scanner.peekEol()) self.in_raw_html_block = false;
         self.block_allowed = true;
         return .@"\n";
     }
@@ -398,7 +447,10 @@ const Tokenizer = struct {
             },
         };
         const start_bracketed = scanner.offset;
-        defer scanner.offset = start_bracketed;
+        var go_back = true;
+        defer if (go_back) {
+            scanner.offset = start_bracketed;
+        };
         var escaped = false;
         var in_code = false;
         var depth: usize = 1;
@@ -420,9 +472,10 @@ const Tokenizer = struct {
                 else => {},
             }
         }
-        const is_figure = kind == .figure;
+        const bang = kind == .figure;
+        const end_bracketed = scanner.offset - 1;
+        const empty = start_bracketed == end_bracketed;
         const closing_char: u8 = blk: {
-            const end_bracketed = scanner.offset - 1;
             if (scanner.next()) |char| switch (char) {
                 '(' => break :blk ')',
                 '[' => break :blk ']',
@@ -431,12 +484,13 @@ const Tokenizer = struct {
             // Shortcut reference link.
             const label = scanner.source[start_bracketed..end_bracketed];
             self.link_depth += 1;
-            return Token.linkish(label, .{ .label = true, .figure = is_figure });
+            return Token.linkish(label, .{ .bang = bang, .empty = empty, .square = true });
         };
         const url_or_label = scanner.consumeLineUntil(closing_char) orelse return null;
-        const is_label = closing_char == ']';
         self.link_depth += 1;
-        return Token.linkish(url_or_label, .{ .label = is_label, .figure = is_figure });
+        const token = Token.linkish(url_or_label, .{ .bang = bang, .empty = empty, .square = closing_char == ']' });
+        if (token == .@"![](x)" or token == .@"![][x]") go_back = false;
+        return token;
     }
 };
 
@@ -445,21 +499,21 @@ fn expectTokens(expected: []const Token, source: []const u8) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
     const Tag = std.meta.Tag(Token);
-    var expected_tags = std.ArrayList(Tag).init(allocator);
-    for (expected) |token| try expected_tags.append(token);
+    const expected_tags = try allocator.alloc(Tag, expected.len);
+    for (expected_tags, expected) |*tag, token| tag.* = token;
     var reporter = Reporter.init(allocator);
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     var tokenizer = try Tokenizer.init(&scanner);
-    var actual = std.ArrayList(Token).init(allocator);
-    var actual_tags = std.ArrayList(Tag).init(allocator);
+    var actual: std.ArrayList(Token) = .empty;
+    var actual_tags: std.ArrayList(Tag) = .empty;
     while (true) {
         const token = tokenizer.next();
-        try actual.append(token);
-        try actual_tags.append(token);
+        try actual.append(allocator, token);
+        try actual_tags.append(allocator, token);
         if (token == .eof) break;
     }
-    try testing.expectEqualSlices(Tag, expected_tags.items, actual_tags.items);
+    try testing.expectEqualSlices(Tag, expected_tags, actual_tags.items);
     try testing.expectEqualDeep(expected, actual.items);
 }
 
@@ -501,6 +555,7 @@ test "tokenize block" {
         .{ .text = "heading" },
         ._,
         .@"\n",
+        .@"\n",
         .@">",
         .@"-",
         .{ .text = "A " },
@@ -539,9 +594,26 @@ test "tokenize figure" {
         .{ .@"![...](x)" = "bar" },
         .{ .text = "Foo" },
         .@"]",
+        .@"\n",
+        .{ .@"![...][x]" = "bar" },
+        .{ .text = "Foo" },
+        .@"]",
         .eof,
     },
         \\![Foo](bar)
+        \\![Foo][bar]
+    );
+}
+
+test "tokenize figure without caption" {
+    try expectTokens(&[_]Token{
+        .{ .@"![](x)" = "bar" },
+        .@"\n",
+        .{ .@"![][x]" = "bar" },
+        .eof,
+    },
+        \\![](bar)
+        \\![][bar]
     );
 }
 
@@ -563,6 +635,45 @@ test "tokenize table" {
     );
 }
 
+test "tokenize toc" {
+    try expectTokens(&[_]Token{ .@"<toc/>\n", .eof }, "<toc/>");
+}
+
+test "tokenize block template with src" {
+    try expectTokens(&[_]Token{ .{ .@"<template src=.../>\n" = "foo" }, .eof },
+        \\<template src="foo"/>
+    );
+}
+
+test "tokenize block template without src" {
+    try expectTokens(&[_]Token{ .@"<template>\n", .eof },
+        \\<template>
+    );
+}
+
+test "tokenize inline template with src" {
+    try expectTokens(&[_]Token{ .@"-", .{ .@"<template src=.../>" = "foo" }, .eof },
+        \\- <template src="foo"/>
+    );
+}
+
+test "tokenize inline template without src" {
+    try expectTokens(&[_]Token{ .@"-", .@"<template>", .eof },
+        \\- <template>
+    );
+}
+
+test "tokenize two block templates" {
+    try expectTokens(&[_]Token{
+        .{ .@"<template src=.../>\n" = "a" },
+        .{ .@"<template src=.../>\n" = "b" },
+        .eof,
+    },
+        \\<template src="a"/>
+        \\<template src="b"/>
+    );
+}
+
 pub const Options = struct {
     is_inline: bool = false,
     first_block_only: bool = false,
@@ -573,45 +684,82 @@ pub const Options = struct {
     hook_options: ?*const anyopaque = null,
 };
 
+pub const ImageInfo = struct {
+    width: []const u8,
+    height: []const u8,
+    lazy: bool,
+};
+
 fn WithDefaultHooks(comptime Inner: type) type {
     return struct {
         const Underlying = switch (@typeInfo(Inner)) {
-            .Pointer => |info| info.child,
+            .pointer => |info| info.childe,
             else => Inner,
         };
         inner: Inner,
 
-        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: *std.Io.Writer, context: HookContext, url: []const u8) !void {
             if (@hasDecl(Underlying, "writeUrl")) return self.inner.writeUrl(writer, context, url);
             try writer.writeAll(url);
         }
 
-        fn writeImage(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
-            if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, context, url);
-            try writer.print("<img src=\"{s}\">", .{url});
+        fn writeImage(self: @This(), writer: *std.Io.Writer, context: HookContext, url: []const u8, info: ?ImageInfo) !void {
+            if (@hasDecl(Underlying, "writeImage")) return self.inner.writeImage(writer, context, url, info);
+            try writer.print("<img src=\"{s}\"", .{url});
+            if (info) |i| {
+                try writer.print(" width=\"{s}\" height=\"{s}\"", .{ i.width, i.height });
+                if (i.lazy) try writer.writeAll(" loading=\"lazy\"");
+            }
+            try writer.writeByte('>');
+        }
+
+        fn renderTemplate(self: @This(), writer: *std.Io.Writer, context: HookContext, name: []const u8) !void {
+            if (@hasDecl(Underlying, "renderTemplate")) return self.inner.renderTemplate(writer, context, name) catch |err| {
+                if (err == error.ErrorWasReported) context.addNote("template \"{s}\" executed here", .{name});
+                return err;
+            };
+            return context.fail("no hook installed for renderTemplate", .{});
+        }
+
+        fn parseAndRenderTemplate(self: @This(), writer: *std.Io.Writer, context: HookContext, scanner: *Scanner) !void {
+            if (@hasDecl(Underlying, "parseAndRenderTemplate")) return self.inner.parseAndRenderTemplate(writer, context, scanner) catch |err| {
+                if (err == error.ErrorWasReported) context.addNote("executing template starting here", .{});
+                return err;
+            };
+            return context.fail("no hook installed for parseAndRenderTemplate", .{});
         }
     };
 }
+
+const HookContextBuilder = struct {
+    reporter: *Reporter,
+    options: Options,
+    source: []const u8,
+    filename: []const u8,
+
+    fn at(self: HookContextBuilder, ptr: [*]const u8) HookContext {
+        return HookContext{ .reporter = self.reporter, .options = self.options, .source = self.source, .filename = self.filename, .ptr = ptr };
+    }
+};
 
 pub const HookContext = struct {
     reporter: *Reporter,
     options: Options,
     source: []const u8,
     filename: []const u8,
-    ptr: [*]const u8 = undefined,
-
-    fn at(self: HookContext, ptr: [*]const u8) HookContext {
-        return HookContext{ .reporter = self.reporter, .options = self.options, .source = self.source, .filename = self.filename, .ptr = ptr };
-    }
+    ptr: [*]const u8,
 
     pub fn fail(self: HookContext, comptime format: []const u8, args: anytype) Reporter.Error {
         return self.reporter.fail(self.filename, Location.fromPtr(self.source, self.ptr), format, args);
     }
+
+    pub fn addNote(self: HookContext, comptime format: []const u8, args: anytype) void {
+        self.reporter.addNote(self.filename, Location.fromPtr(self.source, self.ptr), format, args);
+    }
 };
 
-pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, hooks: anytype, options: Options) !void {
-    // TODO(https://github.com/ziglang/zig/issues/1738): @intFromPtr should be unnecessary.
-    const offset = @intFromPtr(self.text.ptr) - @intFromPtr(self.context.source.ptr);
+pub fn render(self: Markdown, reporter: *Reporter, writer: *std.Io.Writer, hooks: anytype, options: Options) !void {
+    const offset = self.text.ptr - self.context.source.ptr;
     var scanner = Scanner{
         .source = self.context.source[0 .. offset + self.text.len],
         .reporter = reporter,
@@ -620,7 +768,7 @@ pub fn render(self: Markdown, reporter: *Reporter, writer: anytype, hooks: anyty
     };
     var tokenizer = try Tokenizer.init(&scanner);
     const full_hooks = WithDefaultHooks(@TypeOf(hooks)){ .inner = hooks };
-    const hook_ctx = HookContext{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename, .options = options };
+    const hook_ctx = HookContextBuilder{ .reporter = reporter, .source = self.context.source, .filename = self.context.filename, .options = options };
     return renderImpl(&tokenizer, writer, full_hooks, hook_ctx, self.context.links, options) catch |err| switch (err) {
         error.ExceededMaxTagDepth => return tokenizer.fail("exceeded maximum tag depth ({})", .{tag_stack.max_depth}),
         else => return err,
@@ -665,6 +813,13 @@ const BlockTag = union(enum) {
         };
     }
 
+    fn canContainBlankLinkes(self: BlockTag) bool {
+        return switch (self) {
+            .ul, .ol, .footnote_ol => true,
+            else => false,
+        };
+    }
+
     fn goesOnItsOwnLine(self: BlockTag) bool {
         return switch (self) {
             .p, .li, .h, .figcaption, .tr, .th, .td, .footnote_li => false,
@@ -672,77 +827,126 @@ const BlockTag = union(enum) {
         };
     }
 
-    pub fn writeOpenTag(self: BlockTag, writer: anytype) !void {
+    fn canContainBlock(self: BlockTag) bool {
+        return self == .blockquote;
+    }
+
+    pub fn writeOpenTag(self: BlockTag, writer: *std.Io.Writer) !void {
         switch (self) {
             .h => |h| if (h.source) |source_ptr| {
                 try writer.print("<h{} id=\"", .{h.level});
-                try generateAutoIdUntilNewline(writer, source_ptr[0..h.source_len]);
+                _ = try generateAutoIdUntilNewline(writer, source_ptr[0..h.source_len]);
                 try writer.writeAll("\">");
             } else {
                 try writer.print("<h{}>", .{h.level});
             },
-            .footnote_ol => try writer.writeAll("<hr>\n<ol class=\"footnotes\">"),
+            .footnote_ol => try writer.writeAll("<hr class=\"footnotes-rule\">\n<ol class=\"footnotes\">"),
             .footnote_li => |label| try writer.print("<li id=\"fn:{s}\">", .{label}),
-            else => try writer.print("<{s}>", .{@tagName(self)}),
+            else => try writer.print("<{t}>", .{self}),
         }
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
     }
 
-    pub fn writeCloseTag(self: BlockTag, writer: anytype) !void {
+    pub fn writeCloseTag(self: BlockTag, writer: *std.Io.Writer) !void {
         if (self.goesOnItsOwnLine()) try writer.writeByte('\n');
         switch (self) {
             .h => |h| try writer.print("</h{}>", .{h.level}),
             .footnote_ol => try writer.writeAll("</ol>"),
             .footnote_li => |label| try writer.print("&nbsp;<a href=\"#fnref:{s}\">↩︎</a></li>", .{label}),
-            else => try writer.print("</{s}>", .{@tagName(self)}),
+            else => try writer.print("</{t}>", .{self}),
         }
     }
 };
 
 const InlineTag = enum {
-    em,
-    strong,
+    i,
+    b,
     code,
     a,
 
-    pub fn writeOpenTag(self: InlineTag, writer: anytype) !void {
-        try writer.print("<{s}>", .{@tagName(self)});
+    pub fn writeOpenTag(self: InlineTag, writer: *std.Io.Writer) !void {
+        try writer.print("<{t}>", .{self});
     }
 
-    pub fn writeCloseTag(self: InlineTag, writer: anytype) !void {
-        try writer.print("</{s}>", .{@tagName(self)});
+    pub fn writeCloseTag(self: InlineTag, writer: *std.Io.Writer) !void {
+        try writer.print("</{t}>", .{self});
     }
 };
 
-fn generateAutoIdUntilNewline(writer: anytype, source: []const u8) !void {
+fn generateAutoIdUntilNewline(writer: *std.Io.Writer, source: []const u8) !usize {
+    var mode: union(enum) { normal, ignore_until: u8 } = .normal;
     var pending: enum { start, none, hyphen } = .start;
-    for (source) |char| switch (char) {
-        '\n' => break,
-        'A'...'Z', 'a'...'z', '0'...'9' => {
-            if (pending == .hyphen) try writer.writeByte('-');
-            pending = .none;
-            try writer.writeByte(std.ascii.toLower(char));
+    for (source, 0..) |char, i| switch (mode) {
+        .normal => switch (char) {
+            '\n' => return i,
+            '\'' => {},
+            'A'...'Z', 'a'...'z', '0'...'9' => {
+                if (pending == .hyphen) try writer.writeByte('-');
+                pending = .none;
+                try writer.writeByte(std.ascii.toLower(char));
+            },
+            else => {
+                if (char == ']' and i < source.len - 1) switch (source[i + 1]) {
+                    '(' => mode = .{ .ignore_until = ')' },
+                    '[' => mode = .{ .ignore_until = ']' },
+                    else => {},
+                };
+                if (pending == .none) pending = .hyphen;
+            },
         },
-        else => if (pending == .none) {
-            pending = .hyphen;
+        .ignore_until => |delim| if (char == delim) {
+            mode = .normal;
         },
     };
+    return source.len;
 }
 
-fn lookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) ![]const u8 {
-    return switch (tag) {
-        .@"[...](x)", .@"![...](x)", .@"](x)" => url_or_label,
-        .@"[...][x]", .@"![...][x]", .@"][x]" => links.get(url_or_label) orelse
-            scanner.failAtPtr(url_or_label.ptr, "link label '{s}' is not defined", .{url_or_label}),
+const UrlInfo = struct {
+    url: []const u8,
+    image: ?ImageInfo = null,
+    class: ?[]const u8 = null,
+};
+
+fn lookupUrl(scanner: *Scanner, links: LinkMap, url_or_label: []const u8, tag: std.meta.Tag(Token)) !UrlInfo {
+    const url_text = switch (tag) {
+        .@"[...](x)", .@"![](x)", .@"![...](x)", .@"](x)" => url_or_label,
+        .@"[...][x]", .@"![][x]", .@"![...][x]", .@"][x]" => links.get(url_or_label) orelse
+            return scanner.failAtPtr(url_or_label.ptr, "link label '{s}' is not defined", .{url_or_label}),
         else => unreachable,
     };
+    const index = std.mem.findScalar(u8, url_text, ' ') orelse return UrlInfo{ .url = url_text };
+    switch (tag) {
+        .@"[...](x)", .@"[...][x]", .@"](x)", .@"][x]" => return scanner.failAtPtr(url_or_label.ptr + index, "unexpected space", .{}),
+        else => {},
+    }
+    const offset = url_text.ptr - scanner.source.ptr;
+    var new_scanner = Scanner{
+        .source = scanner.source.ptr[0 .. offset + url_text.len],
+        .reporter = scanner.reporter,
+        .filename = scanner.filename,
+        .offset = offset + index + 1,
+    };
+    try new_scanner.expect('"');
+    const width = new_scanner.consumeWhileAny("0123456789.");
+    try new_scanner.expect('x');
+    const height = new_scanner.consumeWhileAny("0123456789.");
+    const lazy = new_scanner.consumeString(" lazy");
+    const image = ImageInfo{ .width = width, .height = height, .lazy = lazy };
+    const class = if (new_scanner.consume(' ')) blk: {
+        try new_scanner.expect('.');
+        break :blk new_scanner.consumeLineUntil('"') orelse return new_scanner.fail("expected closing '\"'", .{});
+    } else blk: {
+        try new_scanner.expect('"');
+        break :blk null;
+    };
+    return UrlInfo{ .url = url_text[0..index], .image = image, .class = class };
 }
 
 const Mode = union(enum) {
     code: Highlighter,
     math: MathML,
 
-    fn @"resume"(self: *Mode, writer: anytype, scanner: *Scanner) !bool {
+    fn @"resume"(self: *Mode, writer: *std.Io.Writer, scanner: *Scanner) !bool {
         return switch (self.*) {
             inline else => |*mode| mode.@"resume"(writer, scanner),
         };
@@ -763,20 +967,30 @@ const Mode = union(enum) {
     }
 };
 
-fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: HookContext, links: LinkMap, options: Options) !void {
+fn pushFigure(writer: *std.Io.Writer, blocks: *TagStack(BlockTag), opt_class: ?[]const u8) !void {
+    const class = opt_class orelse return blocks.push(writer, .figure);
+    try writer.print("<figure class=\"{s}\">\n", .{class});
+    try blocks.pushWithoutWriting(.figure);
+}
+
+fn renderImpl(tokenizer: *Tokenizer, writer: *std.Io.Writer, hooks: anytype, hook_ctx: HookContextBuilder, links: LinkMap, options: Options) !void {
     var blocks = TagStack(BlockTag){};
     var inlines = TagStack(InlineTag){};
     var active_mode: ?Mode = null;
     var first_iteration = true;
     while (true) {
         var num_blocks_open: usize = 0;
-        const unconsumed_token = while (num_blocks_open < blocks.len()) : (num_blocks_open += 1) {
+        const unconsumed_token = while (num_blocks_open < blocks.len) : (num_blocks_open += 1) {
             const block = blocks.getPtr(num_blocks_open);
             switch (block.*) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => break null,
                 else => {},
             }
             const token = tokenizer.next();
+            if (token == .@"\n" and block.*.canContainBlankLinkes()) {
+                num_blocks_open += 1;
+                break token;
+            }
             switch (block.*) {
                 .p, .li, .h, .figure, .figcaption, .tr, .th, .td, .footnote_li => unreachable,
                 .ul => if (token != .@"-") break token,
@@ -803,11 +1017,11 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
         if (token == .@"\n") continue;
         if (!first_iteration) try writer.writeByte('\n');
         first_iteration = false;
-        if (blocks.top()) |block| if (block == .table) try blocks.append(writer, .{ .tr, .td });
+        if (blocks.top()) |block| if (block == .table) try blocks.append(writer, &.{ .tr, .td });
         var need_implicit_block = !options.is_inline;
         while (true) {
             if (need_implicit_block and token.isInline()) {
-                if (!(tokenizer.in_raw_html_block and blocks.len() == 0))
+                if (!(tokenizer.in_raw_html_block and blocks.len == 0))
                     if (BlockTag.implicitChild(blocks.top())) |block|
                         try blocks.push(writer, block);
                 need_implicit_block = false;
@@ -821,6 +1035,50 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     active_mode = .{ .code = try Highlighter.render(writer, language) };
                     break;
                 },
+                .@"<template>\n" => {
+                    assert(blocks.len == 0);
+                    const ctx = hook_ctx.at(tokenizer.tokenStartPtr());
+                    const scanner = tokenizer.takeScanner();
+                    const start = scanner.offset;
+                    const close_tag = "</template>";
+                    const src = scanner.consumeUntilString(close_tag) orelse
+                        return scanner.fail("encountered EOF while looking for \"</template>\"", .{});
+                    const newline_before = scanner.prev(close_tag.len) == '\n';
+                    const eol_after = scanner.eof() or scanner.consume('\n');
+                    if (!newline_before or !eol_after)
+                        return scanner.failAtOffset(scanner.offset - close_tag.len, "expected \"</template>\" to be on its own line", .{});
+                    var template_scanner = scanner.*;
+                    template_scanner.offset = start;
+                    template_scanner.source = scanner.source[0 .. start + src.len];
+                    try hooks.parseAndRenderTemplate(writer, ctx, &template_scanner);
+                    break;
+                },
+                .@"<template src=.../>\n" => |src| {
+                    const ctx = hook_ctx.at(tokenizer.tokenStartPtr());
+                    try hooks.renderTemplate(writer, ctx, src);
+                    break;
+                },
+                .@"<toc/>\n" => {
+                    if (!options.auto_heading_ids) break;
+                    try writer.print("<nav class=\"toc\">\n<h{0}>Contents</h{0}>\n<ul>\n", .{1 + options.shift_heading_level});
+                    const scanner = tokenizer.takeScanner().*;
+                    var offset = scanner.offset - 1;
+                    const prefix = "\n# ";
+                    while (std.mem.findPos(u8, scanner.source, offset, prefix)) |prefix_offset| {
+                        try writer.writeAll("<li><a href=\"#");
+                        const start = prefix_offset + prefix.len;
+                        offset = start + try generateAutoIdUntilNewline(writer, scanner.source[start..]);
+                        try writer.writeAll("\">");
+                        var heading_scanner = scanner;
+                        heading_scanner.offset = start;
+                        heading_scanner.source.len = offset;
+                        var heading_tokenizer = try Tokenizer.init(&heading_scanner);
+                        try renderImpl(&heading_tokenizer, writer, hooks, hook_ctx, links, .{ .is_inline = true });
+                        try writer.writeAll("</a></li>\n");
+                    }
+                    try writer.writeAll("</ul></nav>");
+                    break;
+                },
                 // Common block tokens
                 .@"#" => |level| try blocks.push(writer, BlockTag.heading(tokenizer.remaining(), level, options)),
                 .@"-" => try blocks.push(writer, .ul),
@@ -828,8 +1086,8 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@">" => try blocks.push(writer, .blockquote),
                 // Common inline tokens
                 .text => |text| try writer.writeAll(text),
-                ._ => try inlines.toggle(writer, .em),
-                .@"**" => try inlines.toggle(writer, .strong),
+                ._ => try inlines.toggle(writer, .i),
+                .@"**" => try inlines.toggle(writer, .b),
                 .@"`" => try inlines.toggle(writer, .code),
                 // Math
                 .@"$", .@"$$" => if (try MathML.render(writer, tokenizer.takeScanner(), .{ .block = token == .@"$$" })) |math| {
@@ -846,9 +1104,9 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .@"[^x]: " => |label| try blocks.push(writer, .{ .footnote_ol = label }),
                 // Links
                 inline .@"[...](x)", .@"[...][x]" => |url_or_label, tag| {
-                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const info = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try writer.writeAll("<a href=\"");
-                    try hooks.writeUrl(writer, hook_ctx.at(url.ptr), url);
+                    try hooks.writeUrl(writer, hook_ctx.at(info.url.ptr), info.url);
                     try writer.writeAll("\">");
                     try inlines.pushWithoutWriting(.a);
                 },
@@ -861,23 +1119,30 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                     return tokenizer.fail("unexpected \"]\"", .{});
                 },
                 // Figures
+                inline .@"![](x)", .@"![][x]" => |url_or_label, tag| {
+                    const info = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const figure = blocks.top() == null or blocks.top().?.canContainBlock();
+                    if (figure) try pushFigure(writer, &blocks, info.class);
+                    try hooks.writeImage(writer, hook_ctx.at(info.url.ptr), info.url, info.image);
+                    if (figure) try blocks.popTag(writer, .figure);
+                },
                 inline .@"![...](x)", .@"![...][x]" => |url_or_label, tag| {
-                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
-                    try blocks.push(writer, .figure);
-                    try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
+                    const info = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    try pushFigure(writer, &blocks, info.class);
+                    try hooks.writeImage(writer, hook_ctx.at(info.url.ptr), info.url, info.image);
                     try writer.writeByte('\n');
                     try blocks.push(writer, .figcaption);
                 },
-                .@"![^" => try blocks.append(writer, .{ .figure, .figcaption }),
+                .@"![^" => try blocks.append(writer, &.{ .figure, .figcaption }),
                 inline .@"](x)", .@"][x]" => |url_or_label, tag| {
-                    const url = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
+                    const info = try lookupUrl(tokenizer.takeScanner(), links, url_or_label, tag);
                     try blocks.popTag(writer, .figcaption);
                     try writer.writeByte('\n');
-                    try hooks.writeImage(writer, hook_ctx.at(url.ptr), url);
+                    try hooks.writeImage(writer, hook_ctx.at(info.url.ptr), info.url, info.image);
                     try blocks.popTag(writer, .figure);
                 },
                 // Tables
-                .@"| " => try blocks.append(writer, .{ .table, .tr, .th }),
+                .@"| " => try blocks.append(writer, &.{ .table, .tr, .th }),
                 .@" | " => {
                     const block = blocks.top().?;
                     assert(block == .td or block == .th);
@@ -895,15 +1160,30 @@ fn renderImpl(tokenizer: *Tokenizer, writer: anytype, hooks: anytype, hook_ctx: 
                 .ldquo => try writer.writeAll("“"),
                 .rdquo => try writer.writeAll("”"),
                 .@"--" => try writer.writeAll("–"), // en dash
-                .@" -- " => try writer.writeAll("—"), // em dash
                 .@"..." => try writer.writeAll("…"),
+                // Inline templates
+                .@"<template>" => {
+                    const ctx = hook_ctx.at(tokenizer.tokenStartPtr());
+                    const scanner = tokenizer.takeScanner();
+                    const start = scanner.offset;
+                    const src = scanner.consumeUntilString("</template>") orelse
+                        return scanner.fail("encountered EOF while looking for \"</template>\"", .{});
+                    var template_scanner = scanner.*;
+                    template_scanner.offset = start;
+                    template_scanner.source = scanner.source[0 .. start + src.len];
+                    try hooks.parseAndRenderTemplate(writer, ctx, &template_scanner);
+                },
+                .@"<template src=.../>" => |src| {
+                    const ctx = hook_ctx.at(tokenizer.tokenStartPtr());
+                    try hooks.renderTemplate(writer, ctx, src);
+                },
             }
             token = tokenizer.next();
         }
-        if (inlines.top()) |tag| return tokenizer.fail("unclosed <{s}> tag", .{@tagName(tag)});
+        if (inlines.top()) |tag| return tokenizer.fail("unclosed <{t}> tag", .{tag});
         if (options.first_block_only) break;
     }
-    assert(inlines.len() == 0);
+    assert(inlines.len == 0);
     if (active_mode) |mode| return tokenizer.takeScanner().fail("missing closing {s}", .{mode.terminator()});
     try blocks.truncate(writer, 0);
 }
@@ -920,9 +1200,9 @@ fn expectWithHooks(expected_html: []const u8, source: []const u8, options: Optio
     errdefer |err| reporter.showMessage(err);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const markdown = try parse(allocator, &scanner);
-    var actual_html = std.ArrayList(u8).init(allocator);
-    try markdown.render(&reporter, actual_html.writer(), hooks, options);
-    try testing.expectEqualStrings(expected_html, actual_html.items);
+    var actual_html: std.Io.Writer.Allocating = .init(allocator);
+    try markdown.render(&reporter, &actual_html.writer, hooks, options);
+    try testing.expectEqualStrings(expected_html, actual_html.written());
 }
 
 fn expectFailure(expected_message: []const u8, source: []const u8, options: Options) !void {
@@ -936,9 +1216,10 @@ fn expectFailureWithHooks(expected_message: []const u8, source: []const u8, opti
     var reporter = Reporter.init(allocator);
     var scanner = Scanner{ .source = source, .reporter = &reporter };
     const markdown = try parse(allocator, &scanner);
+    var actual_html: std.Io.Writer.Allocating = .init(allocator);
     try reporter.expectFailure(
         expected_message,
-        markdown.render(&reporter, std.io.null_writer, hooks, options),
+        markdown.render(&reporter, &actual_html.writer, hooks, options),
     );
 }
 
@@ -999,7 +1280,7 @@ test "render inline raw html" {
 }
 
 test "render Markdown within raw inline html" {
-    try expect("<p><cite><em>Foo</em></cite></p>", "<cite>_Foo_</cite>", .{});
+    try expect("<p><cite><i>Foo</i></cite></p>", "<cite>_Foo_</cite>", .{});
 }
 
 test "render entities" {
@@ -1011,11 +1292,11 @@ test "render raw entities" {
 }
 
 test "render inline element after false raw inline html" {
-    try expect("<p>x&lt;y<em>z</em></p>", "x<y_z_", .{});
+    try expect("<p>x&lt;y<i>z</i></p>", "x<y_z_", .{});
 }
 
 test "render inline element after false raw block html" {
-    try expect("<p>&lt;div jk not a <em>div</em></p>", "<div jk not a _div_", .{});
+    try expect("<p>&lt;div jk not a <i>div</i></p>", "<div jk not a _div_", .{});
 }
 
 test "render raw block html" {
@@ -1044,9 +1325,9 @@ test "render text around raw block html" {
 
 test "render inlines around raw block html" {
     try expect(
-        \\<p><em>Before</em></p>
+        \\<p><i>Before</i></p>
         \\<block>
-        \\<em>After (part of block)</em>
+        \\<i>After (part of block)</i>
     ,
         \\_Before_
         \\<block>
@@ -1081,8 +1362,8 @@ test "render text before and after exiting raw block html" {
 test "render inlines before and after exiting raw block html" {
     try expect(
         \\<block>
-        \\<em>After (part of block)</em>
-        \\<p><em>After (not part of block)</em></p>
+        \\<i>After (part of block)</i>
+        \\<p><i>After (not part of block)</i></p>
     ,
         \\<block>
         \\_After (part of block)_
@@ -1094,7 +1375,7 @@ test "render inlines before and after exiting raw block html" {
 test "render raw block html with inline elements" {
     try expect(
         \\<div id="foo">
-        \\Just in a <strong>div</strong>.
+        \\Just in a <b>div</b>.
         \\</div>
     ,
         \\<div id="foo">
@@ -1178,16 +1459,16 @@ test "render code with entities" {
 }
 
 test "render emphasis" {
-    try expect("<p>Hello <em>world</em>!</p>", "Hello _world_!", .{});
+    try expect("<p>Hello <i>world</i>!</p>", "Hello _world_!", .{});
 }
 
 test "render strong" {
-    try expect("<p>Hello <strong>world</strong>!</p>", "Hello **world**!", .{});
+    try expect("<p>Hello <b>world</b>!</p>", "Hello **world**!", .{});
 }
 
 test "render nested inlines" {
     try expect(
-        \\<p>a <strong>b <em>c <code>d</code> e</em> f</strong> g</p>
+        \\<p>a <b>b <i>c <code>d</code> e</i> f</b> g</p>
     ,
         \\a **b _c `d` e_ f** g
     , .{});
@@ -1264,7 +1545,7 @@ test "render heading with multiple spaces" {
 }
 
 test "render inline after false heading" {
-    try expect("<p>####### <em>hi</em></p>", "####### _hi_", .{});
+    try expect("<p>####### <i>hi</i></p>", "####### _hi_", .{});
 }
 
 test "render heading id" {
@@ -1272,7 +1553,7 @@ test "render heading id" {
         \\<h1 id="this-is-h1">This is h1</h1>
         \\<h6 id="this-is-h6">This is h6</h6>
         \\<h2 id="abcxyz-abcxyz-0123456789">abcxyz ABCXYZ 0123456789</h2>
-        \\<h2 id="cool-stuff"><strong>Cool</strong> <em>stuff</em></h2>
+        \\<h2 id="cool-stuff"><b>Cool</b> <i>stuff</i></h2>
     ,
         \\# This is h1
         \\###### This is h6
@@ -1295,6 +1576,67 @@ test "render shifted heading (negative)" {
 
 test "render false block inside heading" {
     try expect("<h1>> Not a blockquote</h1>", "# > Not a blockquote", .{});
+}
+
+test "render toc without heading ids" {
+    try expect("", "<toc/>", .{ .auto_heading_ids = false });
+}
+
+test "render empty toc" {
+    try expect(
+        \\<nav class="toc">
+        \\<h1>Contents</h1>
+        \\<ul>
+        \\</ul></nav>
+    ,
+        \\<toc/>
+    , .{ .auto_heading_ids = true });
+}
+
+test "render toc with one heading before" {
+    try expect(
+        \\<h1 id="foo-bar">Foo <i>bar</i></h1>
+        \\<nav class="toc">
+        \\<h1>Contents</h1>
+        \\<ul>
+        \\</ul></nav>
+    ,
+        \\# Foo _bar_
+        \\<toc/>
+    , .{ .auto_heading_ids = true });
+}
+
+test "render toc with one heading after" {
+    try expect(
+        \\<nav class="toc">
+        \\<h1>Contents</h1>
+        \\<ul>
+        \\<li><a href="#foo-bar">Foo <i>bar</i></a></li>
+        \\</ul></nav>
+        \\<h1 id="foo-bar">Foo <i>bar</i></h1>
+    ,
+        \\<toc/>
+        \\# Foo _bar_
+    , .{ .auto_heading_ids = true });
+}
+
+test "render toc with multiple headings" {
+    try expect(
+        \\<nav class="toc">
+        \\<h1>Contents</h1>
+        \\<ul>
+        \\<li><a href="#a">a</a></li>
+        \\<li><a href="#c">c</a></li>
+        \\</ul></nav>
+        \\<h1 id="a">a</h1>
+        \\<h2 id="b">b</h2>
+        \\<h1 id="c">c</h1>
+    ,
+        \\<toc/>
+        \\# a
+        \\## b
+        \\# c
+    , .{ .auto_heading_ids = true });
 }
 
 test "render unordered list" {
@@ -1334,7 +1676,7 @@ test "render multiple lists" {
         \\<li>Oranges</li>
         \\</ol>
         \\<ul>
-        \\<li>other <strong>stuff</strong></li>
+        \\<li>other <b>stuff</b></li>
         \\<li>blah blah</li>
         \\</ul>
     ,
@@ -1343,6 +1685,19 @@ test "render multiple lists" {
         \\
         \\- other **stuff**
         \\- blah blah
+    , .{});
+}
+
+test "render lists with blank lines" {
+    try expect(
+        \\<ul>
+        \\<li>one</li>
+        \\<li>two</li>
+        \\</ul>
+    ,
+        \\- one
+        \\
+        \\- two
     , .{});
 }
 
@@ -1379,8 +1734,8 @@ test "render blockquote with blank final line" {
 
 test "render a few things" {
     try expect(
-        \\<h1>Hello <strong>world</strong>!</h1>
-        \\<p>Here is <em>some</em> text.</p>
+        \\<h1>Hello <b>world</b>!</h1>
+        \\<p>Here is <i>some</i> text.</p>
         \\<hr>
         \\<p>And some more.</p>
     ,
@@ -1419,6 +1774,21 @@ test "render nested blockquotes" {
         \\> > > Deep!
         \\> >
         \\> > End
+    , .{});
+}
+
+test "render adjacent blockquotes" {
+    try expect(
+        \\<blockquote>
+        \\<p>First quote</p>
+        \\</blockquote>
+        \\<blockquote>
+        \\<p>Second quote</p>
+        \\</blockquote>
+    ,
+        \\> First quote
+        \\
+        \\> Second quote
     , .{});
 }
 
@@ -1508,7 +1878,7 @@ test "unclosed code block in blockquote with text after" {
 
 test "render smart typography" {
     try expect(
-        \\<p>This—“that isn’t 1–2” … other.</p>
+        \\<p>This – “that isn’t 1–2” … other.</p>
     ,
         \\This -- "that isn't 1--2" ... other.
     , .{});
@@ -1522,9 +1892,9 @@ test "render footnotes" {
     try expect(
         \\<p>Foo<sup id="fnref:1" class="fnref"><a href="#fn:1">1</a></sup>.</p>
         \\<p>Bar<sup id="fnref:2" class="fnref"><a href="#fn:2">2</a></sup>.</p>
-        \\<hr>
+        \\<hr class="footnotes-rule">
         \\<ol class="footnotes">
-        \\<li id="fn:1"><em>first</em>&nbsp;<a href="#fnref:1">↩︎</a></li>
+        \\<li id="fn:1"><i>first</i>&nbsp;<a href="#fnref:1">↩︎</a></li>
         \\<li id="fn:2">second&nbsp;<a href="#fnref:2">↩︎</a></li>
         \\</ol>
     ,
@@ -1533,6 +1903,26 @@ test "render footnotes" {
         \\Bar[^2].
         \\
         \\[^1]: _first_
+        \\[^2]: second
+    , .{});
+}
+
+test "render footnotes with blank line" {
+    try expect(
+        \\<p>Foo<sup id="fnref:1" class="fnref"><a href="#fn:1">1</a></sup>.</p>
+        \\<p>Bar<sup id="fnref:2" class="fnref"><a href="#fn:2">2</a></sup>.</p>
+        \\<hr class="footnotes-rule">
+        \\<ol class="footnotes">
+        \\<li id="fn:1"><i>first</i>&nbsp;<a href="#fnref:1">↩︎</a></li>
+        \\<li id="fn:2">second&nbsp;<a href="#fnref:2">↩︎</a></li>
+        \\</ol>
+    ,
+        \\Foo[^1].
+        \\
+        \\Bar[^2].
+        \\
+        \\[^1]: _first_
+        \\
         \\[^2]: second
     , .{});
 }
@@ -1597,6 +1987,82 @@ test "render figure (shortcut)" {
     , .{});
 }
 
+test "render figure without caption (url)" {
+    try expect(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\</figure>
+    ,
+        \\![](rabbit.jpg)
+    , .{});
+}
+
+test "render figure without caption (reference)" {
+    try expect(
+        \\<figure>
+        \\<img src="rabbit.jpg">
+        \\</figure>
+    ,
+        \\![][img]
+        \\
+        \\[img]: rabbit.jpg
+    , .{});
+}
+
+test "render figure with size (url)" {
+    try expect(
+        \\<figure>
+        \\<img src="rabbit.jpg" width="20" height="30.5">
+        \\</figure>
+    ,
+        \\![](rabbit.jpg "20x30.5")
+    , .{});
+}
+
+test "render figure with size (reference)" {
+    try expect(
+        \\<figure>
+        \\<img src="rabbit.jpg" width="20" height="30.5">
+        \\</figure>
+    ,
+        \\![][img]
+        \\
+        \\[img]: rabbit.jpg "20x30.5"
+    , .{});
+}
+
+test "render figure with size and class (url)" {
+    try expect(
+        \\<figure class="foo">
+        \\<img src="rabbit.jpg" width="1" height="1">
+        \\</figure>
+    ,
+        \\![](rabbit.jpg "1x1 .foo")
+    , .{});
+}
+
+test "render figure with size and class (reference)" {
+    try expect(
+        \\<figure class="foo">
+        \\<img src="rabbit.jpg" width="1" height="1">
+        \\</figure>
+    ,
+        \\![][img]
+        \\
+        \\[img]: rabbit.jpg "1x1 .foo"
+    , .{});
+}
+
+test "render figure with lazy image" {
+    try expect(
+        \\<figure>
+        \\<img src="rabbit.jpg" width="20" height="30.5" loading="lazy">
+        \\</figure>
+    ,
+        \\![](rabbit.jpg "20x30.5 lazy")
+    , .{});
+}
+
 test "render figure with link in caption" {
     try expect(
         \\<figure>
@@ -1656,8 +2122,8 @@ test "render top-caption figure with link in caption" {
     , .{});
 }
 
-test "render false figure inline" {
-    try expect("<p>Not !<a href=\"x\">figure</a></p>", "Not ![figure](x)", .{});
+test "render image inline" {
+    try expect("<p>Some picture: <img src=\"x\"></p>", "Some picture: ![](x)", .{});
 }
 
 test "render unbalanced right bracket" {
@@ -1741,7 +2207,7 @@ test "render table omitting pipes at end" {
 test "render table with inlines in cells" {
     try expect(
         \\<table>
-        \\<tr><th><em>x</em></th><th><code>this || that</code></th><th><a href="b">a</a></th></tr>
+        \\<tr><th><i>x</i></th><th><code>this || that</code></th><th><a href="b">a</a></th></tr>
         \\</table>
     ,
         \\| _x_ | `this || that` | [a](b) |
@@ -1753,7 +2219,7 @@ test "inline math" {
 }
 
 test "display math" {
-    try expect("<math display=\"block\"><mi>x</mi></math>", "$$x$$", .{});
+    try expect("<div class=\"math-block\"><math display=\"block\"><mi>x</mi></math></div>", "$$x$$", .{});
 }
 
 test "inline math with newlines" {
@@ -1761,7 +2227,7 @@ test "inline math with newlines" {
 }
 
 test "display math with newlines" {
-    try expect("<math display=\"block\"><mi>x</mi>\n<mi>y</mi></math>", "$$x\ny$$", .{});
+    try expect("<div class=\"math-block\"><math display=\"block\"><mi>x</mi>\n<mi>y</mi></math></div>", "$$x\ny$$", .{});
 }
 
 test "inline math mixed with other stuff" {
@@ -1782,7 +2248,7 @@ test "unclosed block math" {
 
 test "unclosed inline at end" {
     try expectFailure(
-        \\<input>:1:5: unclosed <em> tag
+        \\<input>:1:5: unclosed <i> tag
     ,
         \\_foo
     , .{});
@@ -1790,7 +2256,7 @@ test "unclosed inline at end" {
 
 test "unclosed inline in middle" {
     try expectFailure(
-        \\<input>:1:15: unclosed <strong> tag
+        \\<input>:1:15: unclosed <b> tag
     ,
         \\> Some **stuff
         \\
@@ -1834,7 +2300,7 @@ test "exceed max block tag depth" {
 test "writeUrl hook" {
     const hooks = struct {
         data: []const u8 = "data",
-        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: *std.Io.Writer, context: HookContext, url: []const u8) !void {
             try writer.print("hook got {s} in {s}, can access {s}", .{ url, context.filename, self.data });
         }
     }{};
@@ -1847,7 +2313,7 @@ test "writeUrl hook" {
 
 test "failure in writeUrl hook (inline)" {
     const hooks = struct {
-        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: *std.Io.Writer, context: HookContext, url: []const u8) !void {
             _ = writer;
             _ = self;
             return context.fail("{s}: bad url", .{url});
@@ -1862,7 +2328,7 @@ test "failure in writeUrl hook (inline)" {
 
 test "failure in writeUrl hook (reference)" {
     const hooks = struct {
-        fn writeUrl(self: @This(), writer: anytype, context: HookContext, url: []const u8) !void {
+        fn writeUrl(self: @This(), writer: *std.Io.Writer, context: HookContext, url: []const u8) !void {
             _ = writer;
             _ = self;
             return context.fail("{s}: bad url", .{url});
@@ -1874,5 +2340,107 @@ test "failure in writeUrl hook (reference)" {
         \\[some
         \\link text][ref]
         \\[ref]: xyz
+    , .{}, hooks);
+}
+
+test "failure with default renderTemplate hook" {
+    try expectFailure(
+        \\<input>:1:1: no hook installed for renderTemplate
+    ,
+        \\<template src="foo"/>
+    , .{});
+}
+
+test "failure with default parseAndRenderTemplate hook" {
+    try expectFailure(
+        \\<input>:1:1: no hook installed for parseAndRenderTemplate
+    ,
+        \\<template>
+        \\</template>
+    , .{});
+}
+
+test "unclosed block template" {
+    try expectFailure(
+        \\<input>:1:11: encountered EOF while looking for "</template>"
+    ,
+        \\<template>
+    , .{});
+}
+
+test "unclosed inline template" {
+    try expectFailure(
+        \\<input>:1:13: encountered EOF while looking for "</template>"
+    ,
+        \\- <template>
+    , .{});
+}
+
+test "block template close tag not on its own line (before)" {
+    try expectFailure(
+        \\<input>:2:2: expected "</template>" to be on its own line
+    ,
+        \\<template>
+        \\x</template>
+    , .{});
+}
+
+test "block template close tag not on its own line (after)" {
+    try expectFailure(
+        \\<input>:2:1: expected "</template>" to be on its own line
+    ,
+        \\<template>
+        \\</template>x
+    , .{});
+}
+
+test "renderTemplate hook" {
+    const hooks = struct {
+        fn renderTemplate(self: @This(), writer: *std.Io.Writer, context: HookContext, name: []const u8) !void {
+            _ = self;
+            try writer.print("render template {s} in {s}", .{ name, context.filename });
+        }
+    }{};
+    try expectWithHooks(
+        \\render template block in <input>
+        \\<p>Hi. render template inline in <input>.</p>
+    ,
+        \\<template src="block"/>
+        \\Hi. <template src="inline"/>.
+    , .{}, hooks);
+}
+
+test "parseAndRenderTemplate hook" {
+    const hooks = struct {
+        fn parseAndRenderTemplate(self: @This(), writer: *std.Io.Writer, context: HookContext, scanner: *Scanner) !void {
+            _ = self;
+            try writer.print("parse and render template '{s}' in {s}", .{ scanner.consumeRest(), context.filename });
+        }
+    }{};
+    try expectWithHooks(
+        \\parse and render template 'BLOCK
+        \\' in <input>
+        \\<p>Hi. parse and render template 'INLINE' in <input>.</p>
+    ,
+        \\<template>
+        \\BLOCK
+        \\</template>
+        \\Hi. <template>INLINE</template>.
+    , .{}, hooks);
+}
+
+test "two block templates in a row" {
+    const hooks = struct {
+        fn renderTemplate(self: @This(), writer: *std.Io.Writer, context: HookContext, name: []const u8) !void {
+            _ = self;
+            try writer.print("render template {s} in {s}", .{ name, context.filename });
+        }
+    }{};
+    try expectWithHooks(
+        \\render template 1 in <input>
+        \\render template 2 in <input>
+    ,
+        \\<template src="1"/>
+        \\<template src="2"/>
     , .{}, hooks);
 }
