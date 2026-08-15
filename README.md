@@ -5,7 +5,7 @@ This repository is a collection of tools for making a static site generator:
 * Error reporting: [Reporter.zig](src/Reporter.zig)
 * Text scanning: [Scanner.zig](src/Scanner.zig)
 * Date parsing: [Date.zig](src/Date.zig)
-* Blog posts: [Post.zig](src/Post.zig), [Metadata.zig](src/Metadata.zig)
+* Blog posts: [Document.zig](src/Document.zig), [Post.zig](src/Post.zig), [Metadata.zig](src/Metadata.zig)
 * Templating language: [Template.zig](src/Template.zig)
 * Markdown renderer: [Markdown.zig](src/Markdown.zig)
 * MathML renderer: [MathML.zig](src/MathML.zig)
