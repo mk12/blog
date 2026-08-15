@@ -1,21 +1,21 @@
-{{ include "base.html" }}
+{{ template "base.html" }}
 
 {{ define body }}
 <header>
-{{ include "pagenav.html" }}
+{{ template "pagenav.html" }}
 </header>
 <main>
   <header>
-    <span class="post-date">{{ date }}</span>
+    <span class="post-date">{{ date_long }}</span>
     <h1 class="post-title">{{ title }}</h1>
     <p class="post-subtitle">{{ subtitle }}</p>
   </header>
-{{ content }}
+{{ post_content }}
 </main>
 <footer>
-{{ include "pagenav.html" }}
+{{ template "pagenav.html" }}
 </footer>
 {{ if has_footnotes }}
-<script src="{{ base_url }}/footnote.js"></script>
+<script src="/footnote.js"></script>
 {{ end }}
 {{ end }}
